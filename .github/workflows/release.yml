@@ -1,0 +1,47 @@
+name: Release
+# Push a tag like v1.0.1: GitHub builds every download from this source and publishes them as a release.
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  windows-linux:
+    runs-on: ubuntu-24.04
+    defaults: { run: { working-directory: windows-linux } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: x86_64-pc-windows-gnu }
+      - run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev libxdo-dev mingw-w64 zip
+      - run: pip install ziglang && cargo install cargo-zigbuild --locked
+      - run: sh packaging/build-dist.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-linux
+          path: |
+            windows-linux/dist/*.zip
+            windows-linux/dist/*.tar.gz
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+      - working-directory: mac
+        run: |
+          xcodebuild -project Ajar.xcodeproj -scheme Ajar -configuration Release -destination 'generic/platform=macOS' \
+            -derivedDataPath build ONLY_ACTIVE_ARCH=NO ARCHS="arm64 x86_64" CODE_SIGN_IDENTITY=- build
+          ditto -c -k --sequesterRsrc --keepParent build/Build/Products/Release/Ajar.app "Ajar-${GITHUB_REF_NAME#v}-mac.zip"
+      - uses: actions/upload-artifact@v4
+        with: { name: mac, path: mac/*.zip }
+  release:
+    needs: [windows-linux, macos]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: out, merge-multiple: true }
+      - run: cd out && sha256sum * > SHA256SUMS && cat SHA256SUMS
+      - env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --title "Ajar ${GITHUB_REF_NAME#v}" \
+            --notes "Built by GitHub Actions from this tag's source. macOS 14+ (universal), Windows 10/11 and Linux with systemd (x86-64). Checksums in SHA256SUMS." out/*
