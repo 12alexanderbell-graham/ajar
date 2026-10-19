@@ -66,9 +66,21 @@
   .phone li { margin: 6px 0; }
   .phone .small { font-size: 13px; margin: 16px 0 0; }
 
+  .ai { margin-top: 32px; background: var(--bg-2); border-radius: 22px; padding: 40px; }
+  .ai h2.big { font-size: 28px; line-height: 1.15; letter-spacing: -0.025em; font-weight: 700; margin: 0 0 8px; }
+  .ai p { margin: 0 0 16px; color: var(--fg-2); font-size: 15px; }
+  .ai .small { font-size: 13px; margin: 16px 0 0; }
+  .ai code { font: 14px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--fg); }
+  .prompt { position: relative; }
+  .prompt pre { margin: 0; white-space: pre-wrap; font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--bg); color: var(--fg);
+    border: 1px solid var(--line); border-radius: 14px; padding: 50px 18px 18px; max-height: 260px; overflow: auto; }
+  .copy { position: absolute; top: 10px; right: 10px; border: 0; border-radius: 980px; padding: 6px 14px; font: 500 13px var(--font);
+    background: var(--accent); color: var(--accent-fg); cursor: pointer; }
+  footer a { color: inherit; }
   footer { margin-top: 72px; border-top: 1px solid var(--line); padding-block: 24px 40px; font-size: 12px; color: var(--fg-2); text-align: center; }
 
   @media (max-width: 640px) {
+    .ai { padding: 28px 22px; }
     header { padding-block: 56px 0; }
     .facts { grid-template-columns: minmax(0, 1fr); gap: 24px; margin-top: 56px; }
     .phone { grid-template-columns: minmax(0, 1fr); padding: 28px 22px; gap: 28px; margin-top: 64px; }
@@ -97,8 +109,8 @@
       <p>Awake while an agent is working, or while apps you pick are running, like an Xcode build. Sleeps a few minutes after.</p>
     </div>
     <div>
-      <h2>Easy on the battery</h2>
-      <p>Low power and slowed apps while the lid is shut. Everything goes back when you open it.</p>
+      <h2>Cuts the power that's wasted</h2>
+      <p>With the lid shut it pauses what nobody's using (other apps, idle simulators, silent audio) and shows real measured watts. All of it comes back when you open the lid.</p>
     </div>
     <div>
       <h2>Stops before it hurts</h2>
@@ -120,9 +132,33 @@
     </div>
   </section>
 
-  <footer>© 2026 Ajar</footer>
+  <section class="ai" aria-labelledby="ai-h">
+    <h2 class="big" id="ai-h">Let your AI set it up</h2>
+    <p>Ajar connects to Claude Code, Codex and the Claude app in one click (or <code>ajar connect</code>). Then paste this and your agent tunes it with you: what stays on, what pauses, and what each saving is worth on your laptop.</p>
+    <div class="prompt">
+      <pre id="prompt">Ajar is installed on this laptop. It keeps the machine awake with the lid closed while you work, and cuts power use while the lid is shut. You can control all of it through the ajar MCP tools (or the ajar command). Set it up for me:
+
+1. Read Ajar's settings and power report to see every setting and what is using power right now.
+2. Ask me, in one short message: which apps must keep running at full speed with the lid shut (music, calls, a local model, Docker...), whether it should stay awake only while agents work or always, and whether I'm OK with a lock screen when I open the lid in exchange for the screen turning fully off.
+3. Apply the strongest savings that don't touch what I named: preset max_battery, pausing simulators and background audio, low power, and per-app rules.
+4. If my lid is closed, run Ajar's power test and tell me what each saving is worth in watts.
+5. From now on, keep the laptop awake through Ajar before long work and release it when done.
+
+Never turn off the heat guard or lower the battery limit; Ajar won't let you, and that's on purpose.</pre>
+      <button class="copy" id="copy" type="button">Copy</button>
+    </div>
+    <p class="small">For agents: <a href="llms.txt">llms.txt</a> describes every command, tool and setting.</p>
+  </section>
+
+  <footer>© 2026 Ajar · <a href="llms.txt">llms.txt</a></footer>
 </div>
 <script>
+  document.getElementById("copy").addEventListener("click", function () {
+    var b = this, text = document.getElementById("prompt").textContent;
+    (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(function () { b.textContent = "Copied"; },
+      function () { var r = document.createRange(); r.selectNodeContents(document.getElementById("prompt")); var sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); b.textContent = "Press ⌘C"; });
+    setTimeout(function () { b.textContent = "Copy"; }, 2500);
+  });
   // Point the big button at this visitor's system. The links under it stay for everyone.
   (function () {
     var ua = navigator.userAgent, dl = document.getElementById("dl"), first = document.getElementById("first");

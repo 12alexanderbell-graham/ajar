@@ -298,7 +298,10 @@ function render(p) {
   dot.className = "dot" + (p.holding ? " on" : "");
   $("headline").append(dot, document.createTextNode(p.headline || ""));
   $("detail").textContent = p.detail || "";
-  $("battery").textContent = p.battery ? "Battery " + p.battery : "";
+  const line = [];
+  if (p.battery) line.push("Battery " + p.battery);
+  if (typeof p.watts === "number") line.push(p.watts.toFixed(1) + " W now");
+  $("battery").textContent = line.join(" · ");
   const w = $("warnings"); w.textContent = "";
   (p.warnings || []).forEach(t => { const e = document.createElement("p"); e.className = "warn"; e.textContent = t; w.appendChild(e); });
   document.querySelectorAll("[data-mode]").forEach(b => { const sel = b.dataset.mode === p.mode; b.classList.toggle("sel", sel); b.setAttribute("aria-checked", sel); });

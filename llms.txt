@@ -1,0 +1,67 @@
+# Ajar
+
+> Ajar keeps a laptop awake with the lid closed while AI agents (or apps the person picks) are working, cuts power use while the lid is shut, and lets the laptop sleep when the work stops. macOS (14+), Windows (10/11) and Linux (systemd). Free.
+
+Ajar is built to be driven by agents. Everything below works from an MCP client (Claude Code, Codex, the Claude app, Gemini CLI...) or the `ajar` command line.
+
+## Connect
+
+- macOS: Ajar › Settings › Connect Your AI (one click per agent), or `ajar connect` in Terminal.
+- Windows / Linux: `ajar connect` (adds Ajar to Claude Code's ~/.claude.json and Codex's ~/.codex/config.toml, keeping everything else and saving a backup).
+- Any MCP client: command `ajar` (or the app binary with `cli mcp` on macOS), argument `mcp`, transport stdio.
+- The setup prompt: `ajar prompt`, the MCP tool `ajar_setup_prompt` (macOS) / `setup_prompt` (Windows, Linux), or https://12alexanderbell-graham.github.io/ajar/#ai-h
+
+## MCP tools
+
+macOS names start with `ajar_`; Windows and Linux use the same names without the prefix.
+
+- `ajar_status` / `status`: whether closing the lid keeps the machine working and why, battery, hours left lid-closed, agents seen, holds, busiest apps.
+- `ajar_keep_awake` / `stay_awake`: keep awake (also lid closed) until released, for N minutes, or until this session ends. Call before long unattended work.
+- `ajar_release` / `release`: end this session's holds (never anyone else's).
+- `ajar_settings` / `settings`: every setting with value, allowed values, description and safety note. Read before changing anything.
+- `ajar_set_setting` / `set_setting`: change one setting by key.
+- `ajar_power` / `power`: power use now and a list of suspects, each with the setting that fixes it (`setting`, `suggested_value`) and, on macOS, the measured saving.
+- `ajar_power_test` (macOS): with the lid closed, switches each saving off for 15 s and back on and measures the whole-Mac difference (~2.5 min). `screen: true` also measures turning the screen off, which locks the Mac; ask first.
+- `ajar_set_mode` / `set_mode`: off, auto (When Busy), always (optionally for N minutes).
+- `ajar_set_preset` / `set_preset`: max_battery, balanced, full_speed.
+- `ajar_set_app_rule` / `set_app_rule`: one app → leave, slow, pause, default.
+- `ajar_watch_app` / `watch_app`: an app that keeps the machine awake while busy (ffmpeg, Blender, Xcode...).
+- `ajar_energy` / `energy`: busiest apps and what closing the lid does to each.
+
+## Command line
+
+```
+ajar status [--json]          ajar settings [--json]        ajar power [--json]
+ajar power test [--screen]    ajar set <key> <value>        ajar rule <app> leave|slow|pause|default
+ajar watch <app>              ajar on [--for 2h] | auto | off
+ajar hold / release           ajar run -- <command>         ajar connect [claude|codex]
+ajar prompt                   ajar doctor                   ajar rescue
+```
+
+## Settings (keys for set / set_setting)
+
+- `mode`: auto | on/always | off.
+- `preset`: max_battery (pause other apps; music, calls and services agents use keep going) | balanced (slow them) | full_speed.
+- `pause_simulators` (macOS): freeze booted iOS simulators and Xcode previews while closed; skipped during tests.
+- `pause_background_audio` (macOS): freeze background processes holding the speakers open (keeps audio hardware powered).
+- `low_power`: Low Power Mode / power saver while closed.
+- `lock_on_close` (macOS): screen fully off while closed. Biggest single saving, but macOS asks for the password on reopen. Ask the person first.
+- `battery_floor`: sleep at this % (0 = never). Commands can only raise it.
+- `heat_guard`: strictest rules when hot, sleep if critical. Commands can only turn it on.
+- `only_on_power`, `quiet_minutes`, `sleep_when_done`, `claude_app`, `downloads` (macOS), `notify_done`, `done_chime` (macOS), `ntfy_topic`, `menubar`, `live_lid_icon`, `notch_island`, `show_in_dock`, `hotkey`, `appearance` (macOS).
+
+The settings file (config.json) can also be edited directly and reloads instantly; edits that would weaken the battery limit or heat guard are undone.
+
+## Rules agents should follow
+
+- Hold before long work, release when done. Holds from MCP end when the agent session ends.
+- Never try to turn off the heat guard, lower the battery limit or allow going below it. Ajar refuses; those are the person's calls in Ajar's own settings.
+- Ask before `lock_on_close on` or `ajar_power_test` with `screen: true`.
+- Agents, their process trees and anything a hold is tied to are never slowed or paused.
+
+## Recipes
+
+- Set Ajar up: follow the setup prompt.
+- "Why is my battery draining with the lid shut?": call power, apply the fixes for active suspects, then (macOS, lid closed) power test.
+- Long build or training run: `ajar run -- <command>`, or stay_awake with the process id.
+- Keep a browser task alive: watch_app "Google Chrome", remove it after.
