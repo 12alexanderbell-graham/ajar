@@ -189,19 +189,44 @@ async function unseal(topicName, msg) {
   } catch (_) { return null; }
 }
 
+// Replies come in on one open connection (server-sent events) instead of polling. ntfy.sh allows a burst of about
+// 60 requests per address, refilled one every 5 s, so asking every second would soon get a busy phone blocked.
+const waiters = new Map();   // nonce -> resolve
+let stream = null, streamReady = null;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function openStream() {
+  if (stream) return streamReady;
+  stream = new EventSource(`${server}/${replyTopic}/sse?since=${encodeURIComponent(lastId || "1m")}`);
+  streamReady = new Promise(res => { stream.addEventListener("open", res, { once: true }); setTimeout(res, 4000); });
+  stream.onmessage = async e => {
+    let ev; try { ev = JSON.parse(e.data); } catch (_) { return; }
+    if (ev.event !== "message") return;
+    lastId = ev.id;
+    const m = await unseal(replyTopic, ev.message || "");
+    if (m && waiters.has(m.re)) { waiters.get(m.re)(m); waiters.delete(m.re); }
+  };
+  return streamReady;
+}
+
+function closeStream() { if (stream) { stream.close(); stream = null; streamReady = null; } }
+
 async function send(cmd, args = {}) {
   if (busy) return;
   busy = true;
   document.querySelectorAll("#app button").forEach(b => b.disabled = true);
   const n = hex(crypto.getRandomValues(new Uint8Array(8)));
   const since = lastId || "30s";
+  const replied = new Promise(res => waiters.set(n, res));
   try {
     setConn("Sending…");
+    if (window.EventSource) await openStream();
+    const live = stream && stream.readyState !== EventSource.CLOSED;   // CONNECTING reconnects by itself
     const body = await seal(cmdTopic, { t: Math.floor(Date.now() / 1000), n, cmd, args });
     const r = await fetch(`${server}/${cmdTopic}`, { method: "POST", body, headers: { Cache: "yes" } });
-    if (!r.ok) throw new Error("relay said " + r.status);
+    if (!r.ok) throw new Error(r.status === 429 ? "too many requests, try again in a minute" : "relay said " + r.status);
     setConn("Waiting for laptop…");
-    const reply = await waitFor(n, since);
+    const reply = live ? await Promise.race([replied, sleep(20000).then(() => null)]) : await waitFor(n, since);
     if (!reply) { setConn("No answer. Asleep or offline?"); return; }
     if (reply.ok === false && reply.error) note(reply.error);
     if (reply.panel) render(reply.panel);
@@ -209,15 +234,17 @@ async function send(cmd, args = {}) {
   } catch (e) {
     setConn("Can't reach the relay (" + e.message + ")");
   } finally {
+    waiters.delete(n);
     busy = false;
     document.querySelectorAll("#app button").forEach(b => b.disabled = false);
   }
 }
 
+/** Fallback when the open connection isn't available: ask every 2.5 s for up to 20 s. */
 async function waitFor(n, since) {
   const deadline = Date.now() + 20000;
   while (Date.now() < deadline) {
-    await new Promise(r => setTimeout(r, 1200));
+    await sleep(2500);
     let text;
     try {
       const r = await fetch(`${server}/${replyTopic}/json?poll=1&since=${encodeURIComponent(since)}`);
@@ -352,10 +379,11 @@ async function start() {
     catch (_) { prompt("Pairing code", text); }
   });
   $("unpair").addEventListener("click", () => {
+    closeStream();
     ["ajar.k", "ajar.s", "ajar.last"].forEach(store.del);
     location.replace(location.pathname);
   });
-  document.addEventListener("visibilitychange", () => { if (!document.hidden && key) send("panel"); });
+  document.addEventListener("visibilitychange", () => { if (document.hidden) closeStream(); else if (key) send("panel"); });
   $("pairform").addEventListener("submit", async e => {
     e.preventDefault();
     const { k, s } = parsePairing($("code").value);
