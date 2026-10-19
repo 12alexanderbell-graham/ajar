@@ -1,0 +1,123 @@
+import Foundation
+
+/// An app Ajar slowed or paused. Written to disk *before* the change is made, so a crash at any moment leaves
+/// a record of everything Ajar touched. Undo checks pid, start time and executable path, so a reused pid is
+/// never touched.
+struct Touched: Codable, Equatable {
+    var pid: Int32
+    var start: UInt64
+    var path: String
+    var paused: Bool
+
+    /// Still the very process Ajar changed.
+    var isSameProcess: Bool { Procs.startTime(pid) == start && Procs.path(pid) == path }
+}
+
+enum Journal {
+    static var url: URL { StateFiles.dir.appendingPathComponent("touched.json") }
+
+    static func load() -> [Touched] {
+        guard let d = try? Data(contentsOf: url) else { return [] }
+        return (try? JSONDecoder().decode([Touched].self, from: d)) ?? []
+    }
+
+    /// True only once the list is safely on disk (temp file, flushed, renamed). Empty removes the file.
+    @discardableResult
+    static func save(_ list: [Touched]) -> Bool {
+        if list.isEmpty { StateFiles.remove(url); return !StateFiles.exists(url) }
+        guard let data = try? JSONEncoder().encode(list) else { return false }
+        return StateFiles.writeDurably(data, to: url)
+    }
+
+    /// Puts each entry back. Returns the ones the OS refused that still belong to the same process (they stay
+    /// in the journal and are retried). An entry whose process has exited needs nothing and is dropped.
+    static func undo(_ list: [Touched]) -> [Touched] {
+        var left: [Touched] = []
+        for t in list where t.isSameProcess {
+            let ok = t.paused ? Throttle.freeze(t.pid, start: t.start, false) : Throttle.background(t.pid, start: t.start, false)
+            if !ok && t.isSameProcess { left.append(t) }
+        }
+        return left
+    }
+
+    /// Before this version the journal was two text files ("pid<TAB>path" per line). Undo those once.
+    static func undoLegacyFiles() {
+        for (url, paused) in [(StateFiles.paused, true), (StateFiles.slowed, false)] {
+            guard let text = StateFiles.read(url) else { continue }
+            for line in text.split(whereSeparator: \.isNewline) {   // handles a missing final newline
+                let parts = line.split(separator: "\t", maxSplits: 1).map(String.init)
+                guard parts.count == 2, let pid = pid_t(parts[0]), Procs.path(pid) == parts[1], let start = Procs.startTime(pid) else { continue }
+                _ = paused ? Throttle.freeze(pid, start: start, false) : Throttle.background(pid, start: start, false)
+            }
+            StateFiles.remove(url)
+        }
+    }
+}
+
+/// The app's sign of life for the watchdog: "unix-time pid start-time", rewritten every tick.
+enum Heartbeat {
+    static func beat() {
+        let pid = getpid()
+        let s = "\(Int(Date().timeIntervalSince1970)) \(pid) \(Procs.startTime(pid) ?? 0)"
+        StateFiles.write(s, to: StateFiles.alive)   // atomic: the watchdog never reads a half-written file
+    }
+
+    /// The app that wrote the heartbeat is still running (same process) and checked in within 15 minutes. The
+    /// long window covers a sleep/resume, when the watchdog can run before the app's first tick; a dead app
+    /// is noticed at once, a hung one after 15 minutes. An old-style heartbeat (no pid) gets 90 seconds.
+    static func appIsAlive() -> Bool {
+        let attrs = try? FileManager.default.attributesOfItem(atPath: StateFiles.alive.path)
+        let mtime = (attrs?[.modificationDate] as? Date) ?? .distantPast
+        let f = (StateFiles.read(StateFiles.alive) ?? "").split(separator: " ").compactMap { UInt64($0) }
+        if f.count == 3 {
+            let age = Date().timeIntervalSince1970 - Double(f[0])
+            let pid = pid_t(truncatingIfNeeded: f[1])
+            return f[2] != 0 && Procs.startTime(pid) == f[2] && age < 900
+        }
+        return Date().timeIntervalSince(mtime) < 90
+    }
+}
+
+/// The person's safety settings as last set in Ajar's own UI. Edits to config.json (by hand, a script or an
+/// agent) can make them stricter, never weaker. This stops accidental and agent-driven loosening; a program
+/// running as the same user could still edit this file too, so it isn't a defence against deliberate attacks.
+struct Safety: Codable, Equatable {
+    var heatGuard: Bool
+    var batteryFloor: Int
+    static var url: URL { StateFiles.dir.appendingPathComponent("safety.json") }
+    static func load() -> Safety? { (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode(Safety.self, from: $0) } }
+    func save() { _ = StateFiles.writeDurably((try? JSONEncoder().encode(self)) ?? Data(), to: Self.url) }
+}
+
+/// Runs every minute from launchd (`Ajar cli watchdog`). If the app has died or hung, put back everything it
+/// changed. Pure Swift with the same checks the app uses; no shell parsing.
+enum Watchdog {
+    static func run(force: Bool) -> String {
+        if !force && Heartbeat.appIsAlive() { return "alive" }
+        Journal.undoLegacyFiles()
+        let left = Journal.undo(Journal.load())
+        Journal.save(left)
+        var ok = left.isEmpty
+        if !DisplayPower.restoreBuiltIn() { ok = false }
+        Brightness.restore()
+        if StateFiles.exists(Brightness.restoreFile) { ok = false }
+        if let saved = StateFiles.read(StateFiles.modeRestore) {
+            let parts = saved.split(separator: " ").map(String.init)
+            if parts.count != 2 || Shell.pmsetRoot(["-b", parts[0], parts[1]]) { StateFiles.remove(StateFiles.modeRestore) } else { ok = false }
+        }
+        if StateFiles.exists(StateFiles.hold) {
+            if !Registry.sleepDisabled || Shell.pmsetRoot(["-a", "disablesleep", "0"]) { StateFiles.remove(StateFiles.hold) } else { ok = false }
+        }
+        return ok ? "restored" : "partly restored"
+    }
+
+    /// Plain-language list of what Ajar has changed right now (for `ajar doctor` and `ajar rescue`).
+    static func outstanding() -> [String] {
+        var out = Journal.load().map { "\($0.paused ? "paused" : "slowed") \(($0.path as NSString).lastPathComponent) (pid \($0.pid))" }
+        if StateFiles.exists(StateFiles.hold) || Registry.sleepDisabled { out.append(Registry.sleepDisabled ? "sleep is switched off (pmset disablesleep 1)" : "hold marker present") }
+        if StateFiles.exists(StateFiles.modeRestore) { out.append("Low Power Mode changed") }
+        if StateFiles.exists(Brightness.restoreFile) { out.append("screen dimmed to zero") }
+        if StateFiles.exists(DisplayPower.marker) { out.append("built-in screen switched off") }
+        return out
+    }
+}

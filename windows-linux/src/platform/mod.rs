@@ -1,0 +1,117 @@
+//! Everything that touches the operating system, behind one trait so the engine can be tested with a mock.
+
+use crate::state::{Restore, Touched};
+use std::collections::HashSet;
+
+#[cfg(target_os = "linux")]
+pub mod linux;
+#[cfg(windows)]
+pub mod windows;
+pub mod mock;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Battery {
+    pub percent: u32,
+    /// Power leaving the battery, in watts; 0 when not discharging.
+    pub watts: f64,
+    pub on_ac: bool,
+    pub charging: bool,
+    /// Full-charge capacity in watt-hours, when the battery reports it.
+    pub full_wh: Option<f64>,
+}
+
+impl Battery {
+    /// Energy is leaving the battery: on battery, or on a charger too weak to keep up.
+    pub fn discharging(&self) -> bool {
+        self.watts > 0.3 && !self.charging
+    }
+    /// The battery is what's running the machine (decides between ∞ and an hours figure).
+    pub fn on_battery(&self) -> bool {
+        self.discharging() || !self.on_ac
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Thermal {
+    Unknown,
+    Normal,
+    Serious,
+    Critical,
+}
+
+pub trait Platform {
+    fn name(&self) -> &'static str;
+    /// Whether Ajar can keep this machine awake (Err explains why not, in words for the person).
+    fn ready(&mut self) -> Result<(), String>;
+    fn has_lid(&mut self) -> bool;
+    fn lid_closed(&mut self) -> bool;
+    fn battery(&mut self) -> Option<Battery>;
+    fn thermal(&mut self) -> Thermal;
+
+    /// Start keeping the machine awake, including with the lid closed. Must be crash-safe: if Ajar dies, the
+    /// machine must be able to sleep again without Ajar's help (or with the watchdog's).
+    fn begin_hold(&mut self, reason: &str, restore: &mut Restore) -> Result<(), String>;
+    fn end_hold(&mut self, restore: &mut Restore) -> Result<(), String>;
+    /// Put the machine to sleep now (the lid is already shut and the work is done).
+    fn sleep_now(&mut self);
+
+    /// Low power on (saving the previous setting into `restore`) or back to what it was.
+    fn set_low_power(&mut self, on: bool, restore: &mut Restore) -> bool;
+    /// Undo every system setting recorded in `restore` (used at startup and by the watchdog after a crash).
+    fn restore_settings(&mut self, restore: &mut Restore);
+
+    /// Slow a process (efficiency mode / lowest priority), but only if `pid` still has start time `start`.
+    /// Returns its previous priority and, on Linux, the systemd unit used. Never acts on anything in
+    /// `protected` (on Linux a unit shared with a protected process is refused).
+    fn slow(&mut self, pid: u32, start: u64, protected: &HashSet<u32>) -> Option<(i64, Option<String>)>;
+    /// Put a slowed process back. False if the OS refused (the journal entry is kept and retried).
+    fn unslow(&mut self, t: &Touched) -> bool;
+    /// Pause or resume, only if `pid` is still the process that started at `start` (checked on the same
+    /// handle the signal goes through, so a reused pid is never frozen).
+    fn pause(&mut self, pid: u32, start: u64, on: bool) -> bool;
+
+    fn notify(&mut self, title: &str, body: &str);
+    fn set_open_at_login(&mut self, on: bool) -> Result<(), String>;
+    fn install_watchdog(&mut self) -> Result<(), String>;
+    /// Remove the watchdog and the login item (the app's own folder is left for the person to delete).
+    fn uninstall(&mut self) -> Result<(), String> {
+        Ok(())
+    }
+
+    /// False when the desktop leaves lid-close sleep to Ajar (KDE with "Do nothing"): then Ajar sleeps the
+    /// machine itself when the lid closes and nothing is working.
+    fn sleeps_on_close_itself(&mut self) -> bool {
+        true
+    }
+    /// Something about this machine's setup that stops lid-closed work, in words for the person.
+    fn lid_warning(&mut self) -> Option<String> {
+        None
+    }
+    /// Lid shut but an external display is in use (docked / clamshell desk use): treated like an open lid.
+    fn docked(&mut self) -> bool {
+        false
+    }
+    /// After a lid-closed session ends, put the machine to sleep? False when the person's own setting is to
+    /// keep running with the lid shut.
+    fn sleep_after_hold(&mut self) -> bool {
+        true
+    }
+    /// While holding: is what Ajar set still in place? (Err describes what changed.)
+    fn verify_hold(&mut self, _restore: &mut Restore) -> Result<(), String> {
+        Ok(())
+    }
+    /// Whether the watchdog is registered with the OS scheduler (None = can't tell).
+    fn watchdog_installed(&mut self) -> Option<bool> {
+        None
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub fn native() -> linux::Linux {
+    linux::Linux::new()
+}
+
+#[cfg(windows)]
+pub fn native() -> windows::Win {
+    windows::Win::new()
+}

@@ -1,0 +1,298 @@
+import AppKit
+import CoreImage.CIFilterBuiltins
+import CryptoKit
+import SwiftUI
+
+/// Phone control from anywhere, with ntfy.sh as a relay that can't read anything. Same protocol as the
+/// Windows/Linux app and the phone page:
+///  • a random 256-bit key, shown as a QR code (a link with the key after `#`, never sent to any server)
+///  • two unguessable topic names derived from the key: commands and replies
+///  • every message AES-256-GCM encrypted with the topic name as associated data (nonce ‖ ciphertext ‖ tag,
+///    base64url), carrying a timestamp and a random id: stale, future-dated and repeated commands are dropped
+/// Ajar only publishes when the phone asks, so normal use is a handful of messages a day. The phone can't
+/// loosen the battery limit or the heat guard (the same rules as agents and the settings file).
+struct RemoteSettings: Codable, Equatable {
+    var enabled = false
+    var key = ""
+    var server = "https://ntfy.sh"
+    var panelUrl = ""
+
+    /// Where the phone page lives once the Ajar site is online. Empty until then: pairing shows the code to
+    /// paste into the page instead.
+    static let defaultPanelURL = "https://12alexanderbell-graham.github.io/ajar/remote/"
+
+    static var url: URL { StateFiles.dir.appendingPathComponent("remote.json") }
+    static func load() -> RemoteSettings {
+        guard let d = try? Data(contentsOf: url), let s = try? JSONDecoder().decode(RemoteSettings.self, from: d) else { return RemoteSettings() }
+        return s
+    }
+    /// Owner-only: whoever has the key can control this Mac.
+    @discardableResult
+    func save() -> Bool {
+        guard let d = try? JSONEncoder().encode(self), StateFiles.writeDurably(d, to: Self.url) else { return false }
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: Self.url.path)
+        return true
+    }
+
+    var keyData: Data? { RemoteCrypto.b64decode(key).flatMap { $0.count == 32 ? $0 : nil } }
+
+    var pairingLink: String? {
+        let base = panelUrl.isEmpty ? Self.defaultPanelURL : panelUrl
+        guard !base.isEmpty, keyData != nil else { return nil }
+        let s = server == "https://ntfy.sh" ? "" : "&s=" + (server.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "")
+        return "\(base)#k=\(key)\(s)"
+    }
+}
+
+enum RemoteCrypto {
+    static let allowed: Set<String> = ["panel", "mode", "release", "preset", "watch", "track", "sleep_now", "set", "power", "power_test"]
+
+    static func newKey() -> String {
+        b64encode(SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) })
+    }
+
+    static func b64encode(_ d: Data) -> String {
+        d.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+    }
+
+    static func b64decode(_ s: String) -> Data? {
+        var t = s.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        while t.count % 4 != 0 { t += "=" }
+        return Data(base64Encoded: t)
+    }
+
+    /// (commands, replies)
+    static func topics(_ key: Data) -> (String, String) {
+        func t(_ label: String) -> String {
+            let h = SHA256.hash(data: Data(label.utf8) + key)
+            return "ajar-" + h.map { String(format: "%02x", $0) }.joined().prefix(24)
+        }
+        return (t("ajar/cmd/v1"), t("ajar/reply/v1"))
+    }
+
+    static func seal(_ key: Data, topic: String, _ text: String) -> String? {
+        guard let box = try? AES.GCM.seal(Data(text.utf8), using: SymmetricKey(data: key), authenticating: Data(topic.utf8)),
+              let combined = box.combined else { return nil }
+        return b64encode(combined)
+    }
+
+    static func open(_ key: Data, topic: String, _ message: String) -> String? {
+        guard let raw = b64decode(message), raw.count >= 28, raw.count <= 65536,
+              let box = try? AES.GCM.SealedBox(combined: raw),
+              let pt = try? AES.GCM.open(box, using: SymmetricKey(data: key), authenticating: Data(topic.utf8)) else { return nil }
+        return String(data: pt, encoding: .utf8)
+    }
+}
+
+/// Rejects stale, future-dated, repeated and too-frequent commands.
+struct RemoteGuard {
+    private var seen: [(String, Date)] = []
+    private var recent: [Date] = []
+
+    mutating func check(t: Double, id: String, now: Date = Date()) -> String? {
+        guard !id.isEmpty, id.count <= 64 else { return "bad id" }
+        let n = now.timeIntervalSince1970
+        guard t + 300 >= n, t <= n + 60 else { return "too old or from the future (check the phone's clock)" }
+        seen.removeAll { now.timeIntervalSince($0.1) > 360 }
+        guard !seen.contains(where: { $0.0 == id }) else { return "already handled" }
+        recent.removeAll { now.timeIntervalSince($0) > 60 }
+        guard recent.count < 30 else { return "too many commands, wait a minute" }
+        seen.append((id, now))
+        recent.append(now)
+        return nil
+    }
+}
+
+@MainActor
+@Observable
+final class RemoteControl {
+    private(set) var settings = RemoteSettings.load()
+    private(set) var status: String?
+    private var task: Task<Void, Never>?
+    private let engine: Engine
+    private let run: (String, [String: Any], @escaping ([String: Any]) -> Void) -> Void
+
+    init(engine: Engine, run: @escaping (String, [String: Any], @escaping ([String: Any]) -> Void) -> Void) {
+        self.engine = engine
+        self.run = run
+        if settings.enabled { start() }
+    }
+
+    var enabled: Bool { settings.enabled && settings.keyData != nil }
+
+    /// Turns phone control on (making a key the first time) and returns the settings to show for pairing.
+    func enable(newKey: Bool = false) {
+        var s = settings
+        if s.key.isEmpty || s.keyData == nil || newKey { s.key = RemoteCrypto.newKey() }
+        s.enabled = true
+        guard s.save() else { status = "Couldn't save the pairing key"; return }
+        settings = s
+        if newKey { StateFiles.remove(cursorURL) }
+        start()
+    }
+
+    func disable() {
+        settings.enabled = false
+        settings.save()
+        task?.cancel()
+        task = nil
+        status = nil
+        engine.remoteStatus = nil
+    }
+
+    private var cursorURL: URL { StateFiles.dir.appendingPathComponent("remote-cursor") }
+
+    private func setStatus(_ s: String?) {
+        status = s
+        engine.remoteStatus = s
+    }
+
+    private func start() {
+        task?.cancel()
+        guard let key = settings.keyData else { return }
+        let (cmdTopic, replyTopic) = RemoteCrypto.topics(key)
+        let server = settings.server.hasSuffix("/") ? String(settings.server.dropLast()) : settings.server
+        let cursorURL = self.cursorURL
+        task = Task { [weak self] in
+            var guardian = RemoteGuard()
+            var since = StateFiles.read(cursorURL)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            var backoff: UInt64 = 5
+            while !Task.isCancelled {
+                // With no cursor yet, only new messages are read; after that, exactly from the last one handled,
+                // so a restart never runs the same command twice.
+                let valid = since.map { !$0.isEmpty && $0.count <= 32 && $0.allSatisfy { $0.isLetter || $0.isNumber } } ?? false
+                guard let url = URL(string: "\(server)/\(cmdTopic)/json" + (valid ? "?since=\(since!)" : "")) else { return }
+                var req = URLRequest(url: url)
+                req.timeoutInterval = 120   // ntfy sends a keepalive every ~45 s; silence beyond this means a dead link
+                do {
+                    let (bytes, resp) = try await URLSession.shared.bytes(for: req)
+                    guard (resp as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
+                    await MainActor.run { self?.setStatus("Connected") }
+                    backoff = 5
+                    for try await line in bytes.lines {
+                        guard let ev = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any], ev["event"] as? String == "message" else { continue }
+                        if let id = ev["id"] as? String, id.count <= 32, id.allSatisfy({ $0.isLetter || $0.isNumber }) {
+                            since = id
+                            StateFiles.write(id, to: cursorURL)
+                        }
+                        guard let text = RemoteCrypto.open(key, topic: cmdTopic, ev["message"] as? String ?? ""),
+                              let msg = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] else { continue }   // not from the phone: no reply
+                        let n = msg["n"] as? String ?? ""
+                        let cmd = msg["cmd"] as? String ?? ""
+                        let args = msg["args"] as? [String: Any] ?? [:]
+                        let problem = guardian.check(t: (msg["t"] as? NSNumber)?.doubleValue ?? 0, id: n)
+                            ?? (RemoteCrypto.allowed.contains(cmd) ? nil : "\(cmd) isn't allowed from the phone")
+                        var reply: [String: Any] = problem.map { ["ok": false, "error": $0] } ?? [:]
+                        if problem == nil, let me = self {
+                            reply = await me.execute(cmd, args)
+                        }
+                        reply["re"] = n
+                        reply["t"] = Int(Date().timeIntervalSince1970)
+                        if let sealed = RemoteCrypto.seal(key, topic: replyTopic, Wire.json(reply)), let purl = URL(string: "\(server)/\(replyTopic)") {
+                            var p = URLRequest(url: purl)
+                            p.httpMethod = "POST"
+                            p.httpBody = Data(sealed.utf8)
+                            p.setValue("yes", forHTTPHeaderField: "Cache")
+                            p.timeoutInterval = 15
+                            _ = try? await URLSession.shared.data(for: p)
+                        }
+                    }
+                } catch {
+                    if Task.isCancelled { return }
+                    await MainActor.run { self?.setStatus("Can't reach \(server.replacingOccurrences(of: "https://", with: "")), retrying") }
+                    try? await Task.sleep(nanoseconds: backoff * 1_000_000_000)
+                    backoff = min(backoff * 2, 120)
+                }
+            }
+        }
+    }
+
+    private func execute(_ cmd: String, _ args: [String: Any]) async -> [String: Any] {
+        await withCheckedContinuation { cont in
+            var done = false
+            run(cmd, args) { [weak self] result in
+                guard !done else { return }
+                done = true
+                var r = result
+                if let self { r["panel"] = self.engine.panelJSON() }
+                cont.resume(returning: r)
+            }
+        }
+    }
+}
+
+// MARK: - UI
+
+/// Settings › Phone Control.
+struct PhoneControlSection: View {
+    @Bindable var engine: Engine
+    @State private var showPairing = false
+
+    var body: some View {
+        if let remote = AjarShared.remote {
+            Section {
+                Toggle("Control Ajar from your phone", isOn: Binding(get: { remote.enabled }, set: { on in
+                    if on { remote.enable(); showPairing = true } else { remote.disable() }
+                }))
+                if remote.enabled {
+                    LabeledContent("Status") { Text(remote.status ?? "Starting…").foregroundStyle(.secondary) }
+                    HStack {
+                        Button("Show QR Code…") { showPairing = true }
+                        Spacer()
+                        Button("Unpair All Phones") { remote.enable(newKey: true) }
+                            .help("Makes a new key; phones paired before stop working")
+                    }
+                }
+            } header: {
+                Text("Phone Control")
+            } footer: {
+                Text("A small page on your phone with the same controls, from anywhere. Messages go through ntfy.sh end to end encrypted; the key is only in the QR code. The phone can't loosen the battery limit or the heat guard.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .sheet(isPresented: $showPairing) { PairingView(settings: remote.settings) { showPairing = false } }
+        }
+    }
+}
+
+struct PairingView: View {
+    let settings: RemoteSettings
+    var done: () -> Void
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Text("Pair Your Phone").font(.title2.weight(.semibold))
+            if let link = settings.pairingLink, let qr = Self.qr(link) {
+                Image(nsImage: qr).interpolation(.none).resizable().frame(width: 220, height: 220)
+                    .padding(10).background(.white, in: RoundedRectangle(cornerRadius: 12))
+                Text("Scan with your phone's camera, then add the page to your Home Screen (Share › Add to Home Screen on iPhone, ⋮ › Add to Home screen on Android). It opens like an app.")
+                    .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            } else {
+                Text("The phone page isn't online yet. When it is, paste this pairing code into it:")
+                    .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            }
+            HStack {
+                Text(settings.key).font(.system(.caption, design: .monospaced)).textSelection(.enabled).lineLimit(1).truncationMode(.middle)
+                Button("Copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(settings.pairingLink ?? settings.key, forType: .string)
+                }
+            }
+            Text("Anyone with this code can control this Mac. Unpair in Settings to cancel it.")
+                .font(.caption).foregroundStyle(.secondary)
+            Button("Done", action: done).keyboardShortcut(.defaultAction)
+        }
+        .padding(24)
+        .frame(width: 380)
+    }
+
+    static func qr(_ s: String) -> NSImage? {
+        let f = CIFilter.qrCodeGenerator()
+        f.message = Data(s.utf8)
+        f.correctionLevel = "M"
+        guard let img = f.outputImage?.transformed(by: CGAffineTransform(scaleX: 10, y: 10)) else { return nil }
+        let rep = NSCIImageRep(ciImage: img)
+        let ns = NSImage(size: rep.size)
+        ns.addRepresentation(rep)
+        return ns
+    }
+}

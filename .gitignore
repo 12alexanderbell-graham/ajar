@@ -1,0 +1,6 @@
+.DS_Store
+xcuserdata/
+DerivedData/
+windows-linux/target/
+windows-linux/dist/
+*.ajar-backup

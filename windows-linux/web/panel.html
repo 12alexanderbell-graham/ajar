@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Ajar">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<title>Ajar Remote</title>
+<style>
+:root{--bg:#f5f5f7;--card:#fff;--text:#1d1d1f;--sub:#6e6e73;--line:#e5e5ea;--amber:#e8781d;--seg:#e3e3e8;--segsel:#fff;--on:#34c759;--warn:#b25000;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#000;--card:#1c1c1e;--text:#f5f5f7;--sub:#98989d;--line:#2c2c2e;--amber:#f08a2c;--seg:#2c2c2e;--segsel:#636366;--warn:#ff9f0a;color-scheme:dark}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+main{max-width:460px;margin:0 auto;padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(40px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+a{color:var(--amber)}
+.host{color:var(--sub);font-size:13px;margin:8px 4px 4px;display:flex;justify-content:space-between;gap:12px}
+.card{background:var(--card);border-radius:14px;padding:16px;margin:12px 0}
+h1{font-size:22px;line-height:1.25;margin:0 0 4px;font-weight:650}
+h2{font-size:17px;margin:0 0 8px;font-weight:600}
+.detail{color:var(--sub);margin:0}
+.battery{margin:10px 0 0;font-variant-numeric:tabular-nums}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--sub);margin-right:8px;vertical-align:2px}
+.dot.on{background:var(--amber)}
+.warn{color:var(--warn);font-size:14px;margin:8px 0 0}
+.label{font-size:13px;color:var(--sub);margin:18px 4px 6px}
+.seg{display:flex;background:var(--seg);border-radius:9px;padding:2px}
+.seg button{flex:1;border:0;background:transparent;color:var(--text);font:inherit;font-size:15px;padding:8px 4px;border-radius:7px}
+.seg button.sel{background:var(--segsel);box-shadow:0 1px 3px rgba(0,0,0,.12);font-weight:600}
+.row{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-top:1px solid var(--line);gap:12px}
+.row:first-child{border-top:0;padding-top:0}
+.row:last-child{padding-bottom:0}
+.row .sub{color:var(--sub);font-size:13px}
+.btn{display:block;width:100%;border:0;background:var(--card);color:var(--text);font:inherit;padding:12px;border-radius:10px;margin-top:8px}
+.btn.primary{background:var(--amber);color:#fff;font-weight:600}
+.btn.confirm{background:#d70015;color:#fff;font-weight:600}
+.btns{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.btns .btn{margin:0}
+.switch{position:relative;width:51px;height:31px;flex:none}
+.switch input{position:absolute;opacity:0;inset:0;margin:0;width:100%;height:100%;cursor:pointer}
+.switch span{position:absolute;inset:0;background:var(--seg);border-radius:31px;transition:.2s;pointer-events:none}
+.switch span:before{content:"";position:absolute;width:27px;height:27px;left:2px;top:2px;background:#fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:.2s}
+.switch input:checked+span{background:var(--on)}
+.switch input:checked+span:before{transform:translateX(20px)}
+.switch input:focus-visible+span{outline:2px solid var(--amber);outline-offset:2px}
+.foot{color:var(--sub);font-size:12px;text-align:center;margin-top:24px;line-height:1.7}
+.foot button{background:none;border:0;padding:0;font:inherit;color:inherit;text-decoration:underline}
+.empty{color:var(--sub);font-size:14px}
+button:disabled{opacity:.5}
+input[type=text]{width:100%;font:15px ui-monospace,SFMono-Regular,Menlo,monospace;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--text)}
+ol{margin:8px 0 0;padding-left:22px}
+ol li{margin:4px 0}
+.tip{border:1px solid var(--line)}
+.tip .close{float:right;background:none;border:0;color:var(--sub);font-size:22px;line-height:1;padding:0 0 0 12px}
+.share{display:inline-block;width:15px;height:18px;vertical-align:-3px;margin:0 2px}
+.err{color:#d70015;font-size:14px;margin:8px 0 0;min-height:1em}
+@media (prefers-color-scheme:dark){.err{color:#ff6961}}
+[hidden]{display:none!important}
+@media (prefers-reduced-motion:reduce){.switch span,.switch span:before{transition:none}}
+</style>
+</head>
+<body>
+<main>
+  <!-- Shown until this phone has a pairing key. -->
+  <section id="pair" class="card" hidden>
+    <h1>Pair with your laptop</h1>
+    <ol class="detail">
+      <li>On the laptop, open Ajar's menu › Settings › Phone Control and turn it on.</li>
+      <li>Scan the QR code with your phone's camera. Or copy the pairing code there and paste it here:</li>
+    </ol>
+    <form id="pairform" style="margin-top:12px" autocomplete="off">
+      <input type="text" id="code" placeholder="Pairing code or link" aria-label="Pairing code or link" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <p class="err" id="pairerr" role="alert"></p>
+      <button class="btn primary" type="submit">Pair</button>
+    </form>
+  </section>
+
+  <div id="app" hidden>
+    <!-- Add to Home Screen tip: only in a browser tab, never inside the home-screen app. -->
+    <section id="tip" class="card tip" hidden>
+      <button class="close" id="tipclose" aria-label="Hide">×</button>
+      <h2>Keep this as an app</h2>
+      <p class="detail" id="tiptext"></p>
+    </section>
+
+    <div class="host"><span id="host">Laptop</span><span id="conn">Connecting…</span></div>
+    <section class="card" aria-live="polite">
+      <h1 id="headline">…</h1>
+      <p class="detail" id="detail"></p>
+      <p class="battery" id="battery"></p>
+      <div id="warnings"></div>
+    </section>
+
+    <div class="label">Keep awake</div>
+    <div class="seg" role="radiogroup" aria-label="Keep awake">
+      <button data-mode="auto" role="radio">When Busy</button>
+      <button data-mode="on" role="radio">Always</button>
+      <button data-mode="off" role="radio">Off</button>
+    </div>
+    <div class="btns">
+      <button class="btn" data-for="60">Always for 1 h</button>
+      <button class="btn" data-until="7">Until 07:00</button>
+    </div>
+    <button class="btn primary" id="sleepnow">Let it sleep now</button>
+
+    <div class="label">Agents that keep it awake</div>
+    <section class="card" id="agents"></section>
+
+    <div class="label">Also while these run</div>
+    <section class="card" id="watch"></section>
+
+    <div class="label">While the lid is closed</div>
+    <div class="seg" role="radiogroup" aria-label="While the lid is closed">
+      <button data-preset="max_battery" role="radio">Max Battery</button>
+      <button data-preset="balanced" role="radio">Balanced</button>
+      <button data-preset="full_speed" role="radio">Full Speed</button>
+    </div>
+
+    <div class="foot">
+      <span id="updated"></span> · <button id="refresh">Refresh</button><br>
+      End-to-end encrypted. The relay only sees scrambled messages.<br>
+      <button id="copycode">Copy pairing code</button> · <button id="unpair">Unpair this phone</button>
+    </div>
+  </div>
+</main>
+<script>
+"use strict";
+// Same protocol as Ajar on the laptop (Remote.swift / remote.rs): AES-256-GCM with the topic name as associated
+// data; both topic names are derived from the key, so the key is the only secret and it never leaves this phone.
+const enc = new TextEncoder(), dec = new TextDecoder();
+const b64u = {
+  enc: b => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""),
+  dec: s => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), c => c.charCodeAt(0)),
+};
+const hex = b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join("");
+const $ = id => document.getElementById(id);
+const store = {
+  get: k => { try { return localStorage.getItem(k); } catch (_) { return null; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} },
+  del: k => { try { localStorage.removeItem(k); } catch (_) {} },
+};
+const DEFAULT_SERVER = "https://ntfy.sh";
+const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const ios = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
+let key, cmdTopic, replyTopic, server = DEFAULT_SERVER, lastId = null, state = null, busy = false, keyText = "";
+
+/** Accepts a full pairing link ("…#k=KEY&s=SERVER"), just the "k=…" part, or the bare key. */
+function parsePairing(text) {
+  text = (text || "").trim();
+  const hash = text.includes("#") ? text.slice(text.indexOf("#") + 1) : text;
+  const p = new URLSearchParams(hash);
+  const k = p.get("k") || (/^[A-Za-z0-9_-]{43}$/.test(text) ? text : null);
+  const s = p.get("s");
+  return { k, s: s && /^https:\/\/[^\s]+$/.test(s) ? s.replace(/\/+$/, "") : null };
+}
+
+function keyBytes(k) {
+  try { const raw = b64u.dec(k); return raw.length === 32 ? raw : null; } catch (_) { return null; }
+}
+
+function setConn(t) { $("conn").textContent = t; }
+
+async function topic(label, raw) {
+  const d = await crypto.subtle.digest("SHA-256", new Uint8Array([...enc.encode(label), ...raw]));
+  return "ajar-" + hex(d).slice(0, 24);
+}
+
+async function seal(topicName, obj) {
+  const nonce = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce, additionalData: enc.encode(topicName) }, key, enc.encode(JSON.stringify(obj)));
+  return b64u.enc(new Uint8Array([...nonce, ...new Uint8Array(ct)]));
+}
+
+async function unseal(topicName, msg) {
+  try {
+    const raw = b64u.dec(msg);
+    const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: raw.slice(0, 12), additionalData: enc.encode(topicName) }, key, raw.slice(12));
+    return JSON.parse(dec.decode(pt));
+  } catch (_) { return null; }
+}
+
+// Replies come in on one open connection (server-sent events) instead of polling. ntfy.sh allows a burst of about
+// 60 requests per address, refilled one every 5 s, so asking every second would soon get a busy phone blocked.
+const waiters = new Map();   // nonce -> resolve
+let stream = null, streamReady = null;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function openStream() {
+  if (stream) return streamReady;
+  stream = new EventSource(`${server}/${replyTopic}/sse?since=${encodeURIComponent(lastId || "1m")}`);
+  streamReady = new Promise(res => { stream.addEventListener("open", res, { once: true }); setTimeout(res, 4000); });
+  stream.onmessage = async e => {
+    let ev; try { ev = JSON.parse(e.data); } catch (_) { return; }
+    if (ev.event !== "message") return;
+    lastId = ev.id;
+    const m = await unseal(replyTopic, ev.message || "");
+    if (m && waiters.has(m.re)) { waiters.get(m.re)(m); waiters.delete(m.re); }
+  };
+  return streamReady;
+}
+
+function closeStream() { if (stream) { stream.close(); stream = null; streamReady = null; } }
+
+async function send(cmd, args = {}) {
+  if (busy) return;
+  busy = true;
+  document.querySelectorAll("#app button").forEach(b => b.disabled = true);
+  const n = hex(crypto.getRandomValues(new Uint8Array(8)));
+  const since = lastId || "30s";
+  const replied = new Promise(res => waiters.set(n, res));
+  try {
+    setConn("Sending…");
+    if (window.EventSource) await openStream();
+    const live = stream && stream.readyState !== EventSource.CLOSED;   // CONNECTING reconnects by itself
+    const body = await seal(cmdTopic, { t: Math.floor(Date.now() / 1000), n, cmd, args });
+    const r = await fetch(`${server}/${cmdTopic}`, { method: "POST", body, headers: { Cache: "yes" } });
+    if (!r.ok) throw new Error(r.status === 429 ? "too many requests, try again in a minute" : "relay said " + r.status);
+    setConn("Waiting for laptop…");
+    const reply = live ? await Promise.race([replied, sleep(20000).then(() => null)]) : await waitFor(n, since);
+    if (!reply) { setConn("No answer. Asleep or offline?"); return; }
+    if (reply.ok === false && reply.error) note(reply.error);
+    if (reply.panel) render(reply.panel);
+    setConn("Connected");
+  } catch (e) {
+    setConn("Can't reach the relay (" + e.message + ")");
+  } finally {
+    waiters.delete(n);
+    busy = false;
+    document.querySelectorAll("#app button").forEach(b => b.disabled = false);
+  }
+}
+
+/** Fallback when the open connection isn't available: ask every 2.5 s for up to 20 s. */
+async function waitFor(n, since) {
+  const deadline = Date.now() + 20000;
+  while (Date.now() < deadline) {
+    await sleep(2500);
+    let text;
+    try {
+      const r = await fetch(`${server}/${replyTopic}/json?poll=1&since=${encodeURIComponent(since)}`);
+      text = await r.text();
+    } catch (_) { continue; }
+    for (const line of text.split("\n")) {
+      if (!line.trim()) continue;
+      let ev; try { ev = JSON.parse(line); } catch (_) { continue; }
+      if (ev.event !== "message") continue;
+      lastId = ev.id; since = ev.id;
+      const m = await unseal(replyTopic, ev.message || "");
+      if (m && m.re === n) return m;
+    }
+  }
+  return null;
+}
+
+function note(msg) {
+  const p = document.createElement("p");
+  p.className = "warn";
+  p.textContent = msg;
+  $("warnings").prepend(p);
+}
+
+function toggleRow(label, sub, checked, onChange) {
+  const row = document.createElement("div");
+  row.className = "row";
+  const left = document.createElement("div");
+  left.textContent = label;
+  if (sub) { const s = document.createElement("div"); s.className = "sub"; s.textContent = sub; left.appendChild(s); }
+  const sw = document.createElement("label");
+  sw.className = "switch";
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.checked = checked;
+  input.setAttribute("aria-label", label);
+  input.addEventListener("change", onChange);
+  sw.append(input, document.createElement("span"));
+  row.append(left, sw);
+  return row;
+}
+
+function empty(el, text) { const e = document.createElement("div"); e.className = "empty"; e.textContent = text; el.appendChild(e); }
+
+function render(p) {
+  state = p;
+  store.set("ajar.last", JSON.stringify(p));
+  $("host").textContent = p.host || "Laptop";
+  $("headline").textContent = "";
+  const dot = document.createElement("span");
+  dot.className = "dot" + (p.holding ? " on" : "");
+  $("headline").append(dot, document.createTextNode(p.headline || ""));
+  $("detail").textContent = p.detail || "";
+  const line = [];
+  if (p.battery) line.push("Battery " + p.battery);
+  if (typeof p.watts === "number") line.push(p.watts.toFixed(1) + " W now");
+  $("battery").textContent = line.join(" · ");
+  const w = $("warnings"); w.textContent = "";
+  (p.warnings || []).forEach(t => { const e = document.createElement("p"); e.className = "warn"; e.textContent = t; w.appendChild(e); });
+  document.querySelectorAll("[data-mode]").forEach(b => { const sel = b.dataset.mode === p.mode; b.classList.toggle("sel", sel); b.setAttribute("aria-checked", sel); });
+  document.querySelectorAll("[data-preset]").forEach(b => {
+    const m = { max_battery: "longest", balanced: "balanced", full_speed: "speed" }[b.dataset.preset];
+    const sel = m === p.preset; b.classList.toggle("sel", sel); b.setAttribute("aria-checked", sel);
+  });
+  const ag = $("agents"); ag.textContent = "";
+  const agents = p.agents || [];
+  if (!agents.length) empty(ag, "No agents running");
+  agents.forEach(a => ag.appendChild(toggleRow(a.name + (a.instances > 1 ? " ×" + a.instances : ""), a.working ? "Working" : "Idle", a.keeps, () => send("track", { agent: a.id }))));
+  const wl = $("watch"); wl.textContent = "";
+  const watch = p.watch || [];
+  if (!watch.length) empty(wl, "Busy apps on the laptop show up here");
+  watch.forEach(a => wl.appendChild(toggleRow(a.name, null, a.on, ev => send("watch", { app: a.id, remove: !ev.target.checked }))));
+  $("updated").textContent = "Updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+/** Actions that let a closed laptop sleep can't be undone from the phone (a sleeping laptop can't hear it). Two taps. */
+function confirmTap(btn, warning, action) {
+  let armed = null;
+  const label = btn.textContent;
+  btn.addEventListener("click", () => {
+    if (!state || !state.lidClosed) return action();
+    if (armed) { clearTimeout(armed); armed = null; btn.textContent = label; btn.classList.remove("confirm"); return action(); }
+    btn.textContent = warning;
+    btn.classList.add("confirm");
+    armed = setTimeout(() => { armed = null; btn.textContent = label; btn.classList.remove("confirm"); }, 4000);
+  });
+}
+
+function showTip() {
+  if (standalone || store.get("ajar.tipHidden")) return;
+  const share = '<svg class="share" viewBox="0 0 15 18" aria-label="Share"><path d="M7.5 1v10M4 4.5 7.5 1 11 4.5M3 7.5H1.5v9h12v-9H12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  $("tiptext").innerHTML = ios
+    ? `Tap ${share} Share at the bottom of Safari, then <b>Add to Home Screen</b>. Ajar then opens full screen like an app.`
+    : `Open the browser menu <b>⋮</b>, then <b>Add to Home screen</b> (or <b>Install app</b>). Ajar then opens full screen like an app.`;
+  $("tip").hidden = false;
+}
+
+async function begin(k, s) {
+  const raw = keyBytes(k);
+  if (!raw) return false;
+  keyText = k;
+  server = s || DEFAULT_SERVER;
+  key = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
+  cmdTopic = await topic("ajar/cmd/v1", raw);
+  replyTopic = await topic("ajar/reply/v1", raw);
+  $("pair").hidden = true;
+  $("app").hidden = false;
+  try { const last = JSON.parse(store.get("ajar.last") || "null"); if (last) render(last); } catch (_) {}
+  showTip();
+  send("panel");
+  return true;
+}
+
+function save(k, s) {
+  store.set("ajar.k", k);
+  if (s) store.set("ajar.s", s); else store.del("ajar.s");
+}
+
+async function start() {
+  if (!window.crypto || !crypto.subtle) { $("pair").hidden = false; $("pairerr").textContent = "This browser can't do the encryption Ajar needs. Open the page in Safari or Chrome."; return; }
+
+  document.querySelectorAll("[data-mode]").forEach(b => {
+    if (b.dataset.mode === "off") confirmTap(b, "Lid is shut: tap again to let it sleep", () => send("mode", { mode: "off" }));
+    else b.addEventListener("click", () => send("mode", { mode: b.dataset.mode }));
+  });
+  document.querySelectorAll("[data-preset]").forEach(b => b.addEventListener("click", () => send("preset", { preset: b.dataset.preset })));
+  document.querySelectorAll("[data-for]").forEach(b => b.addEventListener("click", () => send("mode", { mode: "always", minutes: +b.dataset.for })));
+  document.querySelectorAll("[data-until]").forEach(b => b.addEventListener("click", () => send("mode", { mode: "always", until_hour: +b.dataset.until })));
+  confirmTap($("sleepnow"), "Tap again. You can't wake it from here", () => send("sleep_now"));
+  $("refresh").addEventListener("click", () => send("panel"));
+  $("tipclose").addEventListener("click", () => { store.set("ajar.tipHidden", "1"); $("tip").hidden = true; });
+  $("copycode").addEventListener("click", async () => {
+    const text = keyText + (server !== DEFAULT_SERVER ? "&s=" + encodeURIComponent(server) : "");
+    try { await navigator.clipboard.writeText(text); $("copycode").textContent = "Copied"; }
+    catch (_) { prompt("Pairing code", text); }
+  });
+  $("unpair").addEventListener("click", () => {
+    closeStream();
+    ["ajar.k", "ajar.s", "ajar.last"].forEach(store.del);
+    location.replace(location.pathname);
+  });
+  document.addEventListener("visibilitychange", () => { if (document.hidden) closeStream(); else if (key) send("panel"); });
+  $("pairform").addEventListener("submit", async e => {
+    e.preventDefault();
+    const { k, s } = parsePairing($("code").value);
+    if (!k || !keyBytes(k)) { $("pairerr").textContent = "That doesn't look like an Ajar pairing code."; return; }
+    save(k, s);
+    $("pairerr").textContent = "";
+    await begin(k, s);
+  });
+
+  // 1. A link with the key in it (the QR code). Save it. In a browser tab the key stays in the address so
+  //    "Add to Home Screen" carries it into the app (on iPhone, home-screen apps don't share Safari's storage).
+  //    Inside the home-screen app it's removed from the address once saved.
+  const fromLink = parsePairing(location.hash.slice(1));
+  if (fromLink.k && keyBytes(fromLink.k)) {
+    save(fromLink.k, fromLink.s);
+    if (standalone) { try { history.replaceState(null, "", location.pathname); } catch (_) {} }
+    return begin(fromLink.k, fromLink.s);
+  }
+  // 2. Paired before on this phone.
+  const k = store.get("ajar.k");
+  if (k && await begin(k, parsePairing("s=" + (store.get("ajar.s") || "")).s)) return;
+  // 3. Not paired yet.
+  $("pair").hidden = false;
+}
+start();
+</script>
+</body>
+</html>
