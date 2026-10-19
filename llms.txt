@@ -43,6 +43,8 @@ ajar prompt                   ajar doctor                   ajar rescue
 - `mode`: auto | on/always | off.
 - `preset`: max_battery (pause other apps; music, calls and services agents use keep going) | balanced (slow them) | full_speed.
 - `pause_simulators` (macOS): freeze booted iOS simulators and Xcode previews while closed; skipped during tests.
+- `screen_off` (macOS, experimental, off by default): switch the built-in screen fully off while closed instead of keeping it dark. Falls back to the dark screen if macOS refuses. Ask the person first.
+- `shut_down_simulators` (macOS): shut simulators down on close instead of pausing them (frees everything; they don't reopen).
 - `pause_background_audio` (macOS): freeze background processes holding the speakers open (keeps audio hardware powered).
 - `low_power`: Low Power Mode / power saver while closed.
 - `lock_on_close` (macOS): screen fully off while closed. Biggest single saving, but macOS asks for the password on reopen. Ask the person first.
