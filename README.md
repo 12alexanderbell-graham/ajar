@@ -1,10 +1,20 @@
+<p align="center"><img src="docs/icon.png" width="96" alt="Ajar icon"></p>
+
 # Ajar
+
+[![CI](https://github.com/12alexanderbell-graham/ajar/actions/workflows/ci.yml/badge.svg)](https://github.com/12alexanderbell-graham/ajar/actions/workflows/ci.yml)
 
 Close the lid. Your agents keep working.
 
 Ajar keeps a laptop awake with the lid closed while Claude Code, Codex and other agents work, cuts the power that's wasted while it's shut, and lets it sleep when the work stops. macOS 14+, Windows 10/11, Linux (systemd).
 
-**Download:** https://12alexanderbell-graham.github.io/ajar/
+## Install
+
+- **Mac:** `brew install --cask 12alexanderbell-graham/ajar/ajar`, or download from https://12alexanderbell-graham.github.io/ajar/
+- **Windows / Linux:** download from the same page (Linux: unpack, run `./install.sh`).
+- **Hook up your agent:** `ajar connect`, then paste the output of `ajar prompt` into Claude Code or Codex.
+
+<p align="center"><img src="docs/menu.png" width="320" alt="Ajar's menu bar panel"> &nbsp; <img src="docs/phone.png" width="220" alt="Ajar's phone remote"></p>
 
 ## What it does
 
