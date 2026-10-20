@@ -40,7 +40,7 @@ struct EqualSegments<T: Hashable>: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSSegmentedControl {
         let c = NSSegmentedControl(labels: items.map(\.1), trackingMode: .selectOne,
-                                   target: context.coordinator, action: #selector(Coordinator.changed(_:)))
+                                   target: context.coordinator, action: #selector(SegmentTarget.changed(_:)))
         c.segmentDistribution = .fillEqually
         c.setContentHuggingPriority(.defaultLow, for: .horizontal)
         // Never wider than the panel's margins, even when the labels' natural width is a few points more.
@@ -49,20 +49,23 @@ struct EqualSegments<T: Hashable>: NSViewRepresentable {
     }
 
     func updateNSView(_ c: NSSegmentedControl, context: Context) {
-        context.coordinator.parent = self
+        context.coordinator.onChange = pick
         if let i = items.firstIndex(where: { $0.0 == selection }), c.selectedSegment != i { c.selectedSegment = i }
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+    func makeCoordinator() -> SegmentTarget { SegmentTarget(onChange: pick) }
 
-    final class Coordinator: NSObject {
-        var parent: EqualSegments
-        init(parent: EqualSegments) { self.parent = parent }
-        @objc func changed(_ sender: NSSegmentedControl) {
-            guard parent.items.indices.contains(sender.selectedSegment) else { return }
-            parent.selection = parent.items[sender.selectedSegment].0
-        }
+    private func pick(_ index: Int) {
+        guard items.indices.contains(index) else { return }
+        selection = items[index].0
     }
+}
+
+/// The segmented control's action target. Not generic (a generic nested coordinator crashed Xcode 26's compiler).
+final class SegmentTarget: NSObject {
+    var onChange: (Int) -> Void
+    init(onChange: @escaping (Int) -> Void) { self.onChange = onChange }
+    @objc func changed(_ sender: NSSegmentedControl) { onChange(sender.selectedSegment) }
 }
 
 /// iOS Settings–style coloured rounded-square icon.
