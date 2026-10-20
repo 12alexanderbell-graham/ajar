@@ -134,6 +134,47 @@ const OVERLAY_EFFICIENCY: GUID = GUID::from_u128(0x961cc777_2547_4f9d_8174_7d861
 
 /// Puts the lid setting back straight from the journal. Used when Windows is logging off or shutting down,
 /// which can end Ajar without its normal shutdown; the watchdog doesn't run while nobody is logged in.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+struct ProcessorPowerInformation {
+    number: u32,
+    max_mhz: u32,
+    current_mhz: u32,
+    mhz_limit: u32,
+    max_idle_state: u32,
+    current_idle_state: u32,
+}
+
+/// (max MHz, limit MHz) for every logical processor, or empty if Windows won't say.
+fn processor_limits() -> Vec<(u32, u32)> {
+    let n = unsafe { GetActiveProcessorCount(0xffff) } as usize;
+    if n == 0 || n > 2048 {
+        return vec![];
+    }
+    let mut buf = vec![ProcessorPowerInformation::default(); n];
+    let status = unsafe {
+        CallNtPowerInformation(ProcessorInformation, std::ptr::null(), 0, buf.as_mut_ptr().cast(), (n * std::mem::size_of::<ProcessorPowerInformation>()) as u32)
+    };
+    if status != 0 {
+        return vec![];
+    }
+    buf.iter().map(|p| (p.max_mhz, p.mhz_limit)).collect()
+}
+
+/// The most throttled processor decides: under 70% of its maximum is serious, under 40% critical.
+pub fn thermal_from_limits(limits: &[(u32, u32)]) -> Thermal {
+    let worst = limits.iter().filter(|(max, lim)| *max > 0 && *lim > 0).map(|(max, lim)| *lim as f64 / *max as f64).fold(f64::INFINITY, f64::min);
+    if !worst.is_finite() {
+        Thermal::Unknown
+    } else if worst < 0.4 {
+        Thermal::Critical
+    } else if worst < 0.7 {
+        Thermal::Serious
+    } else {
+        Thermal::Normal
+    }
+}
+
 pub fn restore_lid_from_journal() {
     let path = crate::state::file("restore.json");
     let Some(mut r) = crate::state::load_json::<Restore>(&path) else { return };
@@ -442,8 +483,11 @@ impl Platform for Win {
         }
     }
 
+    /// Windows doesn't expose temperatures to normal apps. It does report each processor's thermal throttle limit
+    /// (PROCESSOR_POWER_INFORMATION.MhzLimit = max clock × current thermal limit): a limit well below the maximum
+    /// means the firmware is cooling the machine down.
     fn thermal(&mut self) -> Thermal {
-        Thermal::Unknown
+        thermal_from_limits(&processor_limits())
     }
 
     fn begin_hold(&mut self, reason: &str, restore: &mut Restore) -> Result<(), String> {
@@ -714,6 +758,16 @@ impl Platform for Win {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn throttle_limit_maps_to_heat() {
+        use super::{thermal_from_limits, Thermal};
+        assert_eq!(thermal_from_limits(&[]), Thermal::Unknown);
+        assert_eq!(thermal_from_limits(&[(3000, 3000), (3000, 3000)]), Thermal::Normal);
+        assert_eq!(thermal_from_limits(&[(3000, 3000), (3000, 1800)]), Thermal::Serious, "the most throttled core decides");
+        assert_eq!(thermal_from_limits(&[(3000, 900)]), Thermal::Critical);
+        assert_eq!(thermal_from_limits(&[(0, 0)]), Thermal::Unknown, "no data is not normal");
+    }
+
     use super::*;
 
     #[test]

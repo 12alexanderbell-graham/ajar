@@ -55,7 +55,7 @@ enum SettingsSchema {
                         guard x >= c.batteryFloor else { return "to be lowered in Ajar itself (it can only be raised from here)" }
                         c.batteryFloor = x; return nil }),
         SettingSpec(key: "heat_guard", type: "bool", allowed: ["on", "off"], category: "Safety",
-                    description: "Switch to the strictest rules when the Mac gets hot and sleep if it gets critical.",
+                    description: "With the lid shut: strictest rules when the Mac gets hot, sleep if it stays hot for 5 minutes or gets critical.",
                     note: "Can only be turned on from commands.",
                     get: { $0.heatGuard }, set: { c, v in
                         guard let b = bool(v) else { return "on or off" }

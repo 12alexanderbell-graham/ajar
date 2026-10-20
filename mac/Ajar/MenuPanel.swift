@@ -223,7 +223,7 @@ private struct NowTab: View {
                 Text("≈\(String(format: "%.1f", w.whSaved)) Wh saved")
                     .font(.subheadline.weight(.semibold)).monospacedDigit()
             }
-            Text("\(w.sessions) session\(w.sessions == 1 ? "" : "s") · \(PanelFormat.hm(w.closedHours)) with lid closed · ≈\(String(format: "%.2f", w.percentSaved / 100)) full charges")
+            Text("\(w.sessions) session\(w.sessions == 1 ? "" : "s") · \(PanelFormat.hm(w.closedHours)) with lid closed" + (w.percentSaved >= 5 ? " · ≈\(String(format: "%.1f", w.percentSaved / 100)) full charges" : ""))
                 .font(.caption).foregroundStyle(.secondary).monospacedDigit()
         }
         .help("Estimated, not metered: power macOS attributes to apps before and while Ajar slowed them (net, including any that used more), plus confirmed sleeps after the work stopped, valued at the power drawn just before.")

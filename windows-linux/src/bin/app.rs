@@ -446,7 +446,7 @@ fn show_pairing(root: &Path, s: &remote::Settings) {
 
 /// Shows notifications and pushes them to the phone (ntfy) off the engine thread.
 fn deliver<P: Platform>(e: &mut Engine<P>) {
-    let items: Vec<_> = e.outbox.drain(..).collect();
+    let items = std::mem::take(&mut e.outbox);
     if items.is_empty() {
         return;
     }

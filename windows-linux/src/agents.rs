@@ -422,6 +422,18 @@ mod tests {
         assert!(!w2.sessions[0].tool_running);
     }
 
+    /// Windows can only open a folder (to set its time) with backup semantics and write access.
+    fn set_dir_mtime(dir: &std::path::Path, t: SystemTime) {
+        #[cfg(windows)]
+        let f = {
+            use std::os::windows::fs::OpenOptionsExt;
+            std::fs::File::options().write(true).custom_flags(0x0200_0000).open(dir).unwrap()
+        };
+        #[cfg(not(windows))]
+        let f = std::fs::File::open(dir).unwrap();
+        f.set_modified(t).unwrap();
+    }
+
     #[test]
     fn appends_inside_old_folders_are_seen() {
         let root = std::env::temp_dir().join(format!("ajar-transcripts-{}", std::process::id()));
@@ -432,12 +444,12 @@ mod tests {
         std::fs::write(&f, "{}\n").unwrap();
         let old = SystemTime::now() - std::time::Duration::from_secs(48 * 3600);
         std::fs::File::options().write(true).open(&f).unwrap().set_modified(old).unwrap();
-        std::fs::File::open(&proj).unwrap().set_modified(old).unwrap();
+        set_dir_mtime(&proj, old);
         let before = newest_mtime(&root, 3).unwrap();
         // Append to the file: the folder's own time doesn't change.
         use std::io::Write;
         std::fs::File::options().append(true).open(&f).unwrap().write_all(b"{}\n").unwrap();
-        std::fs::File::open(&proj).unwrap().set_modified(old).unwrap();
+        set_dir_mtime(&proj, old);
         let after = newest_mtime(&root, 3).unwrap();
         assert!(after > before, "append in a 2-day-old folder must be noticed");
         let _ = std::fs::remove_dir_all(&root);

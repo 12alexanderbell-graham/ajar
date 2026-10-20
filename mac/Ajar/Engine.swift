@@ -486,7 +486,11 @@ final class Engine {
                 want = false; blockedReason = "Battery at \(b.percent)%"
             } else if b.percent > config.batteryFloor + 3 { floorLatched = false }
         } else if battery?.charging == true { floorLatched = false }
-        if want && config.heatGuard && thermal == .critical { want = false; blockedReason = "Too hot" }
+        // Hot with the lid shut (a bag, a sofa): sleep at critical at once, and after 5 minutes of "serious" even with
+        // the strictest rules applied, because a closed laptop can barely cool itself.
+        if lidClosed && thermal.rawValue >= ProcessInfo.ThermalState.serious.rawValue { if hotSince == nil { hotSince = Date() } } else { hotSince = nil }
+        let hotTooLong = hotSince.map { Date().timeIntervalSince($0) >= Self.hotGrace } ?? false
+        if want && config.heatGuard && (thermal == .critical || hotTooLong) { want = false; blockedReason = "Too hot" }
 
         holdReason = reason
         if want && !holding { startHold(reason: reason) }
@@ -499,6 +503,10 @@ final class Engine {
     }
 
     private var heatForced = false
+    /// When it got hot (serious or worse) with the lid shut.
+    private var hotSince: Date?
+    /// How long "serious" heat with the lid shut is tolerated before the Mac is put to sleep.
+    static let hotGrace: TimeInterval = 300
     private var pendingRelease = false
     private var activity: NSObjectProtocol?
 

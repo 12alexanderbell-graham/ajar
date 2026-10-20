@@ -25,8 +25,21 @@ fn proc(pid: u32, ppid: u32, name: &str, start: u64) -> Proc {
     Proc { pid, ppid, name: name.into(), start, mine: true, ..Default::default() }
 }
 
+/// A child process that idles for ~30 s (Windows has no `sleep` command outside Git Bash).
 fn sleeper() -> Child {
-    Command::new("sleep").arg("30").spawn().expect("spawn sleep")
+    #[cfg(windows)]
+    let mut c = {
+        let mut c = Command::new("cmd");
+        c.args(["/C", "ping", "-n", "31", "127.0.0.1"]);
+        c
+    };
+    #[cfg(not(windows))]
+    let mut c = {
+        let mut c = Command::new("sleep");
+        c.arg("30");
+        c
+    };
+    c.stdout(std::process::Stdio::null()).spawn().expect("spawn a sleeping child")
 }
 
 fn battery(percent: u32, on_ac: bool) -> Option<Battery> {
@@ -141,6 +154,27 @@ fn heat_forces_max_battery_then_restores_and_critical_stops() {
     assert!(e.platform.slowed.is_empty() && e.platform.paused.is_empty(), "everything put back");
     assert_eq!(e.platform.slept, 1);
     drop(spotify);
+}
+
+#[test]
+fn serious_heat_with_the_lid_shut_sleeps_after_five_minutes() {
+    let mut e = engine("hotlong", Mock::laptop());
+    let now = crate::now();
+    agent(&mut e, now);
+    e.platform.lid = true;
+    e.tick(now, None);
+    assert!(e.holding);
+    e.platform.thermal = Some(Thermal::Serious);
+    agent(&mut e, now + 10);
+    e.tick(now + 10, None);
+    assert!(e.holding, "serious heat first tightens the rules");
+    agent(&mut e, now + 10 + crate::engine::HOT_GRACE_SECS - 5);
+    e.tick(now + 10 + crate::engine::HOT_GRACE_SECS - 5, None);
+    assert!(e.holding, "still inside the grace period");
+    agent(&mut e, now + 10 + crate::engine::HOT_GRACE_SECS);
+    e.tick(now + 10 + crate::engine::HOT_GRACE_SECS, None);
+    assert!(!e.holding, "hot for 5 minutes with the lid shut: sleeps");
+    assert!(e.blocked.as_deref().unwrap_or("").contains("Too hot"));
 }
 
 #[test]
@@ -325,7 +359,7 @@ fn crash_recovery_resumes_paused_apps_and_restores_settings() {
     let pid = child.id();
     let start = procs::start_time(pid).unwrap();
     state::save_json(&r.join("touched.json"), &vec![
-        Touched { pid, exe: "sleep".into(), start, paused: true, previous: 0, unit: None },
+        Touched { pid, exe: procs::name_of(pid).unwrap_or_default(), start, paused: true, previous: 0, unit: None },
         Touched { pid: 999_999, exe: "gone".into(), start: 1, paused: true, previous: 0, unit: None },
     ]);
     state::save_json(&r.join("restore.json"), &Restore { power_profile: Some("balanced".into()), ..Default::default() });

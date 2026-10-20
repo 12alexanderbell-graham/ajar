@@ -10,6 +10,8 @@ struct SettingsView: View {
     @State private var lockGrace: Int?
     @State private var topic = ""
     @State private var refresh = false
+    /// Off: only the settings most people need. On: everything.
+    @AppStorage("settingsAdvanced") private var advanced = false
 
     private func saveTopic() {
         let t = topic.trimmingCharacters(in: .whitespaces)
@@ -23,15 +25,18 @@ struct SettingsView: View {
                 Picker("Menu bar shows", selection: $engine.menuBarText) {
                     ForEach(MenuBarText.allCases, id: \.self) { Text($0.label).tag($0) }
                 }
-                Picker("Appearance", selection: Binding(get: { engine.config.appearance }, set: { v in engine.update { $0.appearance = v } })) {
-                    ForEach(AppearanceChoice.allCases, id: \.self) { Text($0.label).tag($0) }
+                if advanced {
+                    Picker("Appearance", selection: Binding(get: { engine.config.appearance }, set: { v in engine.update { $0.appearance = v } })) {
+                        ForEach(AppearanceChoice.allCases, id: \.self) { Text($0.label).tag($0) }
+                    }
+                    Toggle("Notch island (pops out of the notch, hover for controls)", isOn: Binding(get: { engine.config.notchIsland }, set: { v in engine.update { $0.notchIsland = v } }))
+                    Toggle("Show in Dock", isOn: Binding(get: { engine.config.showInDock }, set: { v in engine.update { $0.showInDock = v } }))
+                    Toggle("⌃⌥⌘A switches Off / When Busy / Always", isOn: Binding(get: { engine.config.hotkey }, set: { v in engine.update { $0.hotkey = v } }))
                 }
-                Toggle("Notch island (pops out of the notch, hover for controls)", isOn: Binding(get: { engine.config.notchIsland }, set: { v in engine.update { $0.notchIsland = v } }))
-                Toggle("Show in Dock", isOn: Binding(get: { engine.config.showInDock }, set: { v in engine.update { $0.showInDock = v } }))
-                Toggle("⌃⌥⌘A switches Off / When Busy / Always", isOn: Binding(get: { engine.config.hotkey }, set: { v in engine.update { $0.hotkey = v } }))
                 Toggle("Open at login", isOn: Binding(get: { login }, set: { engine.launchAtLogin = $0; login = engine.launchAtLogin }))
             }
 
+            if advanced {
             Section {
                 Toggle("Notify me when an agent goes idle", isOn: Binding(get: { engine.config.notifyDone }, set: { v in engine.update { $0.notifyDone = v } }))
                 Toggle("Play a chime too", isOn: Binding(get: { engine.config.doneChime }, set: { v in
@@ -71,6 +76,8 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
+            }
+
             if Registry.hasLid { Section {
                 Picker("Screen", selection: Binding(get: { engine.config.lockOnClose ? 2 : (engine.config.screenOffNoLock ? 1 : 0) },
                                                     set: { v in engine.update { $0.lockOnClose = v == 2; $0.screenOffNoLock = v == 1 } })) {
@@ -83,7 +90,9 @@ struct SettingsView: View {
                         Text(LockSetting.describe(lockGrace)).foregroundStyle(.secondary)
                     }
                 }
-                Toggle("Menu bar icon follows the real lid angle", isOn: Binding(get: { engine.config.liveLidIcon }, set: { v in engine.update { $0.liveLidIcon = v } }))
+                if advanced {
+                    Toggle("Menu bar icon follows the real lid angle", isOn: Binding(get: { engine.config.liveLidIcon }, set: { v in engine.update { $0.liveLidIcon = v } }))
+                }
             } header: {
                 Text("When the Lid Closes")
             } footer: {
@@ -113,7 +122,7 @@ struct SettingsView: View {
                 }
                 Toggle("Only stay awake when plugged in", isOn: $engine.onlyOnPower)
                 Toggle("Heat guard", isOn: $engine.heatGuard)
-                Text("Slows things down when the Mac gets hot, and sleeps if it gets critical.")
+                Text("Pauses everything it can when the Mac gets hot with the lid shut, and sleeps if it stays hot for 5 minutes or gets critical.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
@@ -122,6 +131,7 @@ struct SettingsView: View {
                     ForEach(Preset.allCases) { Text($0.label).tag($0) }
                 }
                 Text(engine.preset.detail).font(.caption).foregroundStyle(.secondary)
+                if advanced {
                 Toggle(isOn: Binding(get: { engine.config.pauseSimulators }, set: { v in engine.update { $0.pauseSimulators = v } })) {
                     Text("Pause simulators and Xcode previews") + Text(Self.effect(engine.powerEffects["simulators"])).foregroundColor(.secondary)
                 }
@@ -144,6 +154,7 @@ struct SettingsView: View {
                         Text(String(format: "%.1f W → %.1f W", o, c)).monospacedDigit().foregroundStyle(.secondary)
                     }
                 }
+                }
             } header: {
                 Text("While the Lid Is Closed")
             } footer: {
@@ -151,6 +162,7 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
+            if advanced {
             Section("Keep Awake For") {
                 Toggle("Claude app (Cowork, computer use)", isOn: $engine.countClaudeApp)
                 Toggle("Apps that ask macOS to stay awake (downloads, exports, builds)", isOn: $engine.countRequests)
@@ -187,6 +199,8 @@ struct SettingsView: View {
                 }
             }
 
+            }
+
             Section {
                 LabeledContent("Claude Code") {
                     connectButton(AIConnect.claudeCodeConnected) { AIConnect.connectClaudeCode() }
@@ -219,7 +233,7 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
-            if !engine.stats.sessions.isEmpty {
+            if advanced && !engine.stats.sessions.isEmpty {
                 Section("Recent Lid-Closed Sessions") {
                     ForEach(Array(engine.stats.sessions.suffix(8).reversed().enumerated()), id: \.offset) { _, s in
                         LabeledContent {
@@ -236,6 +250,7 @@ struct SettingsView: View {
             }
 
             Section {
+                Toggle("Show advanced settings", isOn: $advanced)
                 LabeledContent("Setup") {
                     if engine.setupReady { Text("Done").foregroundStyle(.secondary) } else { Button("Set Up…") { engine.runSetup() } }
                 }
@@ -316,4 +331,14 @@ enum LockSetting {
         if s < 3600 { return "After \(s / 60) minutes" }
         return "After \(s / 3600) hours"
     }
+}
+
+#Preview("Settings") {
+    UserDefaults.standard.set(false, forKey: "settingsAdvanced")
+    return SettingsView(engine: .preview())
+}
+
+#Preview("Settings, advanced") {
+    UserDefaults.standard.set(true, forKey: "settingsAdvanced")
+    return SettingsView(engine: .preview())
 }

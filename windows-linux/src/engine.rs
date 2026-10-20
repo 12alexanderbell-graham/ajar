@@ -114,6 +114,8 @@ pub struct Engine<P: Platform> {
     floor_latched: bool,
     pub floor_override: bool,
     heat_forced: bool,
+    /// When it got hot (serious or worse) with the lid shut.
+    hot_since: Option<u64>,
     pending_release: bool,
     touched: Vec<Touched>,
     restore: Restore,
@@ -185,6 +187,7 @@ impl<P: Platform> Engine<P> {
             floor_latched: false,
             floor_override: false,
             heat_forced: false,
+            hot_since: None,
             pending_release: false,
             touched: vec![],
             restore: Restore::default(),
@@ -605,7 +608,15 @@ impl<P: Platform> Engine<P> {
                 self.floor_latched = false;
             }
         }
-        if want && self.cfg.heat_guard && self.thermal == Thermal::Critical {
+        // Hot with the lid shut (a bag, a sofa): sleep at critical at once, and after 5 minutes of "serious" even
+        // with the strictest rules applied, because a closed laptop can't cool itself much.
+        if self.lid_closed && self.thermal >= Thermal::Serious {
+            self.hot_since.get_or_insert(now);
+        } else {
+            self.hot_since = None;
+        }
+        let hot_too_long = self.hot_since.is_some_and(|t| now.saturating_sub(t) >= HOT_GRACE_SECS);
+        if want && self.cfg.heat_guard && (self.thermal == Thermal::Critical || hot_too_long) {
             want = false;
             self.blocked = Some("Too hot, letting it cool down".into());
         }
@@ -1506,6 +1517,9 @@ impl<P: Platform> Engine<P> {
         }).collect::<Vec<_>>())
     }
 }
+
+/// How long "serious" heat with the lid shut is tolerated before the laptop is put to sleep.
+pub const HOT_GRACE_SECS: u64 = 300;
 
 /// Processes Ajar never slows or pauses, whatever the rules say: the desktop, audio, input and Ajar itself.
 pub const SYSTEM_NEVER: &[&str] = &[

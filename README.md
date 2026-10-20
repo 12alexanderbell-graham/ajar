@@ -23,7 +23,7 @@ Ajar keeps a laptop awake with the lid closed while Claude Code, Codex and other
 - **Real watts.** Reads whole-machine power from the battery controller (works on the charger too), and `ajar power test` measures what each saving is worth on your machine.
 - **Your agent drives it.** MCP server and CLI: agents hold the machine awake while they work, read what's using power, and change any setting. `ajar connect` adds it to Claude Code and Codex; `ajar prompt` prints a setup prompt.
 - **Phone remote.** A small end-to-end encrypted web page (via ntfy.sh) to check on it and switch modes from anywhere.
-- **Stops before it hurts.** Sleeps at your battery limit and (Mac, Linux) when it gets too hot. Agents and scripts can make these stricter, never looser.
+- **Stops before it hurts.** Sleeps at your battery limit, and when it's hot with the lid shut: at once if critical, after 5 minutes if serious. Agents and scripts can make these stricter, never looser.
 
 ## Is it safe to give it sudo?
 

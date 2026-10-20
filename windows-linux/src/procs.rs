@@ -87,8 +87,13 @@ mod imp {
     }
 
     pub fn start_time(pid: u32) -> Option<u64> {
+        let (_, f) = stat_fields(pid)?;
+        // A zombie (exited, not yet reaped by its parent) isn't running: field 3 (state) is index 0 after the name.
+        if f.first().map(String::as_str) == Some("Z") {
+            return None;
+        }
         // Field 22 (starttime) is index 19 after the name.
-        stat_fields(pid)?.1.get(19)?.parse().ok()
+        f.get(19)?.parse().ok()
     }
 
     pub fn exe_path(pid: u32) -> Option<String> {
@@ -218,7 +223,11 @@ mod imp {
 
     pub fn start_time(pid: u32) -> Option<u64> {
         let h = open(pid)?;
-        let t = times(h).map(|t| t.0);
+        // A process that has exited can still be opened while any handle to it is open (its parent's, often):
+        // only one whose exit code is still STILL_ACTIVE (259) is running.
+        let mut code = 0u32;
+        let running = unsafe { windows_sys::Win32::System::Threading::GetExitCodeProcess(h, &mut code) } != 0 && code == 259;
+        let t = if running { times(h).map(|t| t.0) } else { None };
         unsafe { CloseHandle(h) };
         t
     }
