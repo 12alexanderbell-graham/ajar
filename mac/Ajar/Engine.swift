@@ -866,7 +866,7 @@ final class Engine {
             }
         }
         reapplyClosedState()
-        if config.shutDownSimulators && config.preset != .speed && !background.testsRunning && background.simulatorDevices > 0 {
+        if config.shutDownSimulators && config.preset != .speed && !background.simulatorsInUse && background.simulatorDevices > 0 {
             DispatchQueue.global(qos: .utility).async { _ = Shell.run("/usr/bin/xcrun", ["simctl", "shutdown", "all"]) }
         }
     }
@@ -1014,9 +1014,15 @@ final class Engine {
         let protectedBundles = watcher.protectedBundles.union(protectedPids.compactMap { Procs.path($0).flatMap(Procs.bundlePath(of:)) })
         let running = NSWorkspace.shared.runningApplications
         let regularPaths = Set(running.filter { $0.activationPolicy == .regular }.compactMap { $0.bundleURL?.resolvingSymlinksInPath().path })
+        let found = p == .speed ? BackgroundWork.Found() : BackgroundWork.scan(all: all)
+        background = found
+        // Xcode and the Simulator app stay untouched while an agent may be using them.
+        var inUse: Set<String> = []
+        if found.agentUsesXcode { inUse.insert("com.apple.dt.Xcode") }
+        if found.simulatorsInUse { inUse.insert("com.apple.iphonesimulator") }
         var bundles: [String: AppRule] = [:]
         if !skip.contains("apps") {
-            for app in running where app.activationPolicy == .regular {
+            for app in running where app.activationPolicy == .regular && !inUse.contains(app.bundleIdentifier ?? "") {
                 // Resolve symlinks so /Applications/Safari.app matches the cryptex path its processes report.
                 guard let url = app.bundleURL?.resolvingSymlinksInPath(), app.processIdentifier != mine,
                       app.bundleIdentifier != AgentKind.claudeAppBundleID, app.bundleIdentifier != Bundle.main.bundleIdentifier,
@@ -1039,10 +1045,8 @@ final class Engine {
                 add(pid, r, bundle: b)
             }
         }
-        guard p != .speed else { background = BackgroundWork.Found(); return out }
-        let found = BackgroundWork.scan(all: all)
-        background = found
-        if config.pauseSimulators && !found.testsRunning && !skip.contains("simulators") {
+        guard p != .speed else { return out }
+        if config.pauseSimulators && !found.simulatorsInUse && !skip.contains("simulators") {
             // With "shut them down instead", simulators are shut down on close (frozen ones can't shut down).
             for pid in (config.shutDownSimulators ? [] : found.simulators) + found.previews { add(pid, .pause, bundle: nil) }
         }
@@ -1173,7 +1177,7 @@ final class Engine {
         suspects.append(["id": "simulators", "active": simCount > 0 && !(config.pauseSimulators && lidClosed && holding),
                          "title": simCount > 0 ? "\(found.simulatorDevices) booted simulator(s) and \(found.previews.count) preview process(es): \(simCount) processes" : "No simulators or previews running",
                          "setting": "pause_simulators", "value": config.pauseSimulators, "suggested_value": "on",
-                         "note": found.testsRunning ? "Tests are running, so simulators are left alone." : "", "measured_saving_watts": r1(powerEffects["simulators"])])
+                         "note": found.agentUsesXcode ? "An agent is connected to Xcode, so Xcode, simulators and previews are left alone." : found.testsRunning ? "Tests are running, so simulators are left alone." : "", "measured_saving_watts": r1(powerEffects["simulators"])])
         suspects.append(["id": "background_audio", "active": !found.audio.isEmpty,
                          "title": found.audio.isEmpty ? "Nothing holding the speakers open" : "Holding the speakers open: " + found.audio.values.sorted().joined(separator: ", "),
                          "setting": "pause_background_audio", "value": config.pauseBackgroundAudio, "suggested_value": "on",

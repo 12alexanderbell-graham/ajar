@@ -59,7 +59,11 @@ enum BackgroundWork {
         var audio: [pid_t: String] = [:]   // pid → name
         /// xcodebuild, xctest or a UI test runner is going: the simulators are in use, so they're left alone.
         var testsRunning = false
+        /// An AI agent is connected to Xcode (its MCP bridge is running), so it may be building, rendering previews
+        /// or driving a simulator: Xcode, simulators and previews are left alone.
+        var agentUsesXcode = false
         var simulatorDevices = 0
+        var simulatorsInUse: Bool { testsRunning || agentUsesXcode }
     }
 
     private static let previewNames: Set<String> = ["PreviewShellMac", "previewsd", "XCPreviewAgent", "PreviewShell"]
@@ -81,6 +85,7 @@ enum BackgroundWork {
             if let pp = Procs.parent(pid) { children[pp, default: []].append(pid) }
             if name == "launchd_sim" { roots.append(pid) }
             if testNames.contains(name) || name.hasSuffix("-Runner") { f.testsRunning = true }
+            if path.hasSuffix("/Developer/usr/bin/mcpbridge") { f.agentUsesXcode = true }
         }
         f.simulatorDevices = roots.count
         var sims = Set<pid_t>()
