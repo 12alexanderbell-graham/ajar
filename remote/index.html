@@ -216,7 +216,7 @@ select.pick{-webkit-appearance:none;appearance:none;border:0;background:none;col
         <button class="item" id="copycode">Copy pairing code</button>
         <button class="item danger" id="unpair">Unpair this phone</button>
       </div>
-      <p class="foot"><span id="updated">Not updated yet</span>. End-to-end encrypted: the relay only sees scrambled messages. Pairing, connecting AI apps and removing Ajar are done on the laptop.</p>
+      <p class="foot"><span id="updated">Not updated yet</span>. End-to-end encrypted.</p>
     </section>
   </div>
 </main>
@@ -495,9 +495,9 @@ function empty(el, text) { const e = document.createElement("div"); e.className 
 // Settings page: every setting the laptop reports, grouped like Ajar's Settings on the Mac. Values and choices
 // come from the laptop (the same table its AI tools use); only the words live here.
 const SETTING_GROUPS = [
-  ["Screen and power", ["screen", "low_power", "pause_simulators", "shut_down_simulators", "pause_background_audio"], "Dark: no password when you open the lid. Off, locks: saves more, but you type your password."],
-  ["Sleep & Safety", ["sleep_when_done", "quiet_minutes", "battery_floor", "only_on_power", "heat_guard"], "Only the laptop itself can lower the battery limit or turn off the heat guard."],
-  ["Keep Awake For", ["claude_app", "downloads"], "Claude Code, Codex, Gemini, Cursor and other agents are picked up on their own."],
+  ["Screen and power", ["screen", "low_power", "pause_simulators", "shut_down_simulators", "pause_background_audio"], "Dark means no password when you open the lid."],
+  ["Sleep & Safety", ["sleep_when_done", "quiet_minutes", "battery_floor", "only_on_power", "heat_guard"], "The battery limit and heat guard can only be loosened on the laptop."],
+  ["Keep Awake For", ["claude_app", "downloads"], "Agents are found on their own."],
   ["Notifications", ["notify_done", "done_chime", "ntfy_topic"], ""],
   ["On the Laptop", ["menubar", "appearance", "live_lid_icon", "notch_island", "show_in_dock", "hotkey"], ""],
 ];
@@ -616,7 +616,7 @@ function openSettings(on) {
   if (on) send("schema");
 }
 
-const PRESET_DETAIL = { longest: "Pauses other apps until you open the lid (music, calls and services agents use keep going)", balanced: "Slows other apps", speed: "Leaves apps alone (your per-app rules still apply)" };
+const PRESET_DETAIL = { longest: "Pauses other apps until you open the lid", balanced: "Slows other apps", speed: "Leaves apps alone" };
 function show(id, on) { $(id).hidden = !on; }
 function text(id, t) { $(id).textContent = t || ""; }
 
@@ -705,11 +705,11 @@ function renderSavings(p) {
         row("All of Ajar's savings", unclear.includes("total") ? "unclear" : s.total >= 0.05 ? "saves " + s.total.toFixed(1) + " W" : "≈0 W");
         if (s.closed_without && s.closed_with && !unclear.includes("total"))
           row("Lid shut, without → with", s.closed_without.toFixed(1) + " → " + s.closed_with.toFixed(1) + " W");
-        if (unclear.includes("total")) empty(el, "The laptop's own load moved too much while measuring. Try again when the agents are quiet.");
+        if (unclear.includes("total")) empty(el, "Too much changed while measuring. Try again when it's quieter.");
       }
       SAVING_NAMES.filter(([k]) => k in s).forEach(([k, name]) => row(name, s[k] >= 0.05 ? "saves " + s[k].toFixed(1) + " W" : "≈0 W"));
     }
-    else empty(el, "With the lid shut, Ajar switches its savings off and on twice and measures the whole laptop. Best with the agents quiet.");
+    else empty(el, "Close the lid, then measure.");
   }
   $("measure").hidden = !p.canMeasure;
   $("measure").textContent = (has ? "Measure again" : "Measure now") + " (about 4 min)";
