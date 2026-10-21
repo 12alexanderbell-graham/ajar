@@ -200,7 +200,7 @@ struct SettingsView: View {
             } header: {
                 Text("While the Lid Is Closed")
             } footer: {
-                Text("Music, calls and anything your agents use keep running. Everything comes back when you open the lid. ajar power test (lid closed) measures what each saving is worth on this Mac.")
+                Text("Music, calls and anything your agents use keep running. Everything comes back when you open the lid. To see what each saving is worth on this Mac, shut the lid and tap Measure on the phone page (or run ajar power test).")
                     .font(.caption).foregroundStyle(.secondary)
             }
 

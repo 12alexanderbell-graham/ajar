@@ -5,7 +5,7 @@ import SwiftUI
 /// Geometry: one 16 pt leading edge, 8 pt rhythm (8 inside a group, 16 between groups),
 /// system text styles only, dividers instead of cards. Every number carries its unit and what it's compared to.
 ///  • Now: mode, what's happening, battery numbers, this week.
-///  • Rules: what keeps the Mac awake, what closing the lid does, per-app rules.
+///  • Apps: what keeps the Mac awake, what closing the lid does, per-app rules.
 struct PanelView: View {
     enum Tab: String { case now, rules }
 
@@ -35,7 +35,7 @@ struct PanelView: View {
         HStack(spacing: 16) {
             ForEach([Tab.now, Tab.rules], id: \.self) { t in
                 Button { tab = t } label: {
-                    Text(t == .now ? "Now" : "Rules")
+                    Text(t == .now ? "Now" : "Apps")
                         .font(.headline)
                         .foregroundStyle(tab == t ? .primary : .tertiary)
                 }
@@ -463,7 +463,7 @@ private struct SetupView: View {
     return PanelView(engine: .preview()).background(.regularMaterial)
 }
 
-#Preview("Rules") {
+#Preview("Apps") {
     UserDefaults.standard.set("rules", forKey: "panelTab")
     return PanelView(engine: .preview()).background(.regularMaterial)
 }
