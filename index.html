@@ -12,67 +12,84 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <style>
   :root {
-    --bg: #ffffff; --bg-2: #f5f5f7; --fg: #1d1d1f; --fg-2: #6e6e73; --line: #e5e5ea;
-    --accent: #e8781d; --accent-fg: #ffffff; --green: #1a9e4a;
+    --bg: #f5f5f7; --card: #ffffff; --fg: #1d1d1f; --fg-2: #6e6e73; --line: #e5e5ea;
+    --accent: #15784a; --deep: #08341a; --mid: #146c40; --mint: #3fd69c;
     --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) { --bg: #000000; --bg-2: #161617; --fg: #f5f5f7; --fg-2: #a1a1a6; --line: #2c2c2e; --accent: #f08a2c; --accent-fg: #1d1d1f; --green: #30d158; color-scheme: dark; }
+    :root:not([data-theme="light"]) { --bg: #000000; --card: #1c1c1e; --fg: #f5f5f7; --fg-2: #a1a1a6; --line: #2c2c2e; --accent: #30bb81; color-scheme: dark; }
   }
-  :root[data-theme="dark"] { --bg: #000000; --bg-2: #161617; --fg: #f5f5f7; --fg-2: #a1a1a6; --line: #2c2c2e; --accent: #f08a2c; --accent-fg: #1d1d1f; --green: #30d158; color-scheme: dark; }
+  :root[data-theme="dark"] { --bg: #000000; --card: #1c1c1e; --fg: #f5f5f7; --fg-2: #a1a1a6; --line: #2c2c2e; --accent: #30bb81; color-scheme: dark; }
   * { box-sizing: border-box; }
   html { -webkit-text-size-adjust: 100%; }
   body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font); font-size: 17px; line-height: 1.47; letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   a { color: var(--accent); }
-  .wrap { max-width: 980px; margin: 0 auto; padding-left: max(22px, env(safe-area-inset-left, 0px)); padding-right: max(22px, env(safe-area-inset-right, 0px)); }
+  .wrap { max-width: 980px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
   .narrow { max-width: 720px; margin-left: auto; margin-right: auto; }
-  section { margin-top: 112px; }
+  section { margin-top: 104px; }
+
+  /* The brand surface: deep green opening to a mint glow, with film grain (same as the app icon). */
+  .green { position: relative; isolation: isolate; overflow: hidden; color: #fff; border-radius: 32px;
+    background:
+      radial-gradient(60% 75% at 88% 10%, rgba(63,214,156,.95), rgba(63,214,156,0) 72%),
+      radial-gradient(45% 55% at 8% 100%, rgba(34,184,102,.55), rgba(34,184,102,0) 72%),
+      linear-gradient(45deg, var(--deep), var(--mid)); }
+  .green::after { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; opacity: .22; mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 1.6 -.3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+  .green a { color: #fff; }
 
   /* Hero */
-  header { text-align: center; padding-top: 80px; }
-  .icon { width: 96px; height: 96px; display: block; margin: 0 auto 26px; }
-  h1 { font-size: clamp(42px, 7.4vw, 72px); line-height: 1.03; letter-spacing: -0.04em; font-weight: 700; margin: 0; text-wrap: balance; }
-  .lede { font-size: clamp(19px, 2.4vw, 23px); line-height: 1.4; color: var(--fg-2); max-width: 32em; margin: 18px auto 0; text-wrap: balance; }
-  .btn { display: inline-block; margin-top: 34px; text-decoration: none; background: var(--accent); color: var(--accent-fg); font-size: 18px; font-weight: 600; padding: 14px 30px; border-radius: 980px; }
-  .btn:hover { filter: brightness(1.05); }
+  header { padding-top: 16px; }
+  .hero { text-align: center; padding: 72px 24px 210px; }
+  .icon { width: 96px; height: 96px; display: block; margin: 0 auto 26px; filter: drop-shadow(0 10px 24px rgba(0,0,0,.28)); }
+  h1 { font-size: clamp(40px, 7.4vw, 72px); line-height: 1.03; letter-spacing: -0.04em; font-weight: 700; margin: 0; text-wrap: balance; }
+  .lede { font-size: clamp(19px, 2.4vw, 23px); line-height: 1.4; color: rgba(255,255,255,.82); max-width: 30em; margin: 18px auto 0; text-wrap: balance; }
+  .btn { display: inline-block; margin-top: 32px; text-decoration: none; font-size: 18px; font-weight: 600; padding: 14px 30px; border-radius: 980px; color: #fff;
+    background: linear-gradient(45deg, var(--mid), #1e9a60); }
+  .green .btn { background: #fff; color: var(--deep); }
+  .btn:hover { filter: brightness(1.06); }
   .btn:focus-visible, a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .green .btn:focus-visible, .green a:focus-visible { outline-color: #fff; }
   .meta { font-size: 14px; color: var(--fg-2); margin: 14px 0 0; }
+  .green .meta { color: rgba(255,255,255,.75); }
   .meta a { color: inherit; }
-  code { font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--bg-2); padding: 2px 7px; border-radius: 6px; color: var(--fg); }
-  .first { font-size: 13px; color: var(--fg-2); margin: 6px auto 0; max-width: 36em; }
-  .shot { margin: 60px auto 0; max-width: 400px; }
-  .shot img { display: block; width: 100%; height: auto; border-radius: 14px; box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 18px 48px rgba(0,0,0,.14); }
-  .shot figcaption { font-size: 13px; color: var(--fg-2); margin-top: 14px; text-align: center; }
+  .shot { margin: -180px auto 0; max-width: 360px; position: relative; padding: 0 8px; }
+  .shot img { display: block; width: 100%; height: auto; border-radius: 16px; box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 24px 60px rgba(0,0,0,.22); }
+  .install { text-align: center; margin-top: 28px; }
+  code { font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--card); padding: 3px 8px; border-radius: 7px; color: var(--fg); }
+  .first { font-size: 13px; color: var(--fg-2); margin: 8px auto 0; max-width: 36em; }
 
   h2 { font-size: clamp(30px, 4.4vw, 44px); line-height: 1.1; letter-spacing: -0.03em; font-weight: 700; margin: 0 0 14px; text-wrap: balance; }
   .sub { font-size: 19px; color: var(--fg-2); margin: 0; max-width: 34em; text-wrap: pretty; }
   .center { text-align: center; }
   .center .sub { margin: 0 auto; }
 
-  /* Problem */
-  .bad h3::before { content: "✕ "; color: #d70015; }
-
   /* Steps */
-  .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 36px; counter-reset: s; }
-  .step { background: var(--bg-2); border-radius: 20px; padding: 28px; }
-  .step::before { counter-increment: s; content: counter(s); display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: var(--accent-fg); font-weight: 700; font-size: 16px; margin-bottom: 14px; }
+  .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 36px; counter-reset: s; }
+  .step { background: var(--card); border-radius: 22px; padding: 26px; }
+  .step::before { counter-increment: s; content: counter(s); display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; color: #fff; font-weight: 700; font-size: 16px; margin-bottom: 14px;
+    background: linear-gradient(45deg, var(--mid), #1e9a60); }
   .step h3 { font-size: 19px; margin: 0 0 6px; letter-spacing: -0.015em; }
   .step p { margin: 0; color: var(--fg-2); font-size: 16px; }
 
   /* Proof */
-  .proof { text-align: center; background: var(--bg-2); border-radius: 28px; padding: 64px 28px; }
-  .big { font-size: clamp(56px, 11vw, 112px); font-weight: 700; letter-spacing: -0.05em; line-height: 1; margin: 6px 0 14px; font-variant-numeric: tabular-nums; }
+  .proof { text-align: center; background: var(--card); border-radius: 28px; padding: 64px 24px; }
+  .big { font-size: clamp(52px, 11vw, 112px); font-weight: 700; letter-spacing: -0.05em; line-height: 1; margin: 6px 0 14px; font-variant-numeric: tabular-nums; }
   .big .arrow { color: var(--fg-2); font-weight: 500; }
-  .big .low { color: var(--green); }
+  .big .low { color: var(--accent); }
   .proof .sub { margin: 0 auto; font-size: 17px; }
   .proof .fine { font-size: 13px; color: var(--fg-2); margin: 18px auto 0; max-width: 40em; }
 
-  /* Features */
-  .features { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 36px; }
-  .feature { border: 1px solid var(--line); border-radius: 20px; padding: 28px; }
-  .feature h3 { font-size: 19px; margin: 0 0 6px; letter-spacing: -0.015em; }
-  .feature p { margin: 0; color: var(--fg-2); font-size: 16px; }
+  /* Features: an iOS grouped list */
+  .list { background: var(--card); border-radius: 22px; margin-top: 36px; overflow: hidden; }
+  .item { padding: 18px 22px; border-top: 1px solid var(--line); }
+  .item:first-child { border-top: 0; }
+  .item h3 { font-size: 17px; margin: 0; letter-spacing: -0.015em; }
+  .item p { margin: 2px 0 0; color: var(--fg-2); font-size: 15px; }
+  .two { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 40px; align-items: center; margin-top: 36px; }
+  .two .list { margin-top: 0; }
+  .two img { display: block; width: 100%; height: auto; border-radius: 16px; box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 18px 48px rgba(0,0,0,.14); }
 
   /* Phone + AI */
   .split { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 48px; align-items: center; }
@@ -82,46 +99,55 @@
   .split li b { color: var(--fg); font-weight: 600; }
   .small { font-size: 14px; color: var(--fg-2); margin: 16px 0 0; }
   .prompt { position: relative; margin-top: 22px; }
-  .prompt pre { margin: 0; white-space: pre-wrap; font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--bg-2); color: var(--fg); border-radius: 16px; padding: 52px 20px 20px; max-height: 240px; overflow: auto; }
-  .copy { position: absolute; top: 12px; right: 12px; border: 0; border-radius: 980px; padding: 7px 16px; font: 600 13px var(--font); background: var(--accent); color: var(--accent-fg); cursor: pointer; }
+  .prompt pre { margin: 0; white-space: pre-wrap; font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--card); color: var(--fg); border-radius: 18px; padding: 52px 20px 20px; max-height: 240px; overflow: auto; }
+  .copy { position: absolute; top: 12px; right: 12px; border: 0; border-radius: 980px; padding: 7px 16px; font: 600 13px var(--font); color: #fff; cursor: pointer; background: linear-gradient(45deg, var(--mid), #1e9a60); }
 
   /* FAQ */
+  .faq { background: var(--card); border-radius: 22px; padding: 4px 22px; margin-top: 24px; }
   details { border-top: 1px solid var(--line); padding: 18px 0; }
-  details:last-of-type { border-bottom: 1px solid var(--line); }
-  summary { cursor: pointer; font-size: 18px; font-weight: 600; letter-spacing: -0.015em; list-style: none; display: flex; justify-content: space-between; gap: 16px; }
+  details:first-child { border-top: 0; }
+  summary { cursor: pointer; font-size: 17px; font-weight: 600; letter-spacing: -0.015em; list-style: none; display: flex; justify-content: space-between; gap: 16px; }
   summary::-webkit-details-marker { display: none; }
   summary::after { content: "+"; color: var(--fg-2); font-weight: 400; font-size: 22px; line-height: 1; }
   details[open] summary::after { content: "–"; }
   details p { margin: 10px 0 0; color: var(--fg-2); font-size: 16px; }
 
-  .final { text-align: center; }
-  footer { margin-top: 96px; border-top: 1px solid var(--line); padding-block: 24px 40px; font-size: 12px; color: var(--fg-2); text-align: center; }
+  .final { text-align: center; padding: 72px 24px; }
+  footer { margin-top: 64px; padding-block: 24px 40px; font-size: 12px; color: var(--fg-2); text-align: center; }
   footer a { color: inherit; }
 
   @media (max-width: 760px) {
-    header { padding-top: 52px; }
-    section { margin-top: 80px; }
-    .steps, .features { grid-template-columns: minmax(0, 1fr); }
+    section { margin-top: 76px; }
+    .green { border-radius: 26px; }
+    .hero { padding: 52px 20px 180px; }
+    .shot { margin-top: -150px; max-width: 320px; }
+    .steps, .two { grid-template-columns: minmax(0, 1fr); }
+    .two img { max-width: 320px; margin: 0 auto; }
     .split { grid-template-columns: minmax(0, 1fr); gap: 32px; }
     .split img { max-width: 240px; margin: 0 auto; }
-    .proof { padding: 48px 22px; border-radius: 22px; }
-    .step, .feature { padding: 22px; }
+    .proof { padding: 48px 20px; border-radius: 22px; }
+    .step { padding: 22px; }
+    .final { padding: 52px 20px; }
   }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <img class="icon" src="icon.png" alt="Ajar app icon" width="96" height="96">
-    <h1>Close the lid.<br>Your AI keeps working.</h1>
-    <p class="lede">Ajar keeps your laptop awake with the lid shut while your AI agents work, then lets it sleep.</p>
-    <a class="btn" id="dl" href="downloads/Ajar-1.0.0-mac.zip">Download for Mac</a>
-    <p class="meta">Free and open source · <a href="downloads/Ajar-1.0.0-mac.zip">Mac</a> (macOS 14+) · <a href="downloads/Ajar-1.0.0-windows-x86_64.zip">Windows</a> 10 and 11 · <a href="downloads/ajar-1.0.0-linux-x86_64.tar.gz">Linux</a></p>
-    <p class="meta">Homebrew: <code>brew install --cask 12alexanderbell-graham/ajar/ajar</code></p>
-    <p class="first" id="first">First open: if macOS blocks it, go to System Settings › Privacy &amp; Security and click Open Anyway.</p>
+    <div class="green hero">
+      <img class="icon" src="icon.png" alt="Ajar app icon" width="96" height="96">
+      <h1>Close the lid.<br>Your AI keeps working.</h1>
+      <p class="lede">Ajar keeps your laptop awake with the lid shut while your AI agents work, then lets it sleep.</p>
+      <a class="btn" id="dl" href="downloads/Ajar-1.0.0-mac.zip">Download for Mac</a>
+      <p class="meta">Free and open source · <a href="downloads/Ajar-1.0.0-mac.zip">Mac</a> (macOS 14+) · <a href="downloads/Ajar-1.0.0-windows-x86_64.zip">Windows</a> 10 and 11 · <a href="downloads/ajar-1.0.0-linux-x86_64.tar.gz">Linux</a></p>
+    </div>
     <figure class="shot">
-      <img src="panel-now.png" alt="Ajar's menu: When Busy is selected, it says 'Close the lid: it keeps working', and the battery line reads 95%, about 3 hours 42 minutes with the lid closed" width="640" height="470">
+      <img src="panel-now.png" alt="Ajar's menu on the Now tab: When Busy is selected, it says 'Close the lid: it keeps working', and the battery reads 9 h 11 min left with the lid closed" width="640" height="702">
     </figure>
+    <div class="install">
+      <p class="meta">Homebrew: <code>brew install --cask 12alexanderbell-graham/ajar/ajar</code></p>
+      <p class="first" id="first">First open: if macOS blocks it, go to System Settings › Privacy &amp; Security and click Open Anyway.</p>
+    </div>
   </header>
 
   <section aria-labelledby="how-h">
@@ -143,12 +169,15 @@
   </section>
 
   <section aria-labelledby="feat-h">
-    <div class="center"><h2 id="feat-h">Safe to leave</h2></div>
-    <div class="features">
-      <div class="feature"><h3>Sleeps when it's done</h3><p>A few minutes after your agent stops.</p></div>
-      <div class="feature"><h3>No lock screen</h3><p>Open the lid and you're back where you were.</p></div>
-      <div class="feature"><h3>Battery and heat limits</h3><p>It sleeps at 15% battery or if it gets too hot.</p></div>
-      <div class="feature"><h3>Puts everything back</h3><p>Every change is undone when you open the lid.</p></div>
+    <div class="center"><h2 id="feat-h">Safe to leave, and you're in control</h2><p class="sub">The Apps tab shows what keeps it awake and what closing the lid slows or pauses. Change any of it.</p></div>
+    <div class="two">
+      <div class="list">
+        <div class="item"><h3>Sleeps when it's done</h3><p>A few minutes after your agent stops.</p></div>
+        <div class="item"><h3>No lock screen</h3><p>Open the lid and you're back where you were.</p></div>
+        <div class="item"><h3>Battery and heat limits</h3><p>It sleeps at 15% battery or if it gets too hot.</p></div>
+        <div class="item"><h3>Puts everything back</h3><p>Every change is undone when you open the lid.</p></div>
+      </div>
+      <img src="panel-apps.png" alt="Ajar's Apps tab: Claude app keeps the Mac awake, Max Battery is selected for when the lid is closed, and it stops at 5% battery" width="640" height="604">
     </div>
   </section>
 
@@ -187,15 +216,17 @@ Never turn off the heat guard or lower the battery limit; Ajar won't let you, an
 
   <section class="narrow" aria-labelledby="faq-h">
     <h2 id="faq-h">Questions</h2>
+    <div class="faq">
     <details><summary>Is it safe in a bag?</summary><p>It watches the temperature and sleeps if the laptop stays hot. It also sleeps at 15% battery.</p></details>
     <details><summary>Do I type my password when I open the lid?</summary><p>No. The screen stays dark instead of sleeping, so there's no lock screen.</p></details>
     <details><summary>What does it change?</summary><p>Sleep, Low Power Mode, brightness, Time Machine's automatic backups, and apps you aren't using. Opening the lid puts it all back. Settings › About › Remove Ajar removes it.</p></details>
-    <details><summary>Which agents?</summary><p>Claude Code, Codex, Gemini CLI, Cursor Agent, Copilot CLI, Amp, Aider, OpenCode, Ollama and the Claude app. You can add any other app in Settings › Apps.</p></details>
+    <details><summary>Which agents?</summary><p>Claude Code, Codex, Gemini CLI, Cursor Agent, Copilot CLI, Amp, Aider, OpenCode, Ollama and the Claude app. You can add any other app with + on the Apps tab.</p></details>
     <details><summary>Does it cost anything?</summary><p>No. It's free and open source. <a href="https://github.com/12alexanderbell-graham/ajar">Code on GitHub</a>.</p></details>
     <details><summary>Windows and Linux?</summary><p>Yes. Windows 10 and 11, and Linux desktops with systemd. Both are newer than the Mac version, so tell us on GitHub if anything's off.</p></details>
+    </div>
   </section>
 
-  <section class="final" aria-labelledby="final-h">
+  <section class="green final" aria-labelledby="final-h">
     <h2 id="final-h">Close the lid. Your AI keeps working.</h2>
     <a class="btn" id="dl2" href="downloads/Ajar-1.0.0-mac.zip">Download for Mac</a>
     <p class="meta">Free · Mac, Windows and Linux · <a href="https://github.com/12alexanderbell-graham/ajar">GitHub</a></p>
