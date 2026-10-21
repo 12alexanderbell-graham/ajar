@@ -23,6 +23,8 @@ pub struct Mock {
     pub desktop_sleeps_on_close: Option<bool>,
     /// Make every restore (resume / un-slow) fail, as if the OS refused.
     pub fail_restore: bool,
+    /// Make putting the power profile back fail (the record must then be kept).
+    pub fail_low_power_off: bool,
     pub hold_drift: Option<String>,
     pub docked: bool,
     pub user_keeps_awake_on_close: bool,
@@ -58,6 +60,7 @@ impl Platform for Mock {
     fn sleep_now(&mut self) { self.slept += 1; self.log.push("sleep".into()); }
     fn set_low_power(&mut self, on: bool, r: &mut Restore) -> bool {
         if on && !self.low_power { r.power_profile = Some("balanced".into()); }
+        if !on && self.fail_low_power_off && r.power_profile.is_some() { return false; }
         if !on { r.power_profile = None; }
         self.low_power = on;
         true

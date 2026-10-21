@@ -64,7 +64,8 @@ enum CLI {
             let r = send("schema", [:])
             if rest.contains("--json") || (r["ok"] as? Bool) == false { return show(r, json: true) }
             for s in (r["settings"] as? [[String: Any]]) ?? [] {
-                print("\(s["key"] ?? "") = \(s["value"] ?? "")   [\(((s["allowed"] as? [String]) ?? []).joined(separator: "|"))]")
+                let value: Any = (s["type"] as? String == "bool") ? ((s["value"] as? Bool) == true ? "on" : "off") : (s["value"] ?? "")
+                print("\(s["key"] ?? "") = \(value)   [\(((s["allowed"] as? [String]) ?? []).joined(separator: "|"))]")
                 print("    \(s["description"] ?? "")\((s["note"] as? String).map { " (\($0))" } ?? "")")
             }
             print("\nChange with: ajar set <key> <value>. Per-app rules: ajar rule <app> leave|slow|pause. File: \(r["config_file"] ?? "")")
@@ -78,7 +79,9 @@ enum CLI {
                 while Date() < deadline {
                     Thread.sleep(forTimeInterval: 5)
                     let r = send("power", [:])
-                    if (r["power_test"] as? String) == "done" { return showPower(r, json: rest.contains("--json")) }
+                    let status = r["power_test"] as? String ?? ""
+                    if status == "done" { return showPower(r, json: rest.contains("--json")) }
+                    if status.hasPrefix("aborted") || status == "not run yet" { print("ajar: power test \(status)"); return 1 }
                 }
                 print("ajar: the test didn't finish in time; run ajar power later for results"); return 1
             }
@@ -165,7 +168,9 @@ enum CLI {
     private static func runWrapped(_ rest: [String]) -> Int32 {
         var parts = rest
         var reason: String?
-        if let i = parts.firstIndex(of: "--reason"), i + 1 < parts.count { reason = parts[i + 1]; parts.removeSubrange(i...(i + 1)) }
+        // Only Ajar's own flags, before "--": the command's arguments (even its own --reason) are passed through.
+        let end = parts.firstIndex(of: "--") ?? parts.count
+        if let i = parts[..<end].firstIndex(of: "--reason"), i + 1 < end { reason = parts[i + 1]; parts.removeSubrange(i...(i + 1)) }
         if parts.first == "--" { parts.removeFirst() }
         guard !parts.isEmpty else { print("ajar run [--reason text] -- <command> [args…]"); return 2 }
         let why = reason ?? "Running \(parts[0])"
@@ -280,7 +285,7 @@ enum CLI {
 
     static func showPower(_ r: [String: Any], json: Bool) -> Int32 {
         if json || (r["ok"] as? Bool) == false { return show(r, json: true) }
-        print("Using \(r["system_watts"] ?? "?") W now (\(r["source"] ?? "")). Lid \(r["lid_closed"] as? Bool == true ? "closed" : "open").")
+        print("Using \((r["system_watts"] as? Double).map { String(format: "%.1f", $0) } ?? "?") W now (\(r["source"] as? String ?? "")). Lid \(r["lid_closed"] as? Bool == true ? "closed" : "open").")
         if let o = r["learned_open_watts"] as? Double, let c = r["learned_closed_watts"] as? Double { print("Learned: \(o) W open, \(c) W closed.") }
         for s in (r["suspects"] as? [[String: Any]]) ?? [] {
             let active = s["active"] as? Bool == true
@@ -328,6 +333,7 @@ enum MCPServer {
             // Default: tied to this Claude session AND capped at 2 hours, so an idle session sitting at its prompt
             // can't keep a closed Mac awake in a bag indefinitely.
             if a["minutes"] == nil && a["pid"] == nil { args["pid"] = Int(getppid()); args["minutes"] = 120 }
+            args["owner"] = Int(getppid())   // so ajar_release can end it, however it was tied
             return CLI.send("hold", args)
         },
         Tool(name: "ajar_release",
@@ -401,7 +407,9 @@ enum MCPServer {
             var error: [String: Any]?
             switch method {
             case "initialize":
-                result = ["protocolVersion": params["protocolVersion"] as? String ?? "2025-06-18",
+                let supported = ["2025-06-18", "2025-03-26", "2024-11-05"]
+                let asked = params["protocolVersion"] as? String ?? ""
+                result = ["protocolVersion": supported.contains(asked) ? asked : supported[0],
                           "capabilities": ["tools": [:]],
                           "serverInfo": ["name": "ajar", "version": "1.0"],
                           "instructions": "Ajar keeps this Mac awake with the lid closed and cuts power while it does. Call ajar_keep_awake at the start of long work so closing the lid won't stop you; it ends by itself when this session does. To tune it: ajar_settings lists every setting, ajar_power shows what's using power and which setting fixes it, ajar_power_test measures each saving with the lid closed. If asked to set Ajar up, follow ajar_setup_prompt."]

@@ -5,6 +5,7 @@ import AppIntents
 enum AjarShared {
     static weak var engine: Engine?
     static var remote: RemoteControl?
+    static weak var ui: StatusController?
 }
 
 /// Shortcuts, Spotlight and Siri: "Keep Mac awake for 2 hours", "Let Mac sleep", "Ajar status".
@@ -20,6 +21,7 @@ struct KeepAwakeIntent: AppIntent {
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
         guard let e = AjarShared.engine else { return .result(dialog: "Open Ajar first.") }
+        guard e.setupReady else { return .result(dialog: "Ajar needs its one-time setup first. Open Ajar from the menu bar.") }
         e.addHold(reason: "Shortcut", minutes: Double(minutes), pid: nil)
         return .result(dialog: "Staying awake for \(Engine.formatMinutes(Double(minutes))), lid open or closed.")
     }

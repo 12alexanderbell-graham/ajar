@@ -21,8 +21,11 @@ enum SettingsSchema {
         switch (v as? String)?.lowercased() { case "on", "true", "yes", "1": return true; case "off", "false", "no", "0": return false; default: return nil }
     }
     static func int(_ v: Any) -> Int? {
-        if let n = v as? NSNumber { return n.intValue }
-        return (v as? String).flatMap { Double($0.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "%", with: "")) }.map { Int($0) }
+        if let n = v as? NSNumber { let d = n.doubleValue; return d.isFinite && abs(d) < 1_000_000 ? Int(d) : nil }
+        // nan, inf and 1e400 all parse as Doubles and would crash Int(_:).
+        guard let d = (v as? String).flatMap({ Double($0.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "%", with: "")) }),
+              d.isFinite, abs(d) < 1_000_000 else { return nil }
+        return Int(d)
     }
     static func toggle(_ key: String, _ category: String, _ description: String, note: String? = nil, _ path: WritableKeyPath<Config, Bool>) -> SettingSpec {
         SettingSpec(key: key, type: "bool", allowed: ["on", "off"], category: category, description: description, note: note,
@@ -34,7 +37,11 @@ enum SettingsSchema {
                     description: "auto (shown as When Busy): awake only while an agent or watched app is working. on (Always): awake until turned off. off: normal sleep (explicit holds still work).",
                     get: { $0.mode.rawValue }, set: { c, v in
                         guard let m = (v as? String).flatMap(CommandCenter.parseMode) else { return "auto, on or off" }
-                        c.mode = m; if m != .on { c.alwaysUntil = nil }; return nil }),
+                        // Remember the mode to go back to, the same as choosing Always in the panel.
+                        if m == .on && c.mode != .on { c.modeBeforeAlways = c.mode; c.alwaysUntil = nil }
+                        if m != .on { c.alwaysUntil = nil; c.modeBeforeAlways = nil }
+                        c.mode = m   // already on: a timer that's running stays
+                        return nil }),
         SettingSpec(key: "preset", type: "enum", allowed: ["max_battery", "balanced", "full_speed"], category: "While the lid is closed",
                     description: "What happens to other apps with the lid shut. max_battery: pause them (music, calls and services agents use keep going). balanced: slow them to efficiency cores. full_speed: leave them.",
                     get: { ["longest": "max_battery", "balanced": "balanced", "speed": "full_speed"][$0.preset.rawValue] ?? "balanced" },
@@ -61,7 +68,13 @@ enum SettingsSchema {
                         guard let b = bool(v) else { return "on or off" }
                         guard b else { return "to be turned off in Ajar's Settings (it can only be turned on from here)" }
                         c.heatGuard = true; return nil }),
-        toggle("only_on_power", "Safety", "Only stay awake while the charger is covering the load.", \.onlyOnPower),
+        SettingSpec(key: "only_on_power", type: "bool", allowed: ["on", "off"], category: "Safety",
+                    description: "Only stay awake while the charger is covering the load.",
+                    note: "Can only be turned on from commands.",
+                    get: { $0.onlyOnPower }, set: { c, v in
+                        guard let b = bool(v) else { return "on or off" }
+                        guard b || !c.onlyOnPower else { return "to be turned off in Ajar's Settings (it can only be turned on from here)" }
+                        c.onlyOnPower = b; return nil }),
         SettingSpec(key: "quiet_minutes", type: "int", allowed: ["1-240"], category: "When to stay awake",
                     description: "In auto mode, sleep after an agent has been quiet this many minutes.",
                     get: { $0.quietMinutes }, set: { c, v in guard let n = int(v) else { return "a number 1-240" }; c.quietMinutes = min(240, max(1, n)); return nil }),

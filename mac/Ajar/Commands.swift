@@ -25,6 +25,12 @@ enum Wire {
               let d = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys]) else { return "{}" }
         return String(decoding: d, as: UTF8.self)
     }
+
+    /// No whitespace: for the phone relay, where every byte counts against ntfy's 4096-byte message limit.
+    static func compact(_ obj: Any) -> String {
+        guard JSONSerialization.isValidJSONObject(obj), let d = try? JSONSerialization.data(withJSONObject: obj) else { return "{}" }
+        return String(decoding: d, as: UTF8.self)
+    }
 }
 
 @MainActor
@@ -94,7 +100,8 @@ final class CommandCenter {
             guard let id = str("agent"), engine.sessions.contains(where: { $0.kind.id == id }) || engine.config.trackOnly.contains(id) else {
                 return fail("no agent \(str("agent") ?? "?") is running")
             }
-            engine.toggleTrackOnly(id)
+            // The phone sends the state it wants ("keeps"), so a retried tap can't flip it back; older callers toggle.
+            if let keeps = bool("keeps") { engine.setKeepsAwake(id, keeps) } else { engine.toggleTrackOnly(id) }
             ok()
 
         case "sleep_now":
@@ -123,7 +130,8 @@ final class CommandCenter {
             }
             if a["pid"] != nil && pid == nil { return fail("pid must be a running process id") }
             let reason = String((str("reason") ?? "Asked to stay awake").prefix(80))
-            let h = engine.addHold(reason: reason, minutes: num("minutes", max: 7 * 24 * 60), pid: pid)
+            let owner = num("owner", max: Double(Int32.max)).map { Int32($0) }
+            let h = engine.addHold(reason: reason, minutes: num("minutes", max: 7 * 24 * 60), pid: pid, owner: owner)
             ok(["hold": holdDict(h)])
 
         case "release":
@@ -161,7 +169,10 @@ final class CommandCenter {
             if let found = Self.resolveApp(query) { w = WatchedApp(id: found.path, name: found.name) }
             else if !query.contains("/") && query.count <= 64 { w = WatchedApp(id: query, name: query) }   // executable name
             else { return fail("Couldn't find \(query)") }
-            if remove { engine.removeWatched(w) } else { engine.addWatched(w) }
+            if remove {
+                guard engine.watchedApps.contains(w) else { return fail("\(w.name) isn't on the list") }
+                engine.removeWatched(w)
+            } else { engine.addWatched(w) }
             ok([remove ? "removed" : "added": w.name, "watch_list": engine.watchedApps.map(\.name)])
 
         case "agent":

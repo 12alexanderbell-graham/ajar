@@ -11,18 +11,46 @@ final class StatusController: NSObject, NSPopoverDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let popover = NSPopover()
     private var mainWindow: NSWindow?
-    private var measurer: NSHostingController<PanelView>!
-    private var fitTimer: Timer?
 
-    /// Fit the popover to its content, outside any layout pass, capped to the screen.
+    /// Fit the popover to what it shows, capped to the menu bar's screen. The main page reports its own height
+    /// (measured on the live view, so dismissed rows and "Show More" count); Settings scroll inside a fixed page.
+    /// Applied on the next run loop turn, outside any layout pass: letting SwiftUI drive the popover's size
+    /// directly made AppKit's constraint pass loop and crash.
     private func fitPopover() {
-        let maxH = (NSScreen.main?.visibleFrame.height ?? 900) - 40
-        // Settings scroll inside a fixed page; the main page is as tall as its content.
-        let h = UIState.shared.panelSettings ? UIState.settingsHeight : ceil(measurer.sizeThatFits(in: CGSize(width: 320, height: 4000)).height)
-        let size = NSSize(width: 320, height: min(h, maxH))
+        let screen = item.button?.window?.screen ?? NSScreen.main
+        let maxH = (screen?.visibleFrame.height ?? 900) - 40
+        let ui = UIState.shared
+        let h = ui.panelSettings ? UIState.settingsHeight : ceil(ui.panelHeight)
+        let size = NSSize(width: 320, height: min(max(h, 120), maxH))
         if abs(popover.contentSize.height - size.height) > 1 || popover.contentSize.width != size.width {
             popover.contentSize = size
         }
+    }
+
+    /// Refits when the page or its height changes, and keeps the popover open while a password prompt is up.
+    private func observeUI() {
+        withObservationTracking {
+            let ui = UIState.shared
+            _ = ui.panelHeight; _ = ui.panelSettings; _ = ui.pinned
+        } onChange: { [weak self] in
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.fitPopover()
+                self.popover.behavior = UIState.shared.pinned ? .applicationDefined : .transient
+                self.observeUI()
+            }
+        }
+    }
+
+    /// The panel counts as open while the popover or the main window is on screen (faster refresh then).
+    private func updatePanelOpen() {
+        engine.panelOpen = popover.isShown || mainWindow?.isVisible == true
+    }
+
+    /// Ajar's own Light/Dark choice also for the popover, which otherwise follows the menu bar.
+    func applyAppearance(_ a: NSAppearance?) {
+        popover.appearance = a
+        mainWindow?.appearance = a
     }
 
     init(engine: Engine) {
@@ -35,14 +63,9 @@ final class StatusController: NSObject, NSPopoverDelegate {
         }
 
         let actions = PanelActions(openSettings: { [weak self] in self?.showSettings() }, quit: { NSApp.terminate(nil) })
-        // Sized by hand from a separate measuring copy. Letting SwiftUI drive the popover's size from live content
-        // made AppKit's constraint pass loop and crash ("more Update Constraints passes than views").
-        let host = NSHostingController(rootView: PopoverRoot(engine: engine, actions: actions,
-                                                             back: { [weak self] in UIState.shared.panelSettings = false; self?.fitPopover() }))
+        let host = NSHostingController(rootView: PopoverRoot(engine: engine, actions: actions, back: { UIState.shared.panelSettings = false }))
         host.sizingOptions = []
         popover.contentViewController = host
-        measurer = NSHostingController(rootView: PanelView(engine: engine, actions: actions))
-        measurer.sizingOptions = []
         popover.behavior = .transient
         popover.animates = true
         popover.delegate = self
@@ -55,6 +78,8 @@ final class StatusController: NSObject, NSPopoverDelegate {
         }
         item.autosaveName = "AjarStatusItem"
         refreshIcon()
+        observeUI()
+        UIState.shared.pinHook = { [weak self] on in self?.popover.behavior = on ? .applicationDefined : .transient }
     }
 
     // MARK: Icon
@@ -131,21 +156,17 @@ final class StatusController: NSObject, NSPopoverDelegate {
 
     func showPopover() {
         guard let button = item.button else { return }
-        engine.panelOpen = true
         fitPopover()
-        fitTimer?.invalidate()
-        fitTimer = Timer.scheduledTimer(withTimeInterval: 0.7, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.fitPopover() }
-        }
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
         NSApp.activate()
+        updatePanelOpen()
     }
 
     func popoverDidClose(_ notification: Notification) {
-        fitTimer?.invalidate()
         UIState.shared.panelSettings = false   // opens on the main page next time, like system menus
-        engine.panelOpen = false
+        UIState.shared.pinned = false
+        updatePanelOpen()
     }
 
     // MARK: Windows
@@ -176,11 +197,13 @@ final class StatusController: NSObject, NSPopoverDelegate {
             w.titlebarAppearsTransparent = true
             w.isMovableByWindowBackground = true
             w.isReleasedWhenClosed = false
+            w.collectionBehavior = [.moveToActiveSpace]   // comes to the current desktop instead of switching to its own
+            w.appearance = popover.appearance
             w.center()
             mainWindow = w
         }
-        engine.panelOpen = true
         present(mainWindow!)
+        updatePanelOpen()
     }
 
     private var observedWindows = Set<ObjectIdentifier>()
@@ -203,7 +226,7 @@ final class StatusController: NSObject, NSPopoverDelegate {
             if self.mainWindow?.isVisible != true {
                 UIState.shared.windowSettings = false
                 if !self.engine.config.showInDock { NSApp.setActivationPolicy(.accessory) }
-                if !self.popover.isShown { self.engine.panelOpen = false }
+                self.updatePanelOpen()
             }
         }
     }
@@ -243,6 +266,24 @@ final class UIState {
     static let shared = UIState()
     var panelSettings = false
     var windowSettings = false
+    /// Height the main page needs, reported by the live view.
+    var panelHeight: CGFloat = 420
+    /// Keep the popover open (a password prompt is up for something started from it).
+    var pinned = false
+
+    /// Runs work that shows a macOS password prompt without the popover closing under it (clicking the prompt
+    /// counts as clicking outside a transient popover).
+    func whilePinned<T>(_ work: () -> T) -> T {
+        // Set at once: work() blocks the main thread while the prompt is up, so a queued change would land too late.
+        pinned = true
+        pinHook?(true)
+        let result = work()
+        // Let the clicks and focus changes from the dismissed prompt arrive first, then go back to normal.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.pinned = false; self.pinHook?(false) }
+        return result
+    }
+    /// Set by StatusController: changes the popover's behaviour immediately.
+    var pinHook: ((Bool) -> Void)?
     /// Height of the settings page in the menu bar panel (it scrolls inside).
     static let settingsHeight: CGFloat = 620
 }
@@ -265,8 +306,11 @@ struct PopoverRoot: View {
                     .frame(width: 320)
                     .transition(.move(edge: .trailing))
             } else {
-                ScrollView { PanelView(engine: engine, actions: actions) }
-                    .scrollIndicators(.never)
+                ScrollView {
+                    PanelView(engine: engine, actions: actions)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { ui.panelHeight = $0 }
+                }
+                .scrollIndicators(.never)
                     .transition(.move(edge: .leading))
             }
         }

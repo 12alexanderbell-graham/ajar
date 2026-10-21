@@ -247,17 +247,17 @@ impl Platform for Linux {
             }
             self.set_power_profile(dest, path, "power-saver")
         } else {
-            match restore.power_profile.take() {
-                // Only put it back if it's still the profile Ajar chose (the person may have changed it since).
-                Some(prev) if current == "power-saver" => self.set_power_profile(dest, path, &prev),
-                _ => true,
-            }
+            // Only put it back if it's still the profile Ajar chose (the person may have changed it since).
+            super::put_back(&mut restore.power_profile, current == "power-saver", |prev| self.set_power_profile(dest, path, prev))
         }
     }
 
     fn restore_settings(&mut self, restore: &mut Restore) {
+        // A profile that couldn't be put back stays recorded, to be retried.
         self.set_low_power(false, restore);
-        *restore = Restore::default();
+        if restore.power_profile.is_none() {
+            *restore = Restore::default();
+        }
     }
 
     fn slow(&mut self, pid: u32, start: u64, protected: &HashSet<u32>) -> Option<(i64, Option<String>)> {

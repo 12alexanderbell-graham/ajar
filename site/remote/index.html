@@ -71,14 +71,8 @@ button{font:inherit;color:inherit;touch-action:manipulation;cursor:pointer}
 .switch input:checked+span{background:var(--green)}
 .switch input:checked+span:before{transform:translateX(20px)}
 .switch input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
-/* More sheet */
-.scrim{position:fixed;inset:0;background:rgba(0,0,0,.3);display:flex;align-items:flex-end;justify-content:center;z-index:10}
-.sheet{width:100%;max-width:500px;background:var(--bg);border-radius:14px 14px 0 0;padding:8px 16px max(16px,env(safe-area-inset-bottom))}
-.grab{width:36px;height:5px;border-radius:3px;background:var(--ter);margin:0 auto 12px}
-.sheet .group{padding:0 16px}
-.sheet .group button{display:block;width:100%;text-align:left;border:0;background:none;padding:13px 0;border-top:1px solid var(--line);color:var(--accent)}
-.sheet .group button:first-child{border-top:0}
-.sheet .group button.danger{color:var(--red)}
+/* Laptop messages (a refused change, for example): under the host line, so they show on every page */
+.toast{background:var(--card);color:var(--orange);font-size:14px;border-radius:12px;padding:10px 14px;margin:0 0 12px}
 .fine{color:var(--sub);font-size:13px;text-align:center;margin:4px 8px 14px}
 /* Pairing */
 h1{font-size:28px;font-weight:700;letter-spacing:-.4px;margin:8px 2px 12px}
@@ -101,6 +95,7 @@ select.pick{-webkit-appearance:none;appearance:none;border:0;background:none;col
 .list button.item:first-child{border-top:0;padding-top:0}
 .list button.item:last-child{padding-bottom:0}
 .list button.item.danger{color:var(--red)}
+.list button.item.confirm{font-weight:600}
 [hidden]{display:none!important}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
@@ -138,6 +133,7 @@ select.pick{-webkit-appearance:none;appearance:none;border:0;background:none;col
       </button>
     </header>
     <div class="hostline"><span class="live" id="live"></span><span id="host">Laptop</span><span>·</span><span id="conn">Connecting…</span></div>
+    <div id="toast" class="toast" role="alert" hidden></div>
 
     <!-- Add to Home Screen tip: only in a browser tab, never inside the home-screen app. -->
     <section id="tip" class="group tip" hidden>
@@ -211,7 +207,7 @@ select.pick{-webkit-appearance:none;appearance:none;border:0;background:none;col
         <button class="item" id="copycode">Copy pairing code</button>
         <button class="item danger" id="unpair">Unpair this phone</button>
       </div>
-      <p class="foot"><span id="updated"></span>. End-to-end encrypted: the relay only sees scrambled messages. Pairing, connecting AI apps and removing Ajar are done on the laptop.</p>
+      <p class="foot"><span id="updated">Not updated yet</span>. End-to-end encrypted: the relay only sees scrambled messages. Pairing, connecting AI apps and removing Ajar are done on the laptop.</p>
     </section>
   </div>
 </main>
@@ -235,8 +231,22 @@ const DEFAULT_SERVER = "https://ntfy.sh";
 const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 const ios = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 
+const REFRESH_MS = 120000;   // auto refresh while on screen; taps refresh too, since every reply carries the panel
 let lastSent = 0;
-let key, cmdTopic, replyTopic, server = DEFAULT_SERVER, lastId = null, state = null, busy = false, keyText = "";
+let key, cmdTopic, replyTopic, server = DEFAULT_SERVER, lastId = null, state = null, stateAt = null, pending = 0, keyText = "";
+
+/** fetch that gives up after 12 s, so a stalled connection can't leave the page waiting forever. */
+async function fetchT(url, opts = {}, ms = 12000) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), ms);
+  const { text, ...init } = opts;
+  try {
+    const r = await fetch(url, { ...init, signal: ctl.signal });
+    return text ?{ ok: r.ok, status: r.status, text: await r.text() } : r;   // the body counts toward the 12 s too
+  }
+  catch (e) { throw e && e.name === "AbortError" ? new Error("timed out") : e; }
+  finally { clearTimeout(timer); }
+}
 
 /** Accepts a full pairing link ("…#k=KEY&s=SERVER"), just the "k=…" part, or the bare key. */
 function parsePairing(text) {
@@ -273,7 +283,7 @@ async function messageText(ev) {
   const a = ev.attachment;
   if (a && a.url && a.size < 65536) {
     try {
-      if (new URL(a.url).origin === new URL(server).origin) return await (await fetch(a.url)).text();
+      if (new URL(a.url).origin === new URL(server).origin) return (await fetchT(a.url, { text: true })).text;
     } catch (_) {}
   }
   return ev.message || "";
@@ -289,20 +299,26 @@ async function unseal(topicName, msg) {
 
 // Replies come in on one open connection (server-sent events) instead of polling. ntfy.sh allows a burst of about
 // 60 requests per address, refilled one every 5 s, so asking every second would soon get a busy phone blocked.
-const waiters = new Map();   // nonce -> resolve
+const waiters = new Map();   // nonce -> { res, at }
 let stream = null, streamReady = null;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+/** Reopening with since= the last message seen replays anything missed (for example while the app was in the
+ *  background) into requests still waiting for their answer. */
 function openStream() {
+  if (stream && stream.readyState === EventSource.CLOSED) closeStream();   // gave up for good; CONNECTING retries by itself
   if (stream) return streamReady;
-  stream = new EventSource(`${server}/${replyTopic}/sse?since=${encodeURIComponent(lastId || "1m")}`);
+  const oldest = Math.min(...[...waiters.values()].map(w => w.at));
+  const since = lastId || (isFinite(oldest) ? String(Math.floor(oldest / 1000) - 30) : "1m");
+  stream = new EventSource(`${server}/${replyTopic}/sse?since=${encodeURIComponent(since)}`);
   streamReady = new Promise(res => { stream.addEventListener("open", res, { once: true }); setTimeout(res, 4000); });
   stream.onmessage = async e => {
     let ev; try { ev = JSON.parse(e.data); } catch (_) { return; }
     if (ev.event !== "message") return;
     lastId = ev.id;
     const m = await unseal(replyTopic, await messageText(ev));
-    if (m && waiters.has(m.re)) { waiters.get(m.re)(m); waiters.delete(m.re); }
+    const w = m && waiters.get(m.re);
+    if (w) { waiters.delete(m.re); w.res(m); }
   };
   return streamReady;
 }
@@ -310,41 +326,51 @@ function openStream() {
 function closeStream() { if (stream) { stream.close(); stream = null; streamReady = null; } }
 
 let queue = Promise.resolve();
-/** Taps wait for a request already in flight instead of being dropped; extra refreshes are skipped. */
-function send(cmd, args = {}) {
-  if (cmd === "panel" && busy) return queue;
-  setConn("Sending…");   // at once, so a tap always shows it was heard
-  queue = queue.then(() => sendNow(cmd, args));
+/** Taps wait for a request already in flight instead of being dropped; extra refreshes are skipped unless forced.
+ *  Background refreshes (bg) don't show "Sending…": only the "Updated" time changes. Resolves to the reply or null. */
+function send(cmd, args = {}, { bg = false, force = false } = {}) {
+  if (cmd === "panel" && pending && !force) return queue;
+  if (!bg) setConn("Sending…");   // at once, so a tap always shows it was heard
+  pending++;
+  queue = queue.then(() => sendNow(cmd, args, bg));
   return queue;
 }
-async function sendNow(cmd, args) {
-  busy = true;
+async function sendNow(cmd, args, bg) {
   const n = hex(crypto.getRandomValues(new Uint8Array(8)));
   const since = lastId || "30s";
-  const replied = new Promise(res => waiters.set(n, res));
+  const replied = new Promise(res => waiters.set(n, { res, at: Date.now() }));
   try {
-    setConn("Sending…");
+    if (!bg) setConn("Sending…");
     if (window.EventSource) await openStream();
     const live = stream && stream.readyState !== EventSource.CLOSED;   // CONNECTING reconnects by itself
     const body = await seal(cmdTopic, { t: Math.floor(Date.now() / 1000), n, cmd, args });
-    const r = await fetch(`${server}/${cmdTopic}`, { method: "POST", body, headers: { Cache: "yes" } });
+    const r = await fetchT(`${server}/${cmdTopic}`, { method: "POST", body, headers: { Cache: "yes" } });
     if (!r.ok) throw new Error(r.status === 429 ? "too many requests, try again in a minute" : "relay said " + r.status);
-    setConn("Waiting for laptop…");
+    if (!bg) setConn("Waiting for laptop…");
     const reply = live ? await Promise.race([replied, sleep(20000).then(() => null)]) : await waitFor(n, since);
-    if (!reply) { setConn("No answer. Asleep or offline?"); return; }
-    if (reply.ok === false && reply.error) note(reply.error);
+    if (!reply) { setConn("No answer. Asleep or offline?"); return null; }
     if (reply.panel) render(reply.panel);
     if (reply.settings) renderSettings(reply.settings);
+    if (reply.ok === false && reply.error) note(reply.error);   // after drawing, so the redraw can't wipe it
     setConn("Connected");
     return reply;
   } catch (e) {
     setConn("Can't reach the relay (" + e.message + ")");
+    return null;
   } finally {
     waiters.delete(n);
-    busy = false;
+    pending--;
     lastSent = Date.now();
   }
 }
+
+/** A tap changes the screen at once; if the laptop didn't take it, show the last state it reported again. */
+async function tap(cmd, args) {
+  const r = await send(cmd, args);
+  if ((!r || r.ok === false) && state) render(state, stateAt);
+  return r;
+}
+const refresh = force => send("panel", {}, { bg: true, force });
 
 /** Fallback when the open connection isn't available: ask every 2.5 s for up to 20 s. */
 async function waitFor(n, since) {
@@ -353,8 +379,7 @@ async function waitFor(n, since) {
     await sleep(2500);
     let text;
     try {
-      const r = await fetch(`${server}/${replyTopic}/json?poll=1&since=${encodeURIComponent(since)}`);
-      text = await r.text();
+      text = (await fetchT(`${server}/${replyTopic}/json?poll=1&since=${encodeURIComponent(since)}`, { text: true })).text;
     } catch (_) { continue; }
     for (const line of text.split("\n")) {
       if (!line.trim()) continue;
@@ -427,11 +452,13 @@ function stopScan() {
   $("scanner").hidden = true; $("scanbtn").hidden = false;
 }
 
+let toastTimer = null;
 function note(msg) {
-  const p = document.createElement("p");
-  p.className = "warn";
-  p.textContent = msg;
-  $("warnings").prepend(p);
+  const t = $("toast");
+  t.textContent = msg;
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, 6000);
 }
 
 function toggleRow(label, sub, checked, onChange) {
@@ -497,16 +524,35 @@ function switcher(label, checked, onChange, disabled) {
   input.addEventListener("change", () => onChange(input.checked));
   sw.append(input, document.createElement("span")); return sw;
 }
-async function setSetting(k, v) {
+/** Resolves to true when the laptop took the change. Afterwards (andRefresh) it asks for the settings again, so rows
+ *  that depend on this one show up or go away; when it wasn't taken (refused, or no answer) it always does, to show the
+ *  real value again. */
+async function setSetting(k, v, andRefresh = true) {
   const r = await send("set", { key: k, value: v });
-  if (r && r.ok === false) send("schema");   // refused (for example lowering the battery limit): show the real value again
-  else if (settingsCache) { const s = settingsCache.find(x => x.key === k); if (s) s.value = v; }
+  const ok = !!r && r.ok !== false;
+  if (ok && settingsCache) { const s = settingsCache.find(x => x.key === k); if (s) s.value = s.type === "bool" ? v === "on" : v; }
+  if (!ok || andRefresh) {
+    if (settingsCache) renderSettings(settingsCache);   // at once: last known values (rolls a failed change back)
+    send("schema");
+  }
+  return ok;
 }
 
+let settingsDeferred = false;
 function renderSettings(list) {
   settingsCache = list;
+  const root = $("settingslist");
+  // Don't pull a menu or a text box out from under a finger: redraw once it's let go.
+  const f = document.activeElement;
+  if (f && root.contains(f) && (f.tagName === "SELECT" || (f.tagName === "INPUT" && f.type === "text"))) {
+    if (!settingsDeferred) {
+      settingsDeferred = true;
+      f.addEventListener("blur", () => { settingsDeferred = false; setTimeout(() => renderSettings(settingsCache)); }, { once: true });
+    }
+    return;
+  }
   const by = Object.fromEntries(list.map(s => [s.key, s]));
-  const root = $("settingslist"); root.textContent = "";
+  root.textContent = "";
   for (const [title, keys, foot] of SETTING_GROUPS) {
     const rows = [];
     for (const k of keys) {
@@ -517,7 +563,8 @@ function renderSettings(list) {
         if (by.screen_off) opts.push(["off", "Off, no lock (experimental)"]);
         if (by.lock_on_close) opts.push(["locks", "Off, locks"]);
         rows.push(settingRow("Screen", picker(opts, cur, async v => {
-          if (by.lock_on_close) await setSetting("lock_on_close", v === "locks" ? "on" : "off");
+          // Two settings behind one menu: stop at the first one the laptop doesn't take (that re-reads them all).
+          if (by.lock_on_close && !(await setSetting("lock_on_close", v === "locks" ? "on" : "off", !by.screen_off))) return;
           if (by.screen_off) await setSetting("screen_off", v === "off" ? "on" : "off");
         })));
         continue;
@@ -562,9 +609,11 @@ const PRESET_DETAIL = { longest: "Pauses other apps until you open the lid (musi
 function show(id, on) { $(id).hidden = !on; }
 function text(id, t) { $(id).textContent = t || ""; }
 
-function render(p) {
-  state = p;
-  store.set("ajar.last", JSON.stringify(p));
+const clock = at => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+/** at: when the laptop sent this (now for a fresh reply, the saved time for the copy shown before the first one). */
+function render(p, at = Date.now()) {
+  state = p; stateAt = at;
+  store.set("ajar.last", JSON.stringify({ p, at }));
   text("host", p.host || "Laptop");
   text("headline", p.headline);
   text("detail", p.detail);
@@ -594,13 +643,13 @@ function render(p) {
   const ag = $("agents"); ag.textContent = "";
   const agents = p.agents || [];
   if (!agents.length) empty(ag, "Claude, Codex, Gemini, Cursor and other agents show up here when they run.");
-  agents.forEach(a => ag.appendChild(toggleRow(a.name + (a.instances > 1 ? " ×" + a.instances : ""), a.working ? "Working" : "Idle", a.keeps, () => send("track", { agent: a.id }))));
+  agents.forEach(a => ag.appendChild(toggleRow(a.name + (a.instances > 1 ? " ×" + a.instances : ""), a.working ? "Working" : "Idle", a.keeps, ev => tap("track", { agent: a.id, keeps: ev.target.checked }))));
   const wl = $("watch"); wl.textContent = "";
   const watch = p.watch || [];
   if (!watch.length) empty(wl, "Busy apps on the laptop show up here.");
-  watch.forEach(a => wl.appendChild(toggleRow(a.name, null, a.on, ev => send("watch", { app: a.id, remove: !ev.target.checked }))));
+  watch.forEach(a => wl.appendChild(toggleRow(a.name, null, a.on, ev => tap("watch", { app: a.id, remove: !ev.target.checked }))));
   renderSavings(p);
-  text("updated", "Updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+  text("updated", at ? "Updated " + clock(at) : "Not updated yet");
 }
 
 const SAVING_NAMES = [["screen_off", "Screen fully off"], ["screen", "Screen off (locks)"], ["low_power", "Low Power Mode"],
@@ -610,7 +659,7 @@ let measurePoll = null;
 function renderSavings(p) {
   const box = $("savingsbox"), el = $("savings"), s = p.savings || {}, unclear = p.savingsUnclear || [];
   const has = Object.keys(s).length > 0 || unclear.length > 0;
-  box.hidden = !(has || p.powerTest || p.canMeasure);
+  box.hidden = !(has || p.powerTest || p.powerTestAborted || p.canMeasure);
   el.textContent = "";
   const row = (name, value) => {
     const r = document.createElement("div"); r.className = "row";
@@ -619,20 +668,24 @@ function renderSavings(p) {
     r.append(a, b); el.appendChild(r);
   };
   if (p.powerTest) empty(el, p.powerTest + ". Keep the lid shut; agents keep running.");
-  else if (has) {
-    if ("total" in s || unclear.includes("total")) {
-      row("All of Ajar's savings", unclear.includes("total") ? "unclear" : s.total >= 0.05 ? "saves " + s.total.toFixed(1) + " W" : "≈0 W");
-      if (s.closed_without && s.closed_with && !unclear.includes("total"))
-        row("Lid shut, without → with", s.closed_without.toFixed(1) + " → " + s.closed_with.toFixed(1) + " W");
-      if (unclear.includes("total")) empty(el, "The laptop's own load moved too much while measuring. Try again when the agents are quiet.");
+  else {
+    // Results from before stay below; the laptop says why the last run stopped (for example the lid was opened).
+    if (p.powerTestAborted) empty(el, "Last measurement stopped: " + String(p.powerTestAborted).replace(/\.$/, "") + ".");
+    if (has) {
+      if ("total" in s || unclear.includes("total")) {
+        row("All of Ajar's savings", unclear.includes("total") ? "unclear" : s.total >= 0.05 ? "saves " + s.total.toFixed(1) + " W" : "≈0 W");
+        if (s.closed_without && s.closed_with && !unclear.includes("total"))
+          row("Lid shut, without → with", s.closed_without.toFixed(1) + " → " + s.closed_with.toFixed(1) + " W");
+        if (unclear.includes("total")) empty(el, "The laptop's own load moved too much while measuring. Try again when the agents are quiet.");
+      }
+      SAVING_NAMES.filter(([k]) => k in s).forEach(([k, name]) => row(name, s[k] >= 0.05 ? "saves " + s[k].toFixed(1) + " W" : "≈0 W"));
     }
-    SAVING_NAMES.filter(([k]) => k in s).forEach(([k, name]) => row(name, s[k] >= 0.05 ? "saves " + s[k].toFixed(1) + " W" : "≈0 W"));
+    else empty(el, "With the lid shut, Ajar switches its savings off and on twice and measures the whole laptop. Best with the agents quiet.");
   }
-  else empty(el, "With the lid shut, Ajar switches its savings off and on twice and measures the whole laptop. Best with the agents quiet.");
   $("measure").hidden = !p.canMeasure;
   $("measure").textContent = (has ? "Measure again" : "Measure now") + " (about 4 min)";
   clearTimeout(measurePoll); measurePoll = null;
-  if (p.powerTest) measurePoll = setTimeout(() => send("panel"), 15000);
+  if (p.powerTest) measurePoll = setTimeout(() => refresh(true), 15000);   // follow the test more closely while it runs
 }
 
 /** Actions that let a closed laptop sleep can't be undone from the phone (a sleeping laptop can't hear it). Two taps. */
@@ -667,14 +720,17 @@ async function begin(k, s) {
   replyTopic = await topic("ajar/reply/v1", raw);
   $("pair").hidden = true;
   $("app").hidden = false;
-  try { const last = JSON.parse(store.get("ajar.last") || "null"); if (last) render(last); } catch (_) {}
+  // The last status this phone saw, with the time it came, until the laptop answers (older pages saved just the panel).
+  try { const last = JSON.parse(store.get("ajar.last") || "null"); if (last) last.p ? render(last.p, last.at || null) : render(last, null); } catch (_) {}
   showTip();
-  send("panel");
+  refresh(true);
   return true;
 }
 
 function save(k, s) {
+  if (store.get("ajar.k") !== k) store.del("ajar.last");   // another laptop: don't show the old one's status
   store.set("ajar.k", k);
+  store.del("ajar.unpaired");
   if (s) store.set("ajar.s", s); else store.del("ajar.s");
   // In a browser tab, keep the key in the address too: Add to Home Screen saves this address in the icon, so
   // the app re-pairs itself on every launch even if the phone ever clears the page's storage.
@@ -686,8 +742,8 @@ async function start() {
 
   const pick = (attr, b) => document.querySelectorAll(`[${attr}]`).forEach(x => x.classList.toggle("sel", x === b));   // answer the tap at once
   document.querySelectorAll("[data-mode]").forEach(b => {
-    if (b.dataset.mode === "off") confirmTap(b, "Tap again", () => { pick("data-mode", b); send("mode", { mode: "off" }); });
-    else b.addEventListener("click", () => { pick("data-mode", b); send("mode", { mode: b.dataset.mode }); });
+    if (b.dataset.mode === "off") confirmTap(b, "Tap again", () => { pick("data-mode", b); tap("mode", { mode: "off" }); });
+    else b.addEventListener("click", () => { pick("data-mode", b); tap("mode", { mode: b.dataset.mode }); });
   });
   document.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => {
     document.querySelectorAll("[data-tab]").forEach(x => x.classList.toggle("sel", x === b));
@@ -697,26 +753,48 @@ async function start() {
   if (store.get("ajar.tab") === "apps") document.querySelector('[data-tab="apps"]').click();
   $("more").addEventListener("click", () => openSettings(true));
   $("settingsback").addEventListener("click", () => openSettings(false));
-  // Keep it live while it's on screen: a refresh every 30 s (well inside the relay's limits).
-  setInterval(() => { if (key && !document.hidden && Date.now() - lastSent > 25000) send("panel"); }, 5000);
-  document.querySelectorAll("[data-preset]").forEach(b => b.addEventListener("click", () => { pick("data-preset", b); send("preset", { preset: b.dataset.preset }); }));
+  // Keep it fresh while it's on screen without spending the relay's daily allowance: every tap's answer already
+  // brings the status, so ask by itself only when nothing has been sent for 2 minutes.
+  setInterval(() => { if (key && !document.hidden && !pending && Date.now() - lastSent > REFRESH_MS) refresh(); }, 5000);
+  document.querySelectorAll("[data-preset]").forEach(b => b.addEventListener("click", () => { pick("data-preset", b); tap("preset", { preset: b.dataset.preset }); }));
   document.querySelectorAll("[data-for]").forEach(b => b.addEventListener("click", () => send("mode", { mode: "always", minutes: +b.dataset.for })));
   document.querySelectorAll("[data-until]").forEach(b => b.addEventListener("click", () => send("mode", { mode: "always", until_hour: +b.dataset.until })));
   confirmTap($("sleepnow"), "Tap again: you can't wake it from here", () => send("sleep_now"));
-  $("refresh").addEventListener("click", () => send("panel"));
-  $("measure").addEventListener("click", async () => { await send("power_test"); setTimeout(() => send("panel"), 3000); });
+  $("refresh").addEventListener("click", () => send("panel", {}, { force: true }));
+  $("measure").addEventListener("click", async () => { await send("power_test"); setTimeout(() => refresh(true), 3000); });
   $("tipclose").addEventListener("click", () => { store.set("ajar.tipHidden", "1"); $("tip").hidden = true; });
+  let copied = null;
   $("copycode").addEventListener("click", async () => {
-    const text = keyText + (server !== DEFAULT_SERVER ? "&s=" + encodeURIComponent(server) : "");
+    // The same form the paste box takes, server included, so it pairs another phone as is.
+    const text = "k=" + keyText + (server !== DEFAULT_SERVER ? "&s=" + encodeURIComponent(server) : "");
     try { await navigator.clipboard.writeText(text); $("copycode").textContent = "Copied"; }
     catch (_) { prompt("Pairing code", text); }
+    clearTimeout(copied);
+    copied = setTimeout(() => { $("copycode").textContent = "Copy pairing code"; }, 2000);
   });
+  let unpairArmed = null;
   $("unpair").addEventListener("click", () => {
+    const b = $("unpair");
+    if (!unpairArmed) {
+      b.textContent = "Tap again to unpair"; b.classList.add("confirm");
+      unpairArmed = setTimeout(() => { unpairArmed = null; b.textContent = "Unpair this phone"; b.classList.remove("confirm"); }, 4000);
+      return;
+    }
+    clearTimeout(unpairArmed);
     closeStream();
     ["ajar.k", "ajar.s", "ajar.last"].forEach(store.del);
+    store.set("ajar.unpaired", "1");   // so the home-screen icon's saved link doesn't pair it again on the next launch
     location.replace(location.pathname);
   });
-  document.addEventListener("visibilitychange", () => { if (document.hidden) closeStream(); else if (key) send("panel"); });
+  // In the background the open connection is closed (iPhone would drop it anyway). Back on screen: reopen it, which
+  // replays answers that came in meanwhile to a tap still waiting, and refresh even if that tap is still in flight.
+  const back = () => {
+    if (!key) return;
+    if (waiters.size && window.EventSource) openStream();
+    refresh(true);
+  };
+  document.addEventListener("visibilitychange", () => { if (document.hidden) closeStream(); else back(); });
+  window.addEventListener("pageshow", e => { if (e.persisted) back(); });
   $("scanbtn").addEventListener("click", startScan);
   $("scanstop").addEventListener("click", stopScan);
   document.addEventListener("visibilitychange", () => { if (document.hidden) stopScan(); });
@@ -731,12 +809,20 @@ async function start() {
 
   // 1. A link with the key in it (the QR code). Save it. In a browser tab the key stays in the address so
   //    "Add to Home Screen" carries it into the app (on iPhone, home-screen apps don't share Safari's storage).
-  //    Inside the home-screen app it's removed from the address once saved.
+  //    Inside the home-screen app it's removed from the address once saved. The icon keeps the address it was added
+  //    with, though, so every launch brings the same link back: once applied, it must not undo a newer pairing or
+  //    an unpair made in the app since.
   const fromLink = parsePairing(location.hash.slice(1));
   if (fromLink.k && keyBytes(fromLink.k)) {
-    save(fromLink.k, fromLink.s);
+    const stored = store.get("ajar.k");
+    const stale = standalone && fromLink.k === store.get("ajar.linkApplied") &&
+      (store.get("ajar.unpaired") === "1" || (!!stored && stored !== fromLink.k));
     if (standalone) { try { history.replaceState(null, "", location.pathname); } catch (_) {} }
-    return begin(fromLink.k, fromLink.s);
+    if (!stale) {
+      save(fromLink.k, fromLink.s);
+      store.set("ajar.linkApplied", fromLink.k);
+      return begin(fromLink.k, fromLink.s);
+    }
   }
   // 2. Paired before on this phone.
   const k = store.get("ajar.k");

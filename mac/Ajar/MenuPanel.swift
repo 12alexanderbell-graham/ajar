@@ -27,8 +27,6 @@ struct PanelView: View {
         }
         .padding(16)
         .frame(width: 320, alignment: .leading)
-        .onAppear { engine.panelOpen = true }
-        .onDisappear { engine.panelOpen = false }
     }
 
     private var header: some View {
@@ -89,7 +87,8 @@ private struct NowTab: View {
     }
 
     /// Which receipt was dismissed (by its session), so the next session's receipt still shows.
-    @State private var dismissedReceipt: Date?
+    @AppStorage("dismissedReceipt") private var dismissedReceiptAt: Double = 0
+    private var dismissedReceipt: Date? { dismissedReceiptAt > 0 ? Date(timeIntervalSince1970: dismissedReceiptAt) : nil }
 
     /// "Close the lid: keeps working" with the reason and what it'll cost, so nobody has to work it out.
     private var outcome: some View {
@@ -123,7 +122,7 @@ private struct NowTab: View {
                     .font(.caption).foregroundStyle(.secondary).monospacedDigit()
             }
             Spacer(minLength: 4)
-            Button { dismissedReceipt = r.closedAt } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }
+            Button { dismissedReceiptAt = r.closedAt.timeIntervalSince1970 } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }
                 .buttonStyle(.plain).foregroundStyle(.tertiary).help("Dismiss")
         }
     }
@@ -451,7 +450,7 @@ private struct SetupView: View {
             Text("Ajar needs your password once to control sleep.")
                 .font(.subheadline).foregroundStyle(.secondary)
             if let err = engine.setupError { Text(err).font(.subheadline).foregroundStyle(.red) }
-            Button { engine.runSetup() } label: { Text("Continue").frame(maxWidth: .infinity) }
+            Button { UIState.shared.whilePinned { engine.runSetup() } } label: { Text("Continue").frame(maxWidth: .infinity) }
                 .buttonStyle(.borderedProminent).controlSize(.large)
                 .padding(.top, 8)
         }

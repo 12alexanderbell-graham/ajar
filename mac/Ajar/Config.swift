@@ -178,6 +178,8 @@ struct Hold: Codable, Identifiable, Equatable {
     var until: Date?
     var pid: Int32?
     var created = Date()
+    /// The agent session that made it (MCP): it may end its own holds, whatever they're tied to.
+    var owner: Int32?
 
     /// Start time of `pid` when the hold was made: the hold ends if the pid now belongs to another process.
     var pidStart: UInt64?
@@ -206,6 +208,13 @@ struct Hold: Codable, Identifiable, Equatable {
 final class ConfigWatcher {
     private var source: DispatchSourceFileSystemObject?
     private let onChange: () -> Void
+    private var lastStamp: String?
+
+    /// Modification time, size and inode of config.json (an atomic replace changes the inode).
+    private static func stamp() -> String? {
+        guard let a = try? FileManager.default.attributesOfItem(atPath: Config.url.path) else { return nil }
+        return "\((a[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0)-\(a[.size] ?? 0)-\(a[.systemFileNumber] ?? 0)"
+    }
 
     init(onChange: @escaping () -> Void) {
         self.onChange = onChange
@@ -217,7 +226,16 @@ final class ConfigWatcher {
         let fd = open(StateFiles.dir.path, O_EVTONLY)
         guard fd >= 0 else { return }
         let s = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .rename, .delete, .extend], queue: .main)
-        s.setEventHandler { [weak self] in self?.onChange() }
+        // The folder also holds the 2-second heartbeat and other state files: only react when config.json itself
+        // changed, instead of re-reading it every 2 seconds.
+        lastStamp = Self.stamp()
+        s.setEventHandler { [weak self] in
+            guard let self else { return }
+            let now = Self.stamp()
+            guard now != self.lastStamp else { return }
+            self.lastStamp = now
+            self.onChange()
+        }
         s.setCancelHandler { close(fd) }
         s.resume()
         source = s

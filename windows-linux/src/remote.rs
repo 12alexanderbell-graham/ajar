@@ -22,13 +22,16 @@ use sha2::{Digest, Sha256};
 use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 pub const DEFAULT_SERVER: &str = "https://ntfy.sh";
 /// Commands the phone panel may send.
-pub const ALLOWED: &[&str] = &["panel", "mode", "release", "preset", "watch", "track", "sleep_now", "set", "schema", "power"];
+/// `power_test` (the phone's Measure button) is accepted only to answer that it's Mac-only.
+pub const ALLOWED: &[&str] = &["panel", "mode", "release", "preset", "watch", "track", "sleep_now", "set", "schema", "power", "power_test"];
 const MAX_AGE: u64 = 300;
+const TOO_OLD: &str = "too old";
+const REPLAYED: &str = "already handled";
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(default, rename_all = "camelCase")]
@@ -129,17 +132,20 @@ pub struct Guard {
 
 impl Guard {
     pub fn check(&mut self, t: u64, id: &str, now: u64) -> Result<(), &'static str> {
+        if t + MAX_AGE < now {
+            return Err(TOO_OLD);
+        }
         if id.is_empty() || id.len() > 64 {
             return Err("bad id");
         }
-        if t + MAX_AGE < now || t > now + 60 {
-            return Err("too old or from the future (check the phone's clock)");
+        if t > now + 60 {
+            return Err("from the future (check the phone's clock)");
         }
         while self.seen.front().is_some_and(|(_, at)| at + MAX_AGE + 60 < now) {
             self.seen.pop_front();
         }
         if self.seen.iter().any(|(s, _)| s == id) {
-            return Err("already handled");
+            return Err(REPLAYED);
         }
         while self.recent.front().is_some_and(|at| at + 60 < now) {
             self.recent.pop_front();
@@ -153,27 +159,94 @@ impl Guard {
     }
 }
 
+/// Why a relayed message wasn't run.
+#[derive(Debug, PartialEq)]
+pub enum Rejected {
+    /// Gets no reply: garbage on the topic (nothing to tell a stranger), a command too old for the phone to
+    /// still be waiting (a burst of them after a restart would only burn the relay's quota), or a replay (the
+    /// phone already has, or is getting, the real reply under that id).
+    Silent(String),
+    /// From the phone but refused (clock, rate limit, not allowed): the reply carries the command's id so the
+    /// phone can match it.
+    Refused { re: String, error: String },
+}
+
+impl Rejected {
+    pub fn error(&self) -> &str {
+        match self {
+            Rejected::Silent(e) | Rejected::Refused { error: e, .. } => e,
+        }
+    }
+}
+
 /// Decrypts and validates one relayed command. Returns (id, command, args).
-pub fn decode_command(key: &[u8; 32], topic: &str, message: &str, guard: &mut Guard, now: u64) -> Result<(String, String, Value), String> {
-    let text = open(key, topic, message).ok_or("couldn't decrypt (wrong key, or not from your phone)")?;
-    let v: Value = serde_json::from_str(&text).map_err(|_| "not JSON")?;
+pub fn decode_command(key: &[u8; 32], topic: &str, message: &str, guard: &mut Guard, now: u64) -> Result<(String, String, Value), Rejected> {
+    let text = open(key, topic, message).ok_or_else(|| Rejected::Silent("couldn't decrypt (wrong key, or not from your phone)".into()))?;
+    let v: Value = serde_json::from_str(&text).map_err(|_| Rejected::Silent("not JSON".into()))?;
+    // Read before any check, so even a refusal can name the command it answers.
     let id = v["n"].as_str().unwrap_or("").to_string();
-    let t = v["t"].as_u64().ok_or("no timestamp")?;
-    guard.check(t, &id, now).map_err(str::to_string)?;
+    let refuse = |error: &str| Rejected::Refused { re: id.clone(), error: error.to_string() };
+    let t = v["t"].as_u64().ok_or_else(|| refuse("no timestamp"))?;
+    match guard.check(t, &id, now) {
+        Err(e @ (TOO_OLD | REPLAYED)) => return Err(Rejected::Silent(e.into())),
+        Err(e) => return Err(refuse(e)),
+        Ok(()) => {}
+    }
     let cmd = v["cmd"].as_str().unwrap_or("").to_string();
     if !ALLOWED.contains(&cmd.as_str()) {
-        return Err(format!("{cmd:?} isn't allowed from the phone"));
+        return Err(refuse(&format!("{cmd:?} isn't allowed from the phone")));
     }
     let args = v.get("args").cloned().filter(Value::is_object).unwrap_or_else(|| json!({}));
     Ok((id, cmd, args))
 }
 
+/// What to publish for one relayed message (before its timestamp is added), or None for no reply at all.
+pub fn reply_to(key: &[u8; 32], topic: &str, message: &str, guard: &mut Guard, now: u64, run: impl FnOnce(&str, Value) -> Value) -> Option<Value> {
+    match decode_command(key, topic, message, guard, now) {
+        Ok((n, cmd, args)) => {
+            let mut r = run(&cmd, args);
+            r["re"] = json!(n);
+            Some(r)
+        }
+        Err(Rejected::Silent(_)) => None,
+        Err(Rejected::Refused { re, error }) => {
+            let mut r = json!({ "ok": false, "error": error });
+            if !re.is_empty() && re.len() <= 64 {
+                r["re"] = json!(re);
+            }
+            Some(r)
+        }
+    }
+}
+
+/// Shared by every listener this process starts, so one restarted after a wake (while the old one is still
+/// winding down) can't run a command the old one already ran.
+static GUARD: Mutex<Guard> = Mutex::new(Guard { seen: VecDeque::new(), recent: VecDeque::new() });
+
+/// Whether a subscription answered with ntfy's JSON stream (and not, say, a Wi-Fi sign-in page).
+fn is_json_stream(content_type: &str) -> bool {
+    let ct = content_type.to_ascii_lowercase();
+    ct.starts_with("application/") && ct.split(';').next().is_some_and(|m| m.trim().ends_with("json"))
+}
+
+/// Waits `secs` seconds, checking `stop` every second. False if stopped.
+fn pause(secs: u64, stop: &AtomicBool) -> bool {
+    for _ in 0..secs {
+        if stop.load(Ordering::SeqCst) {
+            return false;
+        }
+        std::thread::sleep(Duration::from_secs(1));
+    }
+    !stop.load(Ordering::SeqCst)
+}
+
 fn agent() -> ureq::Agent {
     ureq::Agent::config_builder()
         .timeout_connect(Some(Duration::from_secs(15)))
-        // The stream is reopened every 5 minutes (from the last message id, so nothing is missed); this also
-        // notices a connection that died silently.
-        .timeout_recv_body(Some(Duration::from_secs(300)))
+        // The stream is reopened every 90 seconds (from the last message id, so nothing is missed); this also
+        // notices a connection that died silently (after a sleep or a network change) within that time. ntfy
+        // sends a keepalive every 45 seconds.
+        .timeout_recv_body(Some(Duration::from_secs(90)))
         .tls_config(ureq::tls::TlsConfig::builder().root_certs(ureq::tls::RootCerts::PlatformVerifier).build())
         .build()
         .new_agent()
@@ -240,17 +313,20 @@ pub fn listen(settings: Settings, cursor: std::path::PathBuf, stop: Arc<AtomicBo
     let server = settings.server.trim_end_matches('/').to_string();
     let valid_id = |s: &str| !s.is_empty() && s.len() <= 32 && s.chars().all(|c| c.is_ascii_alphanumeric());
     let mut since: Option<String> = crate::state::read(&cursor).map(|s| s.trim().to_string()).filter(|s| valid_id(s));
-    let mut guard = Guard::default();
     let mut backoff = 5u64;
     while !stop.load(Ordering::SeqCst) {
         let url = match &since {
             Some(id) => format!("{server}/{cmd_topic}/json?since={id}"),
             None => format!("{server}/{cmd_topic}/json"),
         };
+        // A stream that ends without one real event (a sign-in page or proxy answering for the relay) is
+        // retried with the same backoff as a failed connection, not in a tight loop.
+        let mut delivered = false;
         match agent().get(&url).call() {
+            Ok(resp) if !is_json_stream(resp.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("")) => {
+                on_error(Some(format!("{server} didn't answer like a relay (a Wi-Fi sign-in page or proxy in the way?)")));
+            }
             Ok(resp) => {
-                on_error(None);
-                backoff = 5;
                 use std::io::BufRead;
                 let reader = std::io::BufReader::new(resp.into_body().into_reader());
                 for line in reader.lines() {
@@ -259,6 +335,13 @@ pub fn listen(settings: Settings, cursor: std::path::PathBuf, stop: Arc<AtomicBo
                     }
                     let Ok(line) = line else { break };
                     let Ok(ev) = serde_json::from_str::<Value>(&line) else { continue };
+                    if ev["event"] == "open" || ev["event"] == "message" {
+                        if !delivered {
+                            on_error(None);
+                        }
+                        delivered = true;
+                        backoff = 5;
+                    }
                     if ev["event"] != "message" {
                         continue;
                     }
@@ -267,18 +350,9 @@ pub fn listen(settings: Settings, cursor: std::path::PathBuf, stop: Arc<AtomicBo
                         let _ = std::fs::write(&cursor, id);
                     }
                     let now = crate::now();
-                    let reply = match decode_command(&key, &cmd_topic, ev["message"].as_str().unwrap_or(""), &mut guard, now) {
-                        Ok((n, cmd, args)) => {
-                            let mut r = run(&cmd, args);
-                            r["re"] = json!(n);
-                            r
-                        }
-                        // Garbage on the topic gets no reply (nothing to tell a stranger); bad clocks and
-                        // rate limits from the real phone do.
-                        Err(e) if e.contains("decrypt") || e.contains("JSON") => continue,
-                        Err(e) => json!({ "ok": false, "error": e }),
-                    };
-                    let mut body = reply;
+                    let mut guard = GUARD.lock().unwrap_or_else(|e| e.into_inner());
+                    let Some(mut body) = reply_to(&key, &cmd_topic, ev["message"].as_str().unwrap_or(""), &mut guard, now, &mut run) else { continue };
+                    drop(guard);
                     body["t"] = json!(now);
                     if let Err(e) = publish(&server, &key, &reply_topic, &body) {
                         on_error(Some(format!("Couldn't reach {server}: {e}")));
@@ -287,14 +361,13 @@ pub fn listen(settings: Settings, cursor: std::path::PathBuf, stop: Arc<AtomicBo
             }
             Err(e) => {
                 on_error(Some(format!("Couldn't reach {server}: {e}")));
-                for _ in 0..backoff {
-                    if stop.load(Ordering::SeqCst) {
-                        return;
-                    }
-                    std::thread::sleep(Duration::from_secs(1));
-                }
-                backoff = (backoff * 2).min(120);
             }
+        }
+        if !delivered {
+            if !pause(backoff, &stop) {
+                return;
+            }
+            backoff = (backoff * 2).min(120);
         }
     }
 }
@@ -360,16 +433,58 @@ mod tests {
         let mut g = Guard::default();
         let msg = |t: u64, n: &str, cmd: &str| seal(&key, &c, &json!({ "t": t, "n": n, "cmd": cmd }).to_string());
         assert!(decode_command(&key, &c, &msg(now, "a1", "panel"), &mut g, now).is_ok());
-        assert!(decode_command(&key, &c, &msg(now, "a1", "panel"), &mut g, now).unwrap_err().contains("already"), "replay");
+        assert!(decode_command(&key, &c, &msg(now, "a1", "panel"), &mut g, now).unwrap_err().error().contains("already"), "replay");
         assert!(decode_command(&key, &c, &msg(now - 600, "a2", "panel"), &mut g, now).is_err(), "stale");
         assert!(decode_command(&key, &c, &msg(now + 600, "a3", "panel"), &mut g, now).is_err(), "future");
-        assert!(decode_command(&key, &c, &msg(now, "a4", "override_floor"), &mut g, now).unwrap_err().contains("allowed"));
+        assert!(decode_command(&key, &c, &msg(now, "a4", "override_floor"), &mut g, now).unwrap_err().error().contains("allowed"));
         for i in 0..40 {
             let r = decode_command(&key, &c, &msg(now, &format!("f{i}"), "panel"), &mut g, now);
             if i >= 28 {
                 assert!(r.is_err(), "flood limited by {i}");
             }
         }
+    }
+
+    #[test]
+    fn refusals_name_the_command_but_stale_and_garbage_get_no_reply() {
+        let key = parse_key(&new_key()).unwrap();
+        let (c, _) = topics(&key);
+        let now = 1_000_000;
+        let mut g = Guard::default();
+        let msg = |t: u64, n: &str, cmd: &str| seal(&key, &c, &json!({ "t": t, "n": n, "cmd": cmd }).to_string());
+        let ran = |cmd: &str, _: Value| json!({ "ok": true, "ran": cmd });
+        let r = reply_to(&key, &c, &msg(now, "b1", "panel"), &mut g, now, ran).unwrap();
+        assert_eq!((r["re"].as_str(), r["ran"].as_str()), (Some("b1"), Some("panel")));
+        // Refused by the guard or the allow list: the phone can match the error to what it sent.
+        let future = reply_to(&key, &c, &msg(now + 600, "b2", "panel"), &mut g, now, ran).unwrap();
+        assert_eq!((future["ok"].as_bool(), future["re"].as_str()), (Some(false), Some("b2")));
+        assert!(future["error"].as_str().unwrap().contains("clock"));
+        let banned = reply_to(&key, &c, &msg(now, "b3", "override_floor"), &mut g, now, ran).unwrap();
+        assert_eq!((banned["ok"].as_bool(), banned["re"].as_str()), (Some(false), Some("b3")));
+        for i in 0..40 {
+            if let Some(r) = reply_to(&key, &c, &msg(now, &format!("r{i}"), "panel"), &mut g, now, ran) {
+                if r["ok"] == false {
+                    assert_eq!(r["re"].as_str(), Some(format!("r{i}").as_str()), "rate limit names the command");
+                }
+            }
+        }
+        // No reply: too old (the phone stopped waiting), a replay, garbage.
+        let mut g = Guard::default();
+        assert!(reply_to(&key, &c, &msg(now - MAX_AGE - 1, "s1", "panel"), &mut g, now, ran).is_none(), "stale");
+        assert!(reply_to(&key, &c, &msg(now - MAX_AGE - 1, "", "panel"), &mut g, now, ran).is_none(), "stale even with a bad id");
+        assert!(reply_to(&key, &c, &msg(now, "s2", "panel"), &mut g, now, ran).is_some());
+        assert!(reply_to(&key, &c, &msg(now, "s2", "panel"), &mut g, now, ran).is_none(), "replay");
+        assert!(reply_to(&key, &c, "garbage", &mut g, now, ran).is_none());
+        // The Measure button is answered (by the engine), not refused here.
+        assert!(decode_command(&key, &c, &msg(now, "p1", "power_test"), &mut g, now).is_ok());
+    }
+
+    #[test]
+    fn only_a_json_stream_counts_as_the_relay() {
+        assert!(is_json_stream("application/x-ndjson; charset=utf-8"));
+        assert!(is_json_stream("application/json"));
+        assert!(!is_json_stream("text/html; charset=utf-8"));
+        assert!(!is_json_stream(""));
     }
 
     #[test]

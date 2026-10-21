@@ -8,7 +8,8 @@
 //! minute of Ajar disappearing.
 //!
 //! Lid state comes from GUID_LIDSWITCH_STATE_CHANGE notifications on a hidden window. There is no public
-//! temperature API without admin rights, so the heat guard reports Unknown here.
+//! temperature API without admin rights, so heat is read from the processors' clock limits instead (see
+//! `thermal`): conservatively, and not at all while the "best power efficiency" power mode is on.
 
 use super::{Battery, Platform, Thermal};
 use crate::state::{Restore, Touched};
@@ -132,8 +133,6 @@ fn overlay_fns() -> Option<(GetOverlay, SetOverlay)> {
 /// "Best power efficiency" overlay.
 const OVERLAY_EFFICIENCY: GUID = GUID::from_u128(0x961cc777_2547_4f9d_8174_7d86181b8a7a);
 
-/// Puts the lid setting back straight from the journal. Used when Windows is logging off or shutting down,
-/// which can end Ajar without its normal shutdown; the watchdog doesn't run while nobody is logged in.
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 struct ProcessorPowerInformation {
@@ -161,32 +160,45 @@ fn processor_limits() -> Vec<(u32, u32)> {
     buf.iter().map(|p| (p.max_mhz, p.mhz_limit)).collect()
 }
 
-/// The most throttled processor decides: under 70% of its maximum is serious, under 40% critical.
+/// Every processor must be held back (thermal throttling is package-wide; one slow core is something else):
+/// the least limited one under 70% of its maximum is serious, under 40% critical.
 pub fn thermal_from_limits(limits: &[(u32, u32)]) -> Thermal {
-    let worst = limits.iter().filter(|(max, lim)| *max > 0 && *lim > 0).map(|(max, lim)| *lim as f64 / *max as f64).fold(f64::INFINITY, f64::min);
-    if !worst.is_finite() {
+    let least = limits.iter().filter(|(max, lim)| *max > 0 && *lim > 0).map(|(max, lim)| *lim as f64 / *max as f64).fold(f64::NEG_INFINITY, f64::max);
+    if !least.is_finite() {
         Thermal::Unknown
-    } else if worst < 0.4 {
+    } else if least < 0.4 {
         Thermal::Critical
-    } else if worst < 0.7 {
+    } else if least < 0.7 {
         Thermal::Serious
     } else {
         Thermal::Normal
     }
 }
 
+/// Whether the "Power mode" is on "best power efficiency" (Ajar's low-power setting, or the person's own).
+fn efficiency_overlay_on() -> bool {
+    let Some((get, _)) = overlay_fns() else { return false };
+    let mut cur: GUID = unsafe { std::mem::zeroed() };
+    unsafe { get(&mut cur) == 0 && same(&cur, &OVERLAY_EFFICIENCY) }
+}
+
+/// Puts the lid setting back straight from the journal. Used when Windows is logging off or shutting down,
+/// which can end Ajar without its normal shutdown; the watchdog doesn't run while nobody is logged in.
+/// A plan whose write fails stays in the journal for the watchdog or the next start.
 pub fn restore_lid_from_journal() {
     let path = crate::state::file("restore.json");
     let Some(mut r) = crate::state::load_json::<Restore>(&path) else { return };
-    let mut plans: Vec<(String, u32, u32)> = std::mem::take(&mut r.lid_more);
-    if let (Some((ac, dc)), Some(s)) = (r.lid_action.take(), r.lid_scheme.take()) {
-        plans.push((s, ac, dc));
-    }
-    for (s, ac, dc) in plans {
-        if let Some(g) = parse_guid(&s) {
-            if read_lid_action(&g).is_none_or(|cur| cur == (0, 0)) {
-                write_lid_action(&g, ac, dc);
-            }
+    // Done when it's back, or no longer Ajar's "Do nothing" (someone changed it deliberately).
+    let put_back = |s: &str, ac: u32, dc: u32| match parse_guid(s) {
+        Some(g) => !read_lid_action(&g).is_none_or(|cur| cur == (0, 0)) || write_lid_action(&g, ac, dc),
+        None => true,
+    };
+    r.lid_more.retain(|(s, ac, dc)| !put_back(s, *ac, *dc));
+    match (r.lid_action, r.lid_scheme.as_deref()) {
+        (Some((ac, dc)), Some(s)) if !put_back(s, ac, dc) => {}
+        _ => {
+            r.lid_action = None;
+            r.lid_scheme = None;
         }
     }
     crate::state::save_json(&path, &r);
@@ -300,12 +312,16 @@ pub struct Win {
     exec_state: bool,
     reason: Vec<u16>,
     caps: Caps,
+    heat: super::Sustained<HEAT_SAMPLES>,
 }
+
+/// Clock-limit readings in a row (one per tick, about 2 s apart) that must agree before it counts as heat.
+const HEAT_SAMPLES: usize = 5;
 
 impl Win {
     pub fn new() -> Win {
         start_power_window();
-        Win { user_do_nothing: false, request: std::ptr::null_mut(), exec_state: false, reason: vec![], caps: caps() }
+        Win { user_do_nothing: false, request: std::ptr::null_mut(), exec_state: false, reason: vec![], caps: caps(), heat: Default::default() }
     }
 
     fn release_request(&mut self) {
@@ -483,11 +499,17 @@ impl Platform for Win {
         }
     }
 
-    /// Windows doesn't expose temperatures to normal apps. It does report each processor's thermal throttle limit
-    /// (PROCESSOR_POWER_INFORMATION.MhzLimit = max clock × current thermal limit): a limit well below the maximum
-    /// means the firmware is cooling the machine down.
+    /// Windows doesn't expose temperatures to normal apps. It does report each processor's clock limit
+    /// (PROCESSOR_POWER_INFORMATION.MhzLimit): a limit well below the maximum on every processor, for several
+    /// readings in a row, means the firmware is cooling the machine down. Power settings cap that limit too, so
+    /// nothing is read while the "best power efficiency" mode (Ajar's low-power setting) is on: Unknown, which
+    /// the heat guard never acts on, rather than mistaking Ajar's own setting for heat.
     fn thermal(&mut self) -> Thermal {
-        thermal_from_limits(&processor_limits())
+        if efficiency_overlay_on() {
+            self.heat.clear();
+            return Thermal::Unknown;
+        }
+        self.heat.feed(thermal_from_limits(&processor_limits()))
     }
 
     fn begin_hold(&mut self, reason: &str, restore: &mut Restore) -> Result<(), String> {
@@ -599,11 +621,9 @@ impl Platform for Win {
                 }
                 set(OVERLAY_EFFICIENCY) == 0
             } else {
-                match restore.power_overlay.take().and_then(|s| parse_guid(&s)) {
-                    // Only if it's still Ajar's choice; the person may have moved the slider since.
-                    Some(prev) if same(&cur, &OVERLAY_EFFICIENCY) => set(prev) == 0,
-                    _ => true,
-                }
+                // Only if it's still Ajar's choice; the person may have moved the slider since. Kept for a retry
+                // if Windows refuses.
+                super::put_back(&mut restore.power_overlay, same(&cur, &OVERLAY_EFFICIENCY), |s| parse_guid(s).is_none_or(|prev| set(prev) == 0))
             }
         }
     }
@@ -611,7 +631,8 @@ impl Platform for Win {
     fn restore_settings(&mut self, restore: &mut Restore) {
         let _ = self.end_hold(restore);
         self.set_low_power(false, restore);
-        if restore.lid_action.is_none() && restore.lid_more.is_empty() {
+        // Whatever couldn't be put back stays recorded, to be retried.
+        if restore.lid_action.is_none() && restore.lid_more.is_empty() && restore.power_overlay.is_none() {
             *restore = Restore::default();
         }
     }
@@ -763,8 +784,10 @@ mod tests {
         use super::{thermal_from_limits, Thermal};
         assert_eq!(thermal_from_limits(&[]), Thermal::Unknown);
         assert_eq!(thermal_from_limits(&[(3000, 3000), (3000, 3000)]), Thermal::Normal);
-        assert_eq!(thermal_from_limits(&[(3000, 3000), (3000, 1800)]), Thermal::Serious, "the most throttled core decides");
-        assert_eq!(thermal_from_limits(&[(3000, 900)]), Thermal::Critical);
+        assert_eq!(thermal_from_limits(&[(3000, 3000), (3000, 1800)]), Thermal::Normal, "one limited core isn't heat");
+        assert_eq!(thermal_from_limits(&[(3000, 1800), (3000, 1900)]), Thermal::Serious, "every core held back");
+        assert_eq!(thermal_from_limits(&[(3000, 900), (3000, 1000)]), Thermal::Critical);
+        assert_eq!(thermal_from_limits(&[(3000, 900), (3000, 1800)]), Thermal::Serious, "the least limited core decides");
         assert_eq!(thermal_from_limits(&[(0, 0)]), Thermal::Unknown, "no data is not normal");
     }
 

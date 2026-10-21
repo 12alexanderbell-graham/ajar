@@ -34,8 +34,11 @@ enum Brightness {
 
     /// Dims to zero, remembering the old level on disk first so a crash can't leave the screen black.
     static func dimForClosedLid() {
-        guard !StateFiles.exists(restoreFile), let cur = get() else { return }
-        StateFiles.write(String(cur), to: restoreFile)
+        // Already saved (an earlier dim not yet restored): keep that level, but still dim.
+        if !StateFiles.exists(restoreFile) {
+            guard let cur = get() else { return }
+            StateFiles.write(String(cur), to: restoreFile)
+        }
         set(0)
     }
 

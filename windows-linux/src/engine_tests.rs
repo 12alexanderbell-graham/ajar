@@ -757,3 +757,72 @@ fn an_agent_can_only_release_its_own_holds() {
     assert_eq!(e.handle("release_pid", &json!({ "pid": me }))["released"], 0, "release-all from an agent only covers its own");
     assert!(e.holding);
 }
+
+#[test]
+fn phone_track_sets_what_it_asks_and_old_pages_still_toggle() {
+    let mut e = engine("track-keeps", Mock::laptop());
+    agent(&mut e, crate::now());
+    let track_only = |e: &Engine<Mock>| e.cfg.track_only.contains(&"claude-code".to_string());
+    for _ in 0..2 {
+        assert_eq!(e.handle("track", &json!({ "agent": "claude-code", "keeps": false }))["ok"], true);
+        assert!(track_only(&e), "keeps:false is a value, not a toggle");
+    }
+    for _ in 0..2 {
+        e.handle("track", &json!({ "agent": "claude-code", "keeps": true }));
+        assert!(!track_only(&e));
+    }
+    e.handle("track", &json!({ "agent": "claude-code" }));
+    assert!(track_only(&e), "without keeps it toggles");
+    e.handle("track", &json!({ "agent": "claude-code" }));
+    assert!(!track_only(&e));
+    assert_eq!(e.cfg.track_only.iter().filter(|x| *x == "claude-code").count(), 0);
+}
+
+#[test]
+fn watching_from_the_phone_keeps_the_display_name() {
+    let mut e = engine("watch-name", Mock::laptop());
+    e.update(|c| c.watched_apps.push(crate::config::WatchedApp { id: "chrome".into(), name: "Google Chrome".into() }));
+    e.watch_offer = vec![("spotify".into(), "Spotify".into())];
+    e.handle("watch", &json!({ "app": "spotify" }));
+    e.handle("watch", &json!({ "app": "chrome", "remove": true }));
+    e.handle("watch", &json!({ "app": "chrome" }));
+    let names: Vec<(String, String)> = e.cfg.watched_apps.iter().map(|w| (w.id.clone(), w.name.clone())).collect();
+    assert!(names.contains(&("spotify".into(), "Spotify".into())), "{names:?}");
+    e.update(|c| c.watched_apps.push(crate::config::WatchedApp { id: "code".into(), name: "Visual Studio Code".into() }));
+    e.handle("watch", &json!({ "app": "code" }));
+    assert!(e.cfg.watched_apps.iter().any(|w| w.id == "code" && w.name == "Visual Studio Code"));
+    e.handle("watch", &json!({ "app": "newapp" }));
+    assert!(e.cfg.watched_apps.iter().any(|w| w.id == "newapp" && w.name == "newapp"), "unknown apps fall back to what was sent");
+}
+
+#[test]
+fn measuring_from_the_phone_is_answered_as_mac_only() {
+    let mut e = engine("power-test", Mock::laptop());
+    let r = e.handle("power_test", &json!({}));
+    assert_eq!(r["ok"], false);
+    assert_eq!(r["error"], "Measuring savings is Mac-only for now");
+    assert!(e.panel_json(crate::now()).get("canMeasure").is_none(), "the Measure button stays hidden");
+}
+
+#[test]
+fn a_power_profile_that_failed_to_go_back_stays_recorded_and_is_retried() {
+    let mut e = engine("low-power-retry", Mock::laptop());
+    let now = crate::now();
+    agent(&mut e, now);
+    e.tick(now, None);
+    e.platform.lid = true;
+    e.tick(now + 2, None);
+    assert!(e.platform.low_power && e.restore.power_profile.is_some());
+    e.platform.fail_low_power_off = true;
+    e.platform.lid = false;
+    e.tick(now + 4, None);
+    assert!(e.restore.power_profile.is_some(), "kept after a failed restore");
+    assert!(e.root.join("restore.json").exists(), "and on disk, for the next start and the watchdog");
+    e.platform.fail_low_power_off = false;
+    for i in 0..15 {
+        agent(&mut e, now + 6 + i * 2);
+        e.tick(now + 6 + i * 2, None);
+    }
+    assert!(e.restore.power_profile.is_none() && !e.platform.low_power, "retried once it works");
+    assert!(!e.root.join("restore.json").exists());
+}

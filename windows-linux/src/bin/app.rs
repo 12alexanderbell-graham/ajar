@@ -35,8 +35,9 @@ const MENU_OPEN_GRACE: Duration = Duration::from_secs(20);
 
 enum Cmd {
     Action(Action),
-    /// A command from the phone panel, answered on the channel.
-    Remote(String, Value, Sender<Value>),
+    /// A command from the phone panel, answered on the channel. Dropped unanswered if it's still queued at
+    /// the deadline: the relay thread has already told the phone Ajar is busy, so a retry mustn't run it twice.
+    Remote(String, Value, Sender<Value>, Instant),
     RemoteStatus(Option<String>),
     Quit,
 }
@@ -269,10 +270,11 @@ fn start_remote(root: &Path, tx: Sender<Cmd>) -> Option<RemoteHandle> {
                 stop2,
                 |cmd, args| {
                     let (rtx, rrx) = channel();
-                    if tx.send(Cmd::Remote(cmd.to_string(), args, rtx)).is_err() {
+                    if tx.send(Cmd::Remote(cmd.to_string(), args, rtx, Instant::now() + Duration::from_secs(10))).is_err() {
                         return json!({ "ok": false, "error": "Ajar is quitting" });
                     }
-                    rrx.recv_timeout(Duration::from_secs(10)).unwrap_or_else(|_| json!({ "ok": false, "error": "Ajar is busy" }))
+                    // A little longer than the deadline, so a command started just before it can still answer.
+                    rrx.recv_timeout(Duration::from_secs(15)).unwrap_or_else(|_| json!({ "ok": false, "error": "Ajar is busy" }))
                 },
                 |err| {
                     let _ = tx_status.send(Cmd::RemoteStatus(err));
@@ -291,6 +293,7 @@ fn engine_thread(root: PathBuf, rx: Receiver<Cmd>, tx: Sender<Cmd>, shared: Arc<
     }
     let mut remote = start_remote(&root, tx.clone());
     let mut last_tick = Instant::now() - Duration::from_secs(10);
+    let mut wakes = e.wakes();
     let mut last_ui: Option<UiState> = None;
     loop {
         let mut changed = false;
@@ -300,7 +303,8 @@ fn engine_thread(root: PathBuf, rx: Receiver<Cmd>, tx: Sender<Cmd>, shared: Arc<
                 apply(&mut e, a, &root, &tx, &mut remote);
                 changed = true;
             }
-            Ok(Cmd::Remote(cmd, args, reply)) => {
+            Ok(Cmd::Remote(_, _, _, deadline)) if Instant::now() >= deadline => {}
+            Ok(Cmd::Remote(cmd, args, reply, _)) => {
                 let r = if remote::ALLOWED.contains(&cmd.as_str()) { e.handle(&cmd, &args) } else { json!({ "ok": false, "error": "not allowed" }) };
                 let _ = reply.send(remote::phone_reply(&cmd, &r, e.panel_json(ajar::now())));
                 changed = true;
@@ -326,6 +330,16 @@ fn engine_thread(root: PathBuf, rx: Receiver<Cmd>, tx: Sender<Cmd>, shared: Arc<
         if last_tick.elapsed() >= Duration::from_secs(2) {
             last_tick = Instant::now();
             e.tick(ajar::now(), Some(procs::snapshot()));
+            if e.wakes() != wakes {
+                wakes = e.wakes();
+                // Just woke: the relay connection is probably dead without knowing it. Start a fresh listener
+                // now (it carries on from the saved cursor); the old one quits at its next line or timeout
+                // without handling anything more.
+                if let Some(r) = remote.take() {
+                    r.stop.store(true, Ordering::SeqCst);
+                    remote = start_remote(&root, tx.clone());
+                }
+            }
             deliver(&mut e);
             if e.ticks().is_multiple_of(30) {
                 ipc::sweep_replies(&root);

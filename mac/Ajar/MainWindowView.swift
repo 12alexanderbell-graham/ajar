@@ -82,10 +82,21 @@ private struct Welcome: View {
 private struct ConnectCard: View {
     var dismiss: () -> Void
     @State private var note: String?
-    @State private var tick = false
+    /// (installed, connected) for Claude Code, Codex, the Claude app; read off the main thread.
+    @State private var state = [(false, false), (false, false), (false, false)]
+    @State private var working = false
+
+    private func reload() {
+        Task {
+            state = await Task.detached {
+                [(AIConnect.claudeCodeInstalled, AIConnect.claudeCodeConnected), (AIConnect.codexInstalled, AIConnect.codexConnected),
+                 (AIConnect.claudeAppInstalled, AIConnect.claudeAppConnected)]
+            }.value
+        }
+    }
 
     var body: some View {
-        let _ = tick
+        let server = AIConnect.serverCommand
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Connect your AI").font(.system(size: 14, weight: .semibold))
@@ -94,9 +105,9 @@ private struct ConnectCard: View {
             }
             Text("So Claude or Codex can keep the Mac awake while they work and tune Ajar's savings with you.")
                 .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            row("Claude Code", AIConnect.claudeCodeInstalled, AIConnect.claudeCodeConnected) { AIConnect.connectClaudeCode() }
-            row("Codex", AIConnect.codexInstalled, AIConnect.codexConnected) { AIConnect.connectCodex() }
-            row("Claude app", AIConnect.claudeAppInstalled, AIConnect.claudeAppConnected) { AIConnect.connectClaudeApp() }
+            row("Claude Code", state[0]) { AIConnect.connectClaudeCode(server: server) }
+            row("Codex", state[1]) { AIConnect.connectCodex(server: server) }
+            row("Claude app", state[2]) { AIConnect.connectClaudeApp(server: server) }
             Button {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(AIConnect.setupPrompt, forType: .string)
@@ -107,15 +118,22 @@ private struct ConnectCard: View {
         }
         .padding(16)
         .background(RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .controlBackgroundColor)))
+        .onAppear(perform: reload)
     }
 
-    @ViewBuilder private func row(_ name: String, _ installed: Bool, _ connected: Bool, _ action: @escaping () -> String) -> some View {
+    @ViewBuilder private func row(_ name: String, _ s: (Bool, Bool), _ action: @escaping @Sendable () -> String) -> some View {
         HStack {
             Text(name).font(.system(size: 13))
-            if !installed { Text("not found").font(.system(size: 11)).foregroundStyle(.tertiary) }
+            if !s.0 { Text("not found").font(.system(size: 11)).foregroundStyle(.tertiary) }
             Spacer()
-            if connected { Text("Connected").font(.system(size: 12)).foregroundStyle(.secondary) }
-            else { Button("Connect") { note = action(); tick.toggle() }.controlSize(.small) }
+            if s.1 { Text("Connected").font(.system(size: 12)).foregroundStyle(.secondary) }
+            else {
+                Button("Connect") {
+                    working = true; note = "Connecting \(name)…"
+                    Task { note = await Task.detached { action() }.value; working = false; reload() }
+                }
+                .controlSize(.small).disabled(working)
+            }
         }
     }
 }

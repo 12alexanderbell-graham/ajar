@@ -129,6 +129,8 @@ pub struct Engine<P: Platform> {
     pub last_work: Option<(u64, String)>,
     pub last_seen: Option<(u64, String)>,
     last_tick_at: u64,
+    /// How many wakes from sleep (gaps in the ticks) this run has seen; the app reconnects phone control on one.
+    wakes: u64,
     sleep_retries: u32,
     pub hold_warning: Option<String>,
     pub watchdog_warning: Option<String>,
@@ -198,6 +200,7 @@ impl<P: Platform> Engine<P> {
             last_work: None,
             last_seen: None,
             last_tick_at: 0,
+            wakes: 0,
             sleep_retries: 0,
             hold_warning: None,
             watchdog_warning: None,
@@ -235,6 +238,10 @@ impl<P: Platform> Engine<P> {
 
     pub fn ticks(&self) -> u64 {
         self.ticks
+    }
+
+    pub fn wakes(&self) -> u64 {
+        self.wakes
     }
 
     fn path(&self, name: &str) -> PathBuf {
@@ -366,6 +373,7 @@ impl<P: Platform> Engine<P> {
         if gap {
             // Woke from sleep: a "sleep now" has done its job (covers waking from the keyboard or no lid).
             self.snoozed = false;
+            self.wakes += 1;
         }
         if let Some(r) = &mut self.receipt {
             if let (Some(asked), None) = (r.sleep_requested_at, r.slept_at) {
@@ -444,6 +452,10 @@ impl<P: Platform> Engine<P> {
         // Retry anything that couldn't be put back earlier.
         if !self.touched.is_empty() && !(self.lid_closed && self.holding) {
             self.restore_apps();
+        }
+        if self.ticks % 15 == 11 && !(self.lid_closed && self.holding) && (self.restore.power_profile.is_some() || self.restore.power_overlay.is_some()) {
+            self.platform.set_low_power(false, &mut self.restore);
+            self.save_restore();
         }
         if self.pending_release && self.platform.end_hold(&mut self.restore).is_ok() {
             self.pending_release = false;
@@ -1103,11 +1115,16 @@ impl<P: Platform> Engine<P> {
     }
 
     pub fn toggle_track_only(&mut self, kind_id: &str) {
+        let keeps = self.cfg.track_only.iter().any(|x| x == kind_id);
+        self.set_keeps(kind_id, keeps);
+    }
+
+    /// Whether an agent's work keeps the machine awake (false = only tracked).
+    pub fn set_keeps(&mut self, kind_id: &str, keeps: bool) {
         let id = kind_id.to_string();
         self.update(|c| {
-            if let Some(i) = c.track_only.iter().position(|x| *x == id) {
-                c.track_only.remove(i);
-            } else {
+            c.track_only.retain(|x| *x != id);
+            if !keeps {
                 c.track_only.push(id);
             }
         });
@@ -1304,7 +1321,10 @@ impl<P: Platform> Engine<P> {
                 if !self.watcher.sessions.iter().any(|x| x.kind.id == id) && !self.cfg.track_only.contains(&id) {
                     return fail(format!("no agent {id:?} is running"));
                 }
-                self.toggle_track_only(&id);
+                match boolean("keeps") {
+                    Some(keeps) => self.set_keeps(&id, keeps),
+                    None => self.toggle_track_only(&id), // older phone pages only toggle
+                }
                 self.ok()
             }
             "sleep_now" => {
@@ -1346,10 +1366,12 @@ impl<P: Platform> Engine<P> {
                     return fail("app must be an executable name".into());
                 }
                 let remove = boolean("remove") == Some(true);
+                // The phone sends the id: keep the display name already known for it.
+                let name = self.watch_candidates().into_iter().find(|c| c.0 == key).map_or(q, |c| c.1);
                 self.update(|c| {
                     c.watched_apps.retain(|w| w.id != key);
                     if !remove {
-                        c.watched_apps.push(crate::config::WatchedApp { id: key.clone(), name: q.clone() });
+                        c.watched_apps.push(crate::config::WatchedApp { id: key.clone(), name: name.clone() });
                     }
                 });
                 let mut out = self.ok();
@@ -1371,6 +1393,9 @@ impl<P: Platform> Engine<P> {
             }
             "schema" => crate::ai::describe(&self.cfg, &self.path("config.json")),
             "power" => self.power_json(),
+            // The phone's Measure button. Its page only shows it when the panel says `canMeasure`, which this
+            // edition never sends.
+            "power_test" => fail("Measuring savings is Mac-only for now".into()),
             "set" => {
                 let Some(key) = s("key") else { return fail("needs key".into()) };
                 // mode and preset have their own commands; accept them here too so one call can change any setting.

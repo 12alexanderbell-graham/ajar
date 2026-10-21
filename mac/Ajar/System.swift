@@ -3,7 +3,7 @@ import Foundation
 import IOKit
 
 /// Runs command-line tools. Output is read before waiting so a chatty tool can't deadlock the pipe.
-enum Shell {
+nonisolated enum Shell {
     @discardableResult
     static func run(_ path: String, _ args: [String]) -> (code: Int32, out: String) {
         let p = Process()
@@ -16,6 +16,16 @@ enum Shell {
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         p.waitUntilExit()
         return (p.terminationStatus, String(data: data, encoding: .utf8) ?? "")
+    }
+
+    /// Starts a command and returns at once (for ones whose result doesn't matter, like `caffeinate -u`).
+    static func spawn(_ path: String, _ args: [String]) {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: path)
+        p.arguments = args
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        try? p.run()
     }
 
     /// pmset as root through the sudoers entry Setup installs. `-n` means it fails instead of prompting.
@@ -123,9 +133,11 @@ enum StateFiles {
 
     static func write(_ s: String, to u: URL) { try? s.write(to: u, atomically: true, encoding: .utf8) }
     /// Temp file, flushed to disk, then renamed: survives a crash or power loss at any point. For journals.
-    static func writeDurably(_ data: Data, to u: URL) -> Bool {
+    static func writeDurably(_ data: Data, to u: URL, mode: Int? = nil) -> Bool {
         let tmp = u.appendingPathExtension("tmp\(getpid())")
-        guard FileManager.default.createFile(atPath: tmp.path, contents: nil), let h = try? FileHandle(forWritingTo: tmp) else { return false }
+        // Created with its final permissions, so a secret is never readable by others even for a moment.
+        guard FileManager.default.createFile(atPath: tmp.path, contents: nil, attributes: mode.map { [.posixPermissions: $0] }),
+              let h = try? FileHandle(forWritingTo: tmp) else { return false }
         do {
             try h.write(contentsOf: data)
             try h.synchronize()

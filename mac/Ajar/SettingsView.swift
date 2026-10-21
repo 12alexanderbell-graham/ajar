@@ -31,9 +31,7 @@ struct SettingsPage: View {
             .padding(.top, 14)
             .padding(.bottom, 2)
             SettingsView(engine: engine, page: $page)
-                .id(page)   // each page starts scrolled to the top
         }
-        .animation(.snappy(duration: 0.2), value: page)
     }
 }
 
@@ -68,12 +66,24 @@ struct SettingsView: View {
     @State private var note: String?
     @State private var lockGrace: Int?
     @State private var topic = ""
-    @State private var refresh = false
+    /// The topic field was edited here: only then is it saved (never overwrite a change made by the phone or an agent).
+    @State private var topicDirty = false
+    @State private var connected = [false, false, false]   // Claude Code, Codex, Claude app
+    @State private var working = false
 
     private func saveTopic() {
+        guard topicDirty else { return }
         let t = topic.trimmingCharacters(in: .whitespaces)
-        if t.isEmpty || Notifier.validTopic(t) { engine.update { $0.ntfyTopic = t }; topic = t }
+        if t.isEmpty || Notifier.validTopic(t) { engine.update { $0.ntfyTopic = t }; topic = t; topicDirty = false }
         else { note = "Topic names can only use letters, numbers, - and _." }
+    }
+
+    /// Reading ~/.claude.json can take a moment for heavy Claude Code users, so it's done off the main thread.
+    private func reloadConnected() {
+        Task {
+            let r = await Task.detached { [AIConnect.claudeCodeConnected, AIConnect.codexConnected, AIConnect.claudeAppConnected] }.value
+            connected = r
+        }
     }
 
     var body: some View {
@@ -92,11 +102,18 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
+        .id(page)   // a fresh list per page, so each opens at the top (this view's state stays)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear { login = engine.launchAtLogin; cliInstalled = Setup.cliInstalled; lockGrace = LockSetting.gracePeriod(); topic = engine.config.ntfyTopic }
+        .onAppear { login = engine.launchAtLogin; cliInstalled = Setup.cliInstalled; lockGrace = LockSetting.gracePeriod(); topic = engine.config.ntfyTopic; reloadConnected() }
         .onDisappear { saveTopic() }
+        .onChange(of: page) { old, _ in
+            note = nil
+            if old == .alerts { saveTopic() }
+            if !topicDirty { topic = engine.config.ntfyTopic }
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             lockGrace = LockSetting.gracePeriod()
+            reloadConnected()
         }
     }
 
@@ -106,11 +123,11 @@ struct SettingsView: View {
         Section {
             if Registry.hasLid { topicRow(.lid, screenName + " · " + engine.preset.label) }
             topicRow(.sleep, sleepSummary)
-            topicRow(.awake, engine.countClaudeApp ? "Agents, Claude app, downloads" : "Agents, downloads")
+            topicRow(.awake, (["Agents"] + (engine.countClaudeApp ? ["Claude app"] : []) + (engine.countRequests ? ["downloads"] : [])).joined(separator: ", "))
         }
         Section {
-            topicRow(.alerts, engine.config.notifyDone ? (engine.config.ntfyTopic.isEmpty ? "On" : "On, and on your phone") : "Off")
-            topicRow(.phone, AjarShared.remote?.enabled == true ? "Paired" : "Off")
+            topicRow(.alerts, alertsSummary)
+            topicRow(.phone, AjarShared.remote?.enabled == true ? "On" : "Off")
             topicRow(.ai, aiSummary)
         }
         Section {
@@ -144,9 +161,12 @@ struct SettingsView: View {
         return p.joined(separator: ", ")
     }
     private var aiSummary: String {
-        let _ = refresh
-        let n = [AIConnect.claudeCodeConnected, AIConnect.codexConnected, AIConnect.claudeAppConnected].filter { $0 }.count
+        let n = connected.filter { $0 }.count
         return n == 0 ? "Not connected" : "\(n) connected"
+    }
+    private var alertsSummary: String {
+        let parts = (engine.config.notifyDone ? ["On this Mac"] : []) + (engine.config.ntfyTopic.isEmpty ? [] : ["on your phone"])
+        return parts.isEmpty ? "Off" : parts.joined(separator: ", ")
     }
 
     // MARK: Lid Closed
@@ -156,8 +176,8 @@ struct SettingsView: View {
             Picker("Screen", selection: Binding(get: { engine.config.lockOnClose ? 2 : (engine.config.screenOffNoLock ? 1 : 0) },
                                                 set: { v in engine.update { $0.lockOnClose = v == 2; $0.screenOffNoLock = v == 1 } })) {
                 Text("Dark, no lock").tag(0)
-                Text("Off, no lock (experimental)" + Self.effect(engine.powerEffects["screen_off"])).tag(1)
-                Text("Off, locks" + Self.effect(engine.powerEffects["screen"])).tag(2)
+                Text("Off, no lock (experimental)").tag(1)
+                Text("Off, locks").tag(2)
             }
             if engine.config.screenOffNoLock, lockGrace == 0 {
                 Text("Your Mac asks for the password as soon as its display turns off (System Settings › Lock Screen), so this will most likely lock it. Ajar then goes back to Dark by itself.")
@@ -315,12 +335,12 @@ struct SettingsView: View {
         }
         Section {
             HStack {
-                TextField("ntfy topic", text: $topic, prompt: Text("ntfy topic (off)"))
+                TextField("ntfy topic", text: Binding(get: { topic }, set: { topic = $0; topicDirty = true }), prompt: Text("ntfy topic (off)"))
                     .labelsHidden()
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { saveTopic() }
                 if topic.isEmpty {
-                    Button("Suggest") { topic = "ajar-" + UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(12).lowercased(); saveTopic() }
+                    Button("Suggest") { topic = "ajar-" + UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(12).lowercased(); topicDirty = true; saveTopic() }
                 } else {
                     Button("Send Test") {
                         saveTopic()
@@ -343,9 +363,10 @@ struct SettingsView: View {
 
     @ViewBuilder private var aiPage: some View {
         Section {
-            connectRow("Claude Code", AIConnect.claudeCodeConnected) { AIConnect.connectClaudeCode() }
-            connectRow("Codex", AIConnect.codexConnected) { AIConnect.connectCodex() }
-            connectRow("Claude app", AIConnect.claudeAppConnected) { AIConnect.connectClaudeApp() }
+            let server = AIConnect.serverCommand
+            connectRow("Claude Code", connected[0]) { AIConnect.connectClaudeCode(server: server) }
+            connectRow("Codex", connected[1]) { AIConnect.connectCodex(server: server) }
+            connectRow("Claude app", connected[2]) { AIConnect.connectClaudeApp(server: server) }
         } footer: {
             Text("Connected agents can keep the Mac awake while they work, see what's using power and change settings. They can't loosen the safety settings.")
                 .font(.caption).foregroundStyle(.secondary)
@@ -360,7 +381,12 @@ struct SettingsView: View {
             }
             LabeledContent("ajar command") {
                 if cliInstalled { Text("Installed").foregroundStyle(.secondary) }
-                else { Button("Install…") { do { try Setup.installCLI() } catch { note = error.localizedDescription }; cliInstalled = Setup.cliInstalled } }
+                else {
+                    Button("Install…") {
+                        UIState.shared.whilePinned { do { try Setup.installCLI() } catch { note = error.localizedDescription } }
+                        cliInstalled = Setup.cliInstalled
+                    }
+                }
             }
             LabeledContent("Settings file") {
                 Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([Config.url]) }
@@ -369,10 +395,19 @@ struct SettingsView: View {
         }
     }
 
-    @ViewBuilder private func connectRow(_ name: String, _ connected: Bool, _ action: @escaping () -> String) -> some View {
-        let _ = refresh   // re-read the connected state after a connect
+    @ViewBuilder private func connectRow(_ name: String, _ connected: Bool, _ action: @escaping @Sendable () -> String) -> some View {
         LabeledContent {
-            Button(connected ? "Reconnect" : "Connect") { note = action(); refresh.toggle() }
+            Button(connected ? "Reconnect" : "Connect") {
+                // Runs the agent's own CLI (a second or two): off the main thread so the panel doesn't freeze.
+                working = true
+                note = "Connecting \(name)…"
+                Task {
+                    note = await Task.detached { action() }.value
+                    working = false
+                    reloadConnected()
+                }
+            }
+            .disabled(working)
         } label: {
             HStack(spacing: 4) {
                 Text(name)
@@ -426,7 +461,7 @@ struct SettingsView: View {
                     LabeledContent {
                         Text(Self.sessionLine(s)).monospacedDigit().foregroundStyle(.secondary)
                     } label: {
-                        Text(s.date.formatted(.relative(presentation: .named)).capitalized + (s.agent.map { " · \($0)" } ?? ""))
+                        Text(Date.RelativeFormatStyle(presentation: .named, capitalizationContext: .beginningOfSentence).format(s.date) + (s.agent.map { " · \($0)" } ?? ""))
                             .lineLimit(1)
                     }
                 }
@@ -434,8 +469,10 @@ struct SettingsView: View {
         }
         Section {
             Button("Remove Ajar…", role: .destructive) {
-                do { try engine.uninstallHelper(); note = "Removed. Quit Ajar and move it to the Trash to finish." }
-                catch { note = error.localizedDescription }
+                UIState.shared.whilePinned {
+                    do { try engine.uninstallHelper(); note = "Removed. Quit Ajar and move it to the Trash to finish." }
+                    catch { note = error.localizedDescription }
+                }
             }
             if let note { Text(note).font(.caption).foregroundStyle(.secondary) }
         } footer: {

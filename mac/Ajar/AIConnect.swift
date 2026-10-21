@@ -26,26 +26,30 @@ enum AIConnect {
     """
 
     // MARK: Claude Code
+    // The checks and connects below read and write other apps' files and run their CLIs, so they're nonisolated:
+    // Settings runs them off the main thread. The no-argument connect functions are for the main thread.
 
-    static var claudeCodeBinary: String? {
+    nonisolated static var claudeCodeBinary: String? {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         return ["\(home)/.claude/local/claude", "\(home)/.local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude", "\(home)/.npm-global/bin/claude"]
             .first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
-    static var claudeCodeConfig: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude.json") }
+    nonisolated static var claudeCodeConfig: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude.json") }
 
-    static var claudeCodeConnected: Bool {
+    nonisolated static var claudeCodeConnected: Bool {
         guard let d = try? Data(contentsOf: claudeCodeConfig), let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return false }
         return (j["mcpServers"] as? [String: Any])?["ajar"] != nil
     }
 
-    static var claudeCodeInstalled: Bool { claudeCodeBinary != nil || FileManager.default.fileExists(atPath: claudeCodeConfig.path) }
+    nonisolated static var claudeCodeInstalled: Bool { claudeCodeBinary != nil || FileManager.default.fileExists(atPath: claudeCodeConfig.path) }
+
+    static func connectClaudeCode() -> String { connectClaudeCode(server: serverCommand) }
 
     /// Adds Ajar as a user-scope MCP server for Claude Code (every project). Uses `claude mcp add` when the
     /// command is installed; otherwise writes the same entry into ~/.claude.json (backup kept next to it).
-    static func connectClaudeCode() -> String {
-        let (cmd, args) = serverCommand
+    nonisolated static func connectClaudeCode(server: (command: String, args: [String])) -> String {
+        let (cmd, args) = server
         if let bin = claudeCodeBinary {
             _ = Shell.run(bin, ["mcp", "remove", "--scope", "user", "ajar"])   // re-adding updates a stale path
             let r = Shell.run(bin, ["mcp", "add", "--scope", "user", "ajar", "--", cmd] + args)
@@ -60,21 +64,87 @@ enum AIConnect {
 
     // MARK: Codex
 
-    static var codexConfig: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/config.toml") }
-    static var codexInstalled: Bool { FileManager.default.fileExists(atPath: codexConfig.deletingLastPathComponent().path) }
-    static var codexConnected: Bool { ((try? String(contentsOf: codexConfig, encoding: .utf8)) ?? "").contains("[mcp_servers.ajar]") }
+    nonisolated static var codexConfig: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/config.toml") }
+    nonisolated static var codexInstalled: Bool { FileManager.default.fileExists(atPath: codexConfig.deletingLastPathComponent().path) }
+    nonisolated static var codexConnected: Bool {
+        guard let text = try? String(contentsOf: codexConfig, encoding: .utf8) else { return false }
+        return codexAjarRange(text.components(separatedBy: "\n")) != nil || codexInlineAjar(text)
+    }
 
-    /// Appends an `[mcp_servers.ajar]` table to ~/.codex/config.toml (backup kept). Leaves an existing entry alone.
-    static func connectCodex() -> String {
-        let (cmd, args) = serverCommand
-        let existing = (try? String(contentsOf: codexConfig, encoding: .utf8)) ?? ""
-        if existing.contains("[mcp_servers.ajar]") { return "Codex already has Ajar." }
+    /// A table header line's name (`[mcp_servers.ajar]`, `[ mcp_servers . "ajar" ]` → `mcp_servers.ajar`), or nil.
+    nonisolated static func codexHeader(_ l: String) -> String? {
+        let t = l.trimmingCharacters(in: .whitespaces)
+        guard t.hasPrefix("["), !t.hasPrefix("[["), let close = t.firstIndex(of: "]") else { return nil }
+        return String(t[t.index(after: t.startIndex)..<close]).replacingOccurrences(of: " ", with: "").replacingOccurrences(of: "\"", with: "")
+    }
+
+    /// The lines of a real `[mcp_servers.ajar]` table: header up to the next table.
+    nonisolated static func codexAjarRange(_ lines: [String]) -> Range<Int>? {
+        guard let start = lines.firstIndex(where: { codexHeader($0) == "mcp_servers.ajar" }) else { return nil }
+        let end = lines[(start + 1)...].firstIndex(where: { codexHeader($0) != nil }) ?? lines.count
+        return start..<end
+    }
+
+    /// An ajar entry written another way: `mcp_servers.ajar = {…}` or `mcp_servers.ajar.command = …` at the top,
+    /// or `ajar = {…}` / `ajar.command = …` inside `[mcp_servers]`. Left alone (adding a table would duplicate it).
+    nonisolated static func codexInlineAjar(_ text: String) -> Bool {
+        var table = ""
+        for l in text.components(separatedBy: "\n") {
+            if let h = codexHeader(l) { table = h; continue }
+            let t = l.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: " ", with: "").replacingOccurrences(of: "\"", with: "")
+            if t.hasPrefix("#") || !t.contains("=") { continue }
+            if table.isEmpty && (t.hasPrefix("mcp_servers.ajar=") || t.hasPrefix("mcp_servers.ajar.")) { return true }
+            if table == "mcp_servers" && (t.hasPrefix("ajar=") || t.hasPrefix("ajar.")) { return true }
+        }
+        return false
+    }
+
+    /// The config text with Ajar's table added or its command and args updated (pure, so it can be checked).
+    nonisolated static func codexUpdated(_ existing: String, command cmd: String, args: [String]) -> String {
         func q(_ s: String) -> String { "\"" + s.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\"" }
-        let block = "\n[mcp_servers.ajar]\ncommand = \(q(cmd))\nargs = [\(args.map(q).joined(separator: ", "))]\n"
+        let commandLine = "command = \(q(cmd))", argsLine = "args = [\(args.map(q).joined(separator: ", "))]"
+        var lines = existing.isEmpty ? [] : existing.components(separatedBy: "\n")
+        if let r = codexAjarRange(lines) {
+            // Update just the command and args lines; any other keys, comments and spacing stay as they are.
+            func key(_ l: String) -> String { l.split(separator: "=", maxSplits: 1).first.map { $0.trimmingCharacters(in: .whitespaces) } ?? "" }
+            var sawCommand = false, sawArgs = false
+            for i in r where i > r.lowerBound {
+                let k = key(lines[i])
+                if k == "command" { lines[i] = commandLine; sawCommand = true }
+                else if k == "args" { lines[i] = argsLine; sawArgs = true }
+            }
+            var insert: [String] = []
+            if !sawCommand { insert.append(commandLine) }
+            if !sawArgs { insert.append(argsLine) }
+            lines.insert(contentsOf: insert, at: r.lowerBound + 1)
+        } else {
+            if lines.last == "" { lines.removeLast() }   // the file's final newline
+            if let last = lines.last, !last.trimmingCharacters(in: .whitespaces).isEmpty { lines.append("") }
+            lines += ["[mcp_servers.ajar]", commandLine, argsLine, ""]
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    static func connectCodex() -> String { connectCodex(server: serverCommand) }
+
+    /// Adds (or updates, so a moved app is picked up) the `[mcp_servers.ajar]` table in ~/.codex/config.toml.
+    /// Everything else in the file is kept, and the original is saved next to it first.
+    nonisolated static func connectCodex(server: (command: String, args: [String])) -> String {
+        let (cmd, args) = server
+        let fm = FileManager.default
+        var existing = ""
+        if fm.fileExists(atPath: codexConfig.path) {
+            guard let text = try? String(contentsOf: codexConfig, encoding: .utf8) else {
+                return "Couldn't read ~/.codex/config.toml, so I left it alone."
+            }
+            existing = text
+        }
+        if codexInlineAjar(existing) { return "Codex already has an ajar entry written by hand; left it as it is." }
+        let updated = codexUpdated(existing, command: cmd, args: args)
         do {
-            try FileManager.default.createDirectory(at: codexConfig.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try fm.createDirectory(at: codexConfig.deletingLastPathComponent(), withIntermediateDirectories: true)
             if !existing.isEmpty { try existing.write(to: codexConfig.appendingPathExtension("ajar-backup"), atomically: true, encoding: .utf8) }
-            try (existing + block).write(to: codexConfig, atomically: true, encoding: .utf8)
+            try updated.write(to: codexConfig, atomically: true, encoding: .utf8)
             return "Added to Codex (~/.codex/config.toml). New sessions can use Ajar."
         } catch {
             return "Couldn't write Codex's config: \(error.localizedDescription)"
@@ -83,17 +153,19 @@ enum AIConnect {
 
     // MARK: Claude app
 
-    static var claudeAppConfig: URL {
+    nonisolated static var claudeAppConfig: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Claude/claude_desktop_config.json")
     }
-    static var claudeAppInstalled: Bool { FileManager.default.fileExists(atPath: "/Applications/Claude.app") }
-    static var claudeAppConnected: Bool {
+    nonisolated static var claudeAppInstalled: Bool { FileManager.default.fileExists(atPath: "/Applications/Claude.app") }
+    nonisolated static var claudeAppConnected: Bool {
         guard let d = try? Data(contentsOf: claudeAppConfig), let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return false }
         return (j["mcpServers"] as? [String: Any])?["ajar"] != nil
     }
 
-    static func connectClaudeApp() -> String {
-        let (cmd, args) = serverCommand
+    static func connectClaudeApp() -> String { connectClaudeApp(server: serverCommand) }
+
+    nonisolated static func connectClaudeApp(server: (command: String, args: [String])) -> String {
+        let (cmd, args) = server
         return editJSON(claudeAppConfig, done: "Added to the Claude app. Restart it to pick Ajar up.") { root in
             var servers = root["mcpServers"] as? [String: Any] ?? [:]
             servers["ajar"] = ["command": cmd, "args": args]
@@ -102,15 +174,17 @@ enum AIConnect {
     }
 
     /// Reads a JSON config, changes it, writes it back atomically with a backup of the original. Refuses to touch
-    /// a file it can't parse.
-    private static func editJSON(_ url: URL, done: String, _ change: (inout [String: Any]) -> Void) -> String {
+    /// a file it can't read or parse (starting from empty would wipe the other app's settings).
+    nonisolated private static func editJSON(_ url: URL, done: String, _ change: (inout [String: Any]) -> Void) -> String {
         var root: [String: Any] = [:]
-        if let data = try? Data(contentsOf: url) {
+        if FileManager.default.fileExists(atPath: url.path) {
+            guard let data = try? Data(contentsOf: url) else { return "Couldn't read \(url.lastPathComponent), so I left it alone." }
             guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 return "\(url.lastPathComponent) isn't valid JSON, so I left it alone."
             }
             root = obj
-            try? data.write(to: url.appendingPathExtension("ajar-backup"))
+            do { try data.write(to: url.appendingPathExtension("ajar-backup")) }
+            catch { return "Couldn't save a backup of \(url.lastPathComponent), so I left it alone." }
         }
         change(&root)
         do {

@@ -6,7 +6,8 @@ extension Engine {
     var onBattery: Bool { battery.map { $0.discharging || !$0.onAC } ?? false }
 
     /// What the Mac draws with the lid open: live while open on battery, otherwise the last learned value.
-    var openWatts: Double? { lidClosed ? openDraw : (drawNow ?? openDraw) }
+    /// Same sensor as the closed figure (whole-Mac load), so "closed vs open" compares like with like.
+    var openWatts: Double? { lidClosed ? openDraw : (systemWatts ?? drawNow ?? openDraw) }
 
     /// Hours of battery left, down to the battery limit.
     var closedHours: Double? { hoursLeft(at: closedEstimate) }

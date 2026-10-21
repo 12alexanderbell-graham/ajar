@@ -29,7 +29,7 @@ struct RemoteSettings: Codable, Equatable {
     /// Owner-only: whoever has the key can control this Mac.
     @discardableResult
     func save() -> Bool {
-        guard let d = try? JSONEncoder().encode(self), StateFiles.writeDurably(d, to: Self.url) else { return false }
+        guard let d = try? JSONEncoder().encode(self), StateFiles.writeDurably(d, to: Self.url, mode: 0o600) else { return false }
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: Self.url.path)
         return true
     }
@@ -58,11 +58,11 @@ enum RemoteCrypto {
         for k in ["ok", "error", "next"] { if let v = result[k] { r[k] = v } }
         if cmd == "schema" {
             // The phone's Settings page: values and choices only (its labels live in the page), no panel.
-            r["settings"] = (result["settings"] as? [[String: Any]] ?? []).map { s in s.filter { ["key", "type", "allowed", "category", "value"].contains($0.key) } }
+            r["settings"] = (result["settings"] as? [[String: Any]] ?? []).map { s in s.filter { ["key", "type", "allowed", "value"].contains($0.key) } }
             return r
         }
         var p = panel
-        func size() -> Int { r["panel"] = p; return Wire.json(r).utf8.count }
+        func size() -> Int { r["panel"] = p; return Wire.compact(r).utf8.count }
         if size() > maxReply, let w = p["watch"] as? [[String: Any]] {
             p["watch"] = w.filter { $0["on"] as? Bool == true }   // offered apps go first; the ones kept awake stay
         }
@@ -70,6 +70,10 @@ enum RemoteCrypto {
             if let a = p["agents"] as? [[String: Any]] { p["agents"] = Array(a.prefix(4)) }
             p["holds"] = nil
         }
+        // Still too big (many watched apps, long warnings): cut until it fits, least important first.
+        for cut in ["savings", "savingsUnclear", "weekLine", "drawLine", "figureCaption"] where size() > maxReply { p[cut] = nil }
+        while size() > maxReply, var w = p["watch"] as? [[String: Any]], !w.isEmpty { w.removeLast(); p["watch"] = w }
+        if size() > maxReply, let w = p["warnings"] as? [String] { p["warnings"] = w.map { String($0.prefix(120)) } }
         r["panel"] = p
         return r
     }
@@ -136,6 +140,8 @@ final class RemoteControl {
     private(set) var settings = RemoteSettings.load()
     private(set) var status: String?
     private var task: Task<Void, Never>?
+    /// Replay protection, kept across reconnects (a wake restarts the listener).
+    private var guardian = RemoteGuard()
     private let engine: Engine
     private let run: (String, [String: Any], @escaping ([String: Any]) -> Void) -> Void
 
@@ -143,6 +149,11 @@ final class RemoteControl {
         self.engine = engine
         self.run = run
         if settings.enabled { start() }
+        // After sleep or a network change the open connection is usually dead but only noticed after the idle
+        // timeout; reconnect at once instead.
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { if self?.enabled == true { self?.start() } }
+        }
     }
 
     var enabled: Bool { settings.enabled && settings.keyData != nil }
@@ -181,10 +192,10 @@ final class RemoteControl {
         let server = settings.server.hasSuffix("/") ? String(settings.server.dropLast()) : settings.server
         let cursorURL = self.cursorURL
         task = Task { [weak self] in
-            var guardian = RemoteGuard()
             var since = StateFiles.read(cursorURL)?.trimmingCharacters(in: .whitespacesAndNewlines)
             var backoff: UInt64 = 5
             while !Task.isCancelled {
+                var gotMessage = false
                 // With no cursor yet, only new messages are read; after that, exactly from the last one handled,
                 // so a restart never runs the same command twice.
                 let valid = since.map { !$0.isEmpty && $0.count <= 32 && $0.allSatisfy { $0.isLetter || $0.isNumber } } ?? false
@@ -193,11 +204,16 @@ final class RemoteControl {
                 req.timeoutInterval = 120   // ntfy sends a keepalive every ~45 s; silence beyond this means a dead link
                 do {
                     let (bytes, resp) = try await URLSession.shared.bytes(for: req)
-                    guard (resp as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
+                    // A captive portal or proxy answers 200 with a web page: that's not the relay.
+                    guard let http = resp as? HTTPURLResponse, http.statusCode == 200,
+                          (http.value(forHTTPHeaderField: "Content-Type") ?? "").contains("json") else { throw URLError(.badServerResponse) }
                     await MainActor.run { self?.setStatus("Connected") }
-                    backoff = 5
                     for try await line in bytes.lines {
-                        guard let ev = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any], ev["event"] as? String == "message" else { continue }
+                        guard let ev = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any] else { continue }
+                        // "open" comes first on every stream, so only a keepalive or a message proves the link lasts.
+                        if ev["event"] as? String == "keepalive" { gotMessage = true; backoff = 5 }
+                        guard ev["event"] as? String == "message" else { continue }
+                        gotMessage = true; backoff = 5
                         if let id = ev["id"] as? String, id.count <= 32, id.allSatisfy({ $0.isLetter || $0.isNumber }) {
                             since = id
                             StateFiles.write(id, to: cursorURL)
@@ -207,7 +223,13 @@ final class RemoteControl {
                         let n = msg["n"] as? String ?? ""
                         let cmd = msg["cmd"] as? String ?? ""
                         let args = msg["args"] as? [String: Any] ?? [:]
-                        let problem = guardian.check(t: (msg["t"] as? NSNumber)?.doubleValue ?? 0, id: n)
+                        let sent = (msg["t"] as? NSNumber)?.doubleValue ?? 0
+                        // Reached the relay more than 5 minutes ago (by the relay's clock, not the phone's): the
+                        // phone stopped waiting long ago. No reply: after a long sleep there can be a backlog of
+                        // these, and every reply counts against the relay's limits.
+                        if let at = (ev["time"] as? NSNumber)?.doubleValue, at + 300 < Date().timeIntervalSince1970 { continue }
+                        guard let me = self else { return }
+                        let problem = me.guardian.check(t: sent, id: n)
                             ?? (RemoteCrypto.allowed.contains(cmd) ? nil : "\(cmd) isn't allowed from the phone")
                         var reply: [String: Any] = problem.map { ["ok": false, "error": $0] } ?? [:]
                         if problem == nil, let me = self {
@@ -215,7 +237,7 @@ final class RemoteControl {
                         }
                         reply["re"] = n
                         reply["t"] = Int(Date().timeIntervalSince1970)
-                        if let sealed = RemoteCrypto.seal(key, topic: replyTopic, Wire.json(reply)), let purl = URL(string: "\(server)/\(replyTopic)") {
+                        if let sealed = RemoteCrypto.seal(key, topic: replyTopic, Wire.compact(reply)), let purl = URL(string: "\(server)/\(replyTopic)") {
                             var p = URLRequest(url: purl)
                             p.httpMethod = "POST"
                             p.httpBody = Data(sealed.utf8)
@@ -223,6 +245,11 @@ final class RemoteControl {
                             p.timeoutInterval = 15
                             _ = try? await URLSession.shared.data(for: p)
                         }
+                    }
+                    // The stream ended without an error. If nothing real came through, don't reconnect in a tight loop.
+                    if !gotMessage {
+                        try? await Task.sleep(nanoseconds: backoff * 1_000_000_000)
+                        backoff = min(backoff * 2, 120)
                     }
                 } catch {
                     if Task.isCancelled { return }

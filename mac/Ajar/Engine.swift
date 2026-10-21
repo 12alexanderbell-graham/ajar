@@ -47,8 +47,9 @@ final class Engine {
             if c.screenOffNoLock { switchScreenOff() } else { DisplayPower.restoreBuiltIn(); screenOff = false }
         }
         if (old.preset != c.preset || old.appRules != c.appRules || old.lowPowerWhileClosed != c.lowPowerWhileClosed
-            || old.pauseSimulators != c.pauseSimulators || old.pauseBackgroundAudio != c.pauseBackgroundAudio) && lidClosed && holding {
-            reapplyClosedState()
+            || old.pauseSimulators != c.pauseSimulators || old.pauseBackgroundAudio != c.pauseBackgroundAudio
+            || old.shutDownSimulators != c.shutDownSimulators) && lidClosed && holding && !powerTestRunning {
+            reapplyClosedState(forcing: heatForced ? .longest : nil)
         }
         evaluate()
     }
@@ -127,7 +128,7 @@ final class Engine {
     var outlook: Outlook? {
         guard let b = battery else { return nil }
         let closed = (lidClosed ? (systemWatts ?? drawNow) : nil) ?? closedEstimate
-        let open = lidClosed ? (openDrawAtClose ?? openDraw) : (drawNow ?? openDraw)
+        let open = lidClosed ? (openDrawAtClose ?? openDraw) : (systemWatts ?? drawNow ?? openDraw)
         guard let base = open, base > closed + 0.2, closed > 0.3 else { return nil }
         let usable = Double(max(0, b.percent - config.batteryFloor)) / 100 * fullWh
         return Outlook(percentSaved: 1 - closed / base, extraHours: usable / closed - usable / base,
@@ -160,8 +161,11 @@ final class Engine {
     private(set) var floorOverride = false
 
     /// True when the battery limit is what's stopping Ajar, so offering "Stay Awake" makes sense.
+    /// Something (mode, a hold, an agent) wants the Mac awake, before the safety limits are applied.
+    private(set) var wantsHold = false
+
     var blockedByFloor: Bool {
-        guard config.batteryFloor > 0, let b = battery, b.discharging || !b.onAC, !floorOverride else { return false }
+        guard wantsHold, config.batteryFloor > 0, let b = battery, b.discharging || !b.onAC, !floorOverride else { return false }
         // Same 3% band `evaluate` uses, so the button stays while the limit is still what's stopping Ajar.
         return b.percent <= config.batteryFloor + (floorLatched ? 3 : 0)
     }
@@ -254,7 +258,7 @@ final class Engine {
         ticks += 1
         Heartbeat.beat()
         // Asked to sleep a minute ago, lid still shut, still running: ask again (up to 3 times).
-        if let asked = receipt?.sleepRequestedAt, receipt?.sleptAt == nil, lidClosed, !holding,
+        if let asked = receipt?.sleepRequestedAt, receipt?.sleptAt == nil, receipt?.openedAt == nil, lidClosed, !holding,
            sleepRetries < 3, Date().timeIntervalSince(asked) >= 60 * Double(sleepRetries + 1) {
             sleepRetries += 1
             Shell.pmsetRoot(["sleepnow"])
@@ -275,11 +279,18 @@ final class Engine {
         }
         if lidClosed && holding && !powerTestRunning && ticks % 15 == 0 { applyClosedTargets(preset: effectivePreset) }   // catch apps and simulators started while closed
         // Retry anything that couldn't be put back earlier.
-        if !touched.isEmpty && !(lidClosed && holding) && ticks % 5 == 0 { restoreApps() }
+        if !touched.isEmpty && !(lidClosed && holding) && !measuring && ticks % 5 == 0 { restoreApps() }
+        // Screen and brightness that couldn't be put back when the lid opened (the panel can come back a moment
+        // later than the lid event): keep trying while the lid is open.
+        if !lidClosed && ticks % 2 == 0 {
+            if StateFiles.exists(DisplayPower.marker) { DisplayPower.restoreBuiltIn() }
+            if StateFiles.exists(Brightness.restoreFile) { Brightness.restore() }
+        }
         if holding { StateFiles.touch(StateFiles.hold) }
         if ticks % 150 == 3 { checkWatchdog() }
         if pendingRelease, Shell.pmsetRoot(["-a", "disablesleep", "0"]) {
             pendingRelease = false
+            if warning == "Couldn't switch sleep back on yet; Ajar keeps trying." { warning = nil }
             StateFiles.remove(StateFiles.hold)
         }
         if ticks % 5 == 0 { reloadConfigIfEdited() }
@@ -476,6 +487,8 @@ final class Engine {
             else if let r = workReason() { want = true; reason = r }
         }
 
+        wantsHold = want
+        if !want && holdFailedAt != nil { holdFailedAt = nil; warning = nil }   // nothing to hold any more
         blockedReason = nil
         // "On power" means the charger is covering the load, not just plugged in.
         if want && config.onlyOnPower && onBattery { want = false; blockedReason = "Only on power" }
@@ -510,6 +523,7 @@ final class Engine {
     /// How long "serious" heat with the lid shut is tolerated before the Mac is put to sleep.
     static let hotGrace: TimeInterval = 300
     private var pendingRelease = false
+    private var holdFailedAt: Date?
     private var activity: NSObjectProtocol?
 
     static func describe(_ s: AgentSession) -> String {
@@ -540,7 +554,7 @@ final class Engine {
         switch config.menuBarText {
         case .none: return ""
         case .battery: return battery.map { "\($0.percent)%" } ?? ""
-        case .watts: return drawNow.map { String(format: "%.1fW", $0) } ?? ""
+        case .watts: return (systemWatts ?? drawNow).map { String(format: "%.1fW", $0) } ?? ""
         case .timeLeft:
             guard battery != nil else { return "" }
             if !onBattery { return "∞" }
@@ -565,9 +579,10 @@ final class Engine {
     private func accumulateSavings() {
         let now = Date()
         var rate = 0.0
-        if PowerSensor.isMeasured, let open = openDrawAtClose, let closed = systemWatts {
-            // Measured: what the whole Mac draws now versus what it drew with the lid open. Net, so it can be negative.
-            rate = open - closed
+        if let measured = powerEffects["total"], !targeted.isEmpty || lowPowerSet {
+            // What the power test measured Ajar's savings to be worth on this Mac, while they're applied. (Comparing
+            // with the lid-open draw would credit Ajar with the screen being off, which happens anyway.)
+            rate = measured
         } else {
             for (id, _) in targeted {
                 // An app that quit, or has no baseline yet, isn't counted either way. A slowed app that uses more
@@ -682,9 +697,10 @@ final class Engine {
     // MARK: Holds (from the CLI, MCP or Shortcuts)
 
     @discardableResult
-    func addHold(reason: String, minutes: Double?, pid: Int32?) -> Hold {
-        let h = Hold(id: String(UUID().uuidString.prefix(8)).lowercased(), reason: reason,
+    func addHold(reason: String, minutes: Double?, pid: Int32?, owner: Int32? = nil) -> Hold {
+        var h = Hold(id: String(UUID().uuidString.prefix(8)).lowercased(), reason: reason,
                      until: minutes.map { Date().addingTimeInterval($0 * 60) }, pid: pid, pidStart: pid.flatMap { Procs.startTime($0) })
+        h.owner = owner
         holds.append(h)
         saveRuntime()
         evaluate()
@@ -695,7 +711,7 @@ final class Engine {
     /// MCP: an agent session may only end holds it made itself (tied to its own pid).
     func releaseHolds(ownedBy pid: Int32, id: String? = nil) -> Int {
         let before = holds.count
-        holds.removeAll { $0.pid == pid && (id == nil || $0.id == id) }
+        holds.removeAll { ($0.owner == pid || $0.pid == pid) && (id == nil || $0.id == id) }
         saveRuntime()
         evaluate()
         return before - holds.count
@@ -730,14 +746,19 @@ final class Engine {
 
     private func startHold(reason: String?) {
         if previewOnly { holding = true; return }
+        if let last = holdFailedAt, Date().timeIntervalSince(last) < 30 { return }   // don't spawn sudo every 2 s
         // Marker first: if Ajar dies right after pmset, the watchdog knows to switch sleep back on.
         StateFiles.touch(StateFiles.hold)
         guard StateFiles.exists(StateFiles.hold) else { setupError = "Ajar couldn't write to its folder, so it won't switch sleep off"; return }
         guard Shell.pmsetRoot(["-a", "disablesleep", "1"]) else {
             if !pendingRelease { StateFiles.remove(StateFiles.hold) }
-            setupReady = Setup.isReady
+            holdFailedAt = Date()
+            warning = "macOS refused to switch sleep off, so closing the lid would sleep the Mac. Run Set Up again in Settings › About."
+            let ready = Setup.isReady
+            if ready != setupReady { setupReady = ready }
             return
         }
+        if holdFailedAt != nil { holdFailedAt = nil; warning = nil }
         holding = true
         pendingRelease = false
         // Keep App Nap from stretching Ajar's 2-second loop while the lid is shut and nothing is on screen;
@@ -751,12 +772,14 @@ final class Engine {
     private func endHold(because why: String) {
         if previewOnly { holding = false; return }
         let wasClosed = lidClosed
+        if wasClosed { accumulateSavings() }
         if wasClosed { restoreClosedState() }
         if Shell.pmsetRoot(["-a", "disablesleep", "0"]) {
             StateFiles.remove(StateFiles.hold)
         } else {
             // Keep the hold file so the watchdog also retries, and retry every tick ourselves.
             pendingRelease = true
+            warning = "Couldn't switch sleep back on yet; Ajar keeps trying."
         }
         holding = false
         if let a = activity { ProcessInfo.processInfo.endActivity(a); activity = nil }
@@ -787,6 +810,7 @@ final class Engine {
             if holding { enterClosed() }
         } else {
             snoozed = false
+            sleepRetries = 0
             if holding { accumulateSavings() }
             restoreClosedState()
             if var r = receipt, r.openedAt == nil {
@@ -809,6 +833,8 @@ final class Engine {
     }
 
     private func enterClosed() {
+        // A new hold while the lid stayed shut (an agent resumed, a wake): close the books on the last one first.
+        if let r = receipt, r.openedAt == nil, !previewOnly { finishSession(openedAt: Date()) }
         receipt = Receipt(closedAt: Date(), startPercent: battery?.percent, agentName: activeAgent?.kind.name ?? holds.last?.reason)
         sessionWh = 0
         sleepInfo = nil
@@ -906,6 +932,9 @@ final class Engine {
     }
 
     // MARK: Low Power Mode
+
+    /// Ajar has Low Power Mode switched on right now (and will put the person's setting back).
+    private var lowPowerSet: Bool { StateFiles.exists(StateFiles.modeRestore) }
 
     private func setLowPower() {
         guard !StateFiles.exists(StateFiles.modeRestore), let cur = PowerMode.battery(), cur.value != 1 else { return }
@@ -1014,7 +1043,8 @@ final class Engine {
         let found = BackgroundWork.scan(all: all)
         background = found
         if config.pauseSimulators && !found.testsRunning && !skip.contains("simulators") {
-            for pid in found.simulators + found.previews { add(pid, .pause, bundle: nil) }
+            // With "shut them down instead", simulators are shut down on close (frozen ones can't shut down).
+            for pid in (config.shutDownSimulators ? [] : found.simulators) + found.previews { add(pid, .pause, bundle: nil) }
         }
         if config.pauseBackgroundAudio && !skip.contains("audio") {
             for pid in found.audio.keys {
@@ -1162,7 +1192,7 @@ final class Engine {
             "learned_open_watts": r1(openDraw), "learned_closed_watts": r1(closedDraw),
             "apps_total_watts": r1(apps.reduce(0) { $0 + $1.watts }),
             "suspects": suspects,
-            "power_test": powerTestRunning ? (powerTestProgress ?? "running") : (powerEffects.isEmpty && powerUnclear.isEmpty ? "not run yet" : "done"),
+            "power_test": powerTestRunning ? (powerTestProgress ?? "running") : powerTestAborted.map { "aborted: \($0)" } ?? (powerEffects.isEmpty && powerUnclear.isEmpty ? "not run yet" : "done"),
             "measured_total_saving_watts": powerUnclear.contains("total") ? "unclear (the Mac's own load moved too much; run it again when agents are quiet)" as Any : r1(powerEffects["total"]) as Any,
             "measured_closed_watts": ["with_savings": r1(powerEffects["closed_with"]), "without_savings": r1(powerEffects["closed_without"])],
             "how_to_measure": "ajar power test (lid closed, about 3-4 minutes): all savings off, on, off, on, each read over a full 30 s update of the battery controller. --detailed adds each saving on its own (about 1.5 min each). --screen includes the screen (that locks the Mac).",
@@ -1176,6 +1206,7 @@ final class Engine {
         guard !powerTestRunning else { return "A power test is already running" }
         guard PowerSensor.isMeasured else { return "This Mac doesn't report whole-system power, so savings can't be measured" }
         powerTestRunning = true
+        powerTestAborted = nil
         var steps = ["apps", "simulators", "audio", "low_power"]
         // Switching the display off locks Macs set to ask for the password immediately, so it's only measured
         // there when the person already chose it.
@@ -1198,18 +1229,24 @@ final class Engine {
         }
     }
 
-    private func setSaving(_ step: String, _ on: Bool) {
-        switch step {
-        case "apps", "simulators", "audio":
-            // Applying with the category skipped puts that category back to normal; everything else stays applied.
-            applyClosedTargets(preset: effectivePreset == .speed ? .balanced : effectivePreset, skip: on ? [] : [step])
-        case "low_power": if on { setLowPower() } else { restorePowerMode() }
-        case "screen_off":
-            if on { switchScreenOff() } else { DisplayPower.restoreBuiltIn(); screenOff = false; Brightness.dimForClosedLid() }
-        case "screen":
-            if on { Shell.run("/usr/bin/pmset", ["displaysleepnow"]) }
-            else { Shell.run("/usr/bin/caffeinate", ["-u", "-t", "2"]) }   // declares activity: the display comes back on
-        default: break
+    /// Puts every listed saving in the given state at once. The app categories (apps, simulators, audio) are one
+    /// set of targets, so they're applied together in a single pass: applying them one by one undid the others.
+    private func setSavings(_ want: [String: Bool]) {
+        let appCats = ["apps", "simulators", "audio"]
+        if appCats.contains(where: { want[$0] != nil }) {
+            let skip = Set(appCats.filter { want[$0] == false })
+            applyClosedTargets(preset: effectivePreset, skip: skip)
+        }
+        for (step, on) in want where !appCats.contains(step) {
+            switch step {
+            case "low_power": if on { setLowPower() } else { restorePowerMode() }
+            case "screen_off":
+                if on { if !screenOff { switchScreenOff() } } else if screenOff { DisplayPower.restoreBuiltIn(); screenOff = false; Brightness.dimForClosedLid() }
+            case "screen":
+                if on { Shell.run("/usr/bin/pmset", ["displaysleepnow"]) }
+                else { Shell.spawn("/usr/bin/caffeinate", ["-u", "-t", "2"]) }   // declares activity: the display comes back on
+            default: break
+            }
         }
     }
 
@@ -1240,22 +1277,24 @@ final class Engine {
     /// Everything off, on, off, on: what Ajar's savings are worth together, with the lid shut. The smaller of the
     /// two differences counts; if the pairs disagree a lot (the Mac's own load moved), it's reported as unclear.
     private func runTotalTest(_ steps: [String], then detailed: [String]) {
-        let states = steps.map { ($0, savingOn($0)) }
-        func setAll(_ on: Bool) { for (step, was) in states { setSaving(step, on ? was : false) } }
+        // The locking screen-off is only measured on its own (--detailed --screen): it's never on in the normal state.
+        let was = Dictionary(uniqueKeysWithValues: steps.filter { $0 != "screen" }.map { ($0, savingOn($0)) })
+        let allOff = was.mapValues { _ in false }
         var readings: [Double] = []
         let pattern = [false, true, false, true]
         func next(_ i: Int) {
             guard i < pattern.count else { return finish() }
             powerTestProgress = "Measuring, \(i + 1) of \(pattern.count + detailed.count * 2)"
-            setAll(pattern[i])
+            setSavings(pattern[i] ? was : allOff)
             cleanReading { [weak self] w in
                 guard let self else { return }
-                guard let w else { setAll(true); return self.endPowerTest() }
+                // Lid opened or the hold ended: stop without re-applying anything.
+                guard let w else { return self.endPowerTest(aborted: self.abortReason, was: was) }
                 readings.append(w); next(i + 1)
             }
         }
         func finish() {
-            setAll(true)
+            setSavings(was)
             let d1 = readings[0] - readings[1], d2 = readings[2] - readings[3]
             powerEffects["closed_without"] = (readings[0] + readings[2]) / 2
             powerEffects["closed_with"] = (readings[1] + readings[3]) / 2
@@ -1264,43 +1303,68 @@ final class Engine {
             } else {
                 powerEffects["total"] = max(0, min(d1, d2)); powerUnclear.remove("total")
             }
-            runDetailStep(detailed[...], done: 4, of: 4 + detailed.count * 2)
+            runDetailStep(detailed[...], was: was, done: 4, of: 4 + detailed.count * 2)
         }
         next(0)
     }
 
-    /// Optional breakdown (ajar power test --detailed): each saving off, then on, one clean period each.
-    private func runDetailStep(_ steps: ArraySlice<String>, done: Int, of total: Int) {
-        guard let step = steps.first else { return endPowerTest() }
-        guard lidClosed, holding else { return endPowerTest() }
-        let wasOn = savingOn(step)
+    /// Optional breakdown (ajar power test --detailed): each saving off, then on, one clean period each, with the
+    /// others left as they were.
+    private func runDetailStep(_ steps: ArraySlice<String>, was: [String: Bool], done: Int, of total: Int) {
+        guard let step = steps.first else { return endPowerTest(aborted: nil, was: was) }
+        guard lidClosed, holding else { return endPowerTest(aborted: abortReason, was: was) }
         if (step == "simulators" && background.simulators.isEmpty && background.previews.isEmpty) || (step == "audio" && background.audio.isEmpty) {
             powerEffects[step] = nil; powerUnclear.remove(step)
-            return runDetailStep(steps.dropFirst(), done: done + 2, of: total)
+            return runDetailStep(steps.dropFirst(), was: was, done: done + 2, of: total)
         }
         powerTestProgress = "Measuring \(Self.stepName(step)), \(done + 1) of \(total)"
-        setSaving(step, false)
-        cleanReading { [weak self] off in
+        if step == "screen" { screenStepRan = true }
+        var off = was; off[step] = false
+        var on = was; on[step] = true
+        setSavings(off)
+        cleanReading { [weak self] offW in
             guard let self else { return }
-            self.setSaving(step, true)
+            guard let offW else { return self.endPowerTest(aborted: self.abortReason, was: was) }
+            self.setSavings(on)
             self.powerTestProgress = "Measuring \(Self.stepName(step)), \(done + 2) of \(total)"
-            self.cleanReading { [weak self] on in
+            self.cleanReading { [weak self] onW in
                 guard let self else { return }
-                self.setSaving(step, wasOn)
-                if let off, let on { self.powerEffects[step] = max(0, off - on); self.powerUnclear.remove(step) }
-                self.runDetailStep(steps.dropFirst(), done: done + 2, of: total)
+                guard let onW else { return self.endPowerTest(aborted: self.abortReason, was: was) }
+                self.setSavings(was)
+                self.powerEffects[step] = max(0, offW - onW); self.powerUnclear.remove(step)
+                self.runDetailStep(steps.dropFirst(), was: was, done: done + 2, of: total)
             }
         }
     }
 
-    private func endPowerTest() {
+    private var screenStepRan = false
+
+    /// How the last power test ended: nil when it finished, otherwise why it stopped.
+    private(set) var powerTestAborted: String?
+
+    /// Why a reading came back empty.
+    private var abortReason: String {
+        !lidClosed ? "the lid was opened" : (!holding ? "Ajar stopped keeping the Mac awake" : "the battery controller stopped reporting power")
+    }
+
+    private func endPowerTest(aborted: String?, was: [String: Bool]) {
+        // Screen and Low Power Mode back to how they were (the screen comes back on if the locking step ran),
+        // while the lid is still shut and held; the app targets are re-applied below.
+        if lidClosed && holding {
+            var s = was.filter { !["apps", "simulators", "audio"].contains($0.key) }
+            if screenStepRan { s["screen"] = false }
+            setSavings(s)
+        }
+        screenStepRan = false
         powerTestRunning = false
         powerTestProgress = nil
-        UserDefaults.standard.set(powerEffects, forKey: "powerEffects2")
-        UserDefaults.standard.set(Array(powerUnclear), forKey: "powerUnclear")
-        if lidClosed && holding { reapplyClosedState() } else if !lidClosed { restoreClosedState() }
-        if let t = powerEffects["total"] { announce("Power test done", String(format: "Ajar's savings: %.1f W with the lid shut", t)) }
-        else { announce("Power test done", "The Mac's own load moved too much to measure; try again when the agents are quiet") }
+        powerTestAborted = aborted
+        if aborted == nil {
+            UserDefaults.standard.set(powerEffects, forKey: "powerEffects2")
+            UserDefaults.standard.set(Array(powerUnclear), forKey: "powerUnclear")
+        }
+        // Back to exactly what the settings (and the heat guard) call for, or everything restored if the lid opened.
+        if lidClosed && holding { reapplyClosedState(forcing: heatForced ? .longest : nil) } else { restoreClosedState() }
     }
 
     static func stepName(_ step: String) -> String {
@@ -1317,13 +1381,16 @@ final class Engine {
     /// slowed (≈ ¼ power, measured) or paused (0). The 1.6 W floor is SoC + Wi-Fi + memory with the lid shut.
     var closedEstimate: Double {
         if lidClosed, holding, let d = systemWatts ?? drawNow { return d }
-        if let c = closedDraw { return c }
         let others = apps.reduce(0.0) { sum, a in
             if a.system { return sum }   // covered by the base figure
             if isProtected(a) { return sum + a.watts }
             switch rule(for: a.bundleID) { case .leave: return sum + a.watts; case .slow: return sum + a.watts * 0.25; case .pause: return sum }
         }
-        return 1.6 + others
+        let estimate = closedDraw ?? (1.6 + others)
+        // Closing the lid only takes power away (screen off, apps slowed), so the estimate never exceeds what the
+        // Mac draws right now with it open. (The learned figure can include heavy builds from earlier sessions.)
+        if !lidClosed, let open = systemWatts ?? drawNow { return min(estimate, open) }
+        return estimate
     }
 
     func hoursLeft(at watts: Double) -> Double? {
@@ -1350,6 +1417,7 @@ final class Engine {
     }
 
     func runSetup() {
+        holdFailedAt = nil
         // Run from Downloads or a disk image, macOS gives the app a temporary path that disappears; the
         // `ajar` command and the Claude config would point at nothing.
         let path = Bundle.main.bundlePath
@@ -1420,6 +1488,7 @@ final class Engine {
         if powerTestRunning { d["powerTest"] = powerTestProgress ?? "running" }
         if !powerEffects.isEmpty { d["savings"] = powerEffects.mapValues { ($0 * 10).rounded() / 10 } }
         if !powerUnclear.isEmpty { d["savingsUnclear"] = Array(powerUnclear) }
+        if let a = powerTestAborted, !powerTestRunning { d["powerTestAborted"] = a }
         d.merge(phoneFigures) { a, _ in a }
         if let u = onUntil { d["alwaysUntil"] = u.formatted(date: .omitted, time: .shortened) }
         if let b = battery {
@@ -1427,6 +1496,14 @@ final class Engine {
             else { d["battery"] = "\(b.percent)%" + (closedHours.map { " · ≈\(PanelFormat.hm($0)) left with the lid closed" } ?? "") }
         }
         return d
+    }
+
+    /// Whether an agent keeps the Mac awake (false: shown, but only tracked).
+    func setKeepsAwake(_ kindID: String, _ keeps: Bool) {
+        update { c in
+            c.trackOnly.removeAll { $0 == kindID }
+            if !keeps { c.trackOnly.append(kindID) }
+        }
     }
 
     func toggleTrackOnly(_ kindID: String) {

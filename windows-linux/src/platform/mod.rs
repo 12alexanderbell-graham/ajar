@@ -106,6 +106,41 @@ pub trait Platform {
     }
 }
 
+/// Puts back one setting recorded in `restore.json`. The record is cleared only once that worked, or when there
+/// is nothing to do because the setting is no longer Ajar's (`still_ours` false); after a failure it's kept, to
+/// be retried (by the next tick, the next start or the watchdog).
+pub fn put_back<T>(record: &mut Option<T>, still_ours: bool, set: impl FnOnce(&T) -> bool) -> bool {
+    let done = match record.as_ref() {
+        Some(prev) if still_ours => set(prev),
+        _ => true,
+    };
+    if done {
+        *record = None;
+    }
+    done
+}
+
+/// Persistence filter for heat readings: a hot level counts only once every one of the last `N` samples was at
+/// least that hot, so a momentary dip in a clock limit isn't read as heat.
+#[derive(Debug, Default)]
+pub struct Sustained<const N: usize> {
+    last: std::collections::VecDeque<Thermal>,
+}
+
+impl<const N: usize> Sustained<N> {
+    pub fn feed(&mut self, t: Thermal) -> Thermal {
+        if self.last.len() == N {
+            self.last.pop_front();
+        }
+        self.last.push_back(t);
+        let coolest = self.last.iter().copied().min().unwrap_or(Thermal::Unknown);
+        if self.last.len() < N { coolest.min(Thermal::Normal) } else { coolest }
+    }
+    pub fn clear(&mut self) {
+        self.last.clear();
+    }
+}
+
 #[cfg(target_os = "linux")]
 pub fn native() -> linux::Linux {
     linux::Linux::new()
@@ -114,4 +149,40 @@ pub fn native() -> linux::Linux {
 #[cfg(windows)]
 pub fn native() -> windows::Win {
     windows::Win::new()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_record_is_kept_until_its_restore_works() {
+        let mut r = Some("balanced".to_string());
+        assert!(!put_back(&mut r, true, |_| false));
+        assert_eq!(r.as_deref(), Some("balanced"), "a failed restore keeps the record for a retry");
+        let mut asked = None;
+        assert!(put_back(&mut r, true, |p| {
+            asked = Some(p.clone());
+            true
+        }));
+        assert_eq!((r, asked.as_deref()), (None, Some("balanced")));
+        let mut changed = Some("balanced".to_string());
+        assert!(put_back(&mut changed, false, |_| panic!("not Ajar's setting any more: left alone")));
+        assert!(changed.is_none());
+        assert!(put_back(&mut None::<String>, true, |_| false), "nothing recorded: nothing to do");
+    }
+
+    #[test]
+    fn heat_counts_only_when_it_lasts() {
+        let mut h = Sustained::<3>::default();
+        assert_eq!(h.feed(Thermal::Critical), Thermal::Normal);
+        assert_eq!(h.feed(Thermal::Critical), Thermal::Normal);
+        assert_eq!(h.feed(Thermal::Critical), Thermal::Critical);
+        assert_eq!(h.feed(Thermal::Serious), Thermal::Serious);
+        assert_eq!(h.feed(Thermal::Normal), Thermal::Normal);
+        assert_eq!(h.feed(Thermal::Critical), Thermal::Normal, "one hot sample among cool ones isn't heat");
+        assert_eq!(h.feed(Thermal::Unknown), Thermal::Unknown);
+        h.clear();
+        assert_eq!(h.feed(Thermal::Unknown), Thermal::Unknown);
+    }
 }

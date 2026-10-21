@@ -13,6 +13,12 @@ struct AjarApp: App {
     var body: some Scene {
         // Everything visible is AppKit-managed in StatusController; SwiftUI needs at least one scene.
         Settings { EmptyView() }
+            .commands {
+                // ⌘, opens Ajar's Settings page, not the empty window SwiftUI would show.
+                CommandGroup(replacing: .appSettings) {
+                    Button("Settings…") { AjarShared.ui?.showSettings() }.keyboardShortcut(",")
+                }
+            }
     }
 }
 
@@ -55,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         engine = Engine()
         let ui = StatusController(engine: engine)
         self.ui = ui
+        AjarShared.ui = ui
         commands = CommandCenter(engine: engine, ui: ui)
         notifier = Notifier(engine: engine)
         AjarShared.engine = engine
@@ -81,12 +88,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSSound(named: "Tink")?.play()
     }
 
+    /// The four settings this applies, as last applied: `config` changes on every mode or slider change, and only
+    /// a real change to one of these should touch the Dock icon, hotkey, island or appearance.
+    private var applied: (dock: Bool, hotkey: Bool, island: Bool, look: AppearanceChoice)?
+
     private func observeSettings() {
         withObservationTracking {
-            _ = engine.config.showInDock
-            _ = engine.config.hotkey
-            _ = engine.config.notchIsland
-            _ = engine.config.appearance
+            _ = engine.config
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in self?.applyAppearanceSettings(); self?.observeSettings() }
         }
@@ -94,15 +102,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func applyAppearanceSettings() {
         let c = engine.config
-        if c.showInDock { NSApp.setActivationPolicy(.regular) }
-        else if NSApp.windows.allSatisfy({ !$0.isVisible || $0 is NSPanel || $0.level != .normal }) { NSApp.setActivationPolicy(.accessory) }
-        if c.hotkey { hotkey.register() } else { hotkey.unregister() }
-        ui?.island.enabled = c.notchIsland
-        NSApp.appearance = switch c.appearance {
-        case .system: nil
-        case .light: NSAppearance(named: .aqua)
-        case .dark: NSAppearance(named: .darkAqua)
+        let now = (dock: c.showInDock, hotkey: c.hotkey, island: c.notchIsland, look: c.appearance)
+        if let a = applied, a == now { return }
+        if applied?.dock != now.dock {
+            if c.showInDock { NSApp.setActivationPolicy(.regular) }
+            else if NSApp.windows.allSatisfy({ !$0.isVisible || $0 is NSPanel || $0.level != .normal }) { NSApp.setActivationPolicy(.accessory) }
         }
+        if applied?.hotkey != now.hotkey { if c.hotkey { hotkey.register() } else { hotkey.unregister() } }
+        if applied?.island != now.island { ui?.island.enabled = c.notchIsland }
+        if applied?.look != now.look {
+            let a: NSAppearance? = switch c.appearance {
+            case .system: nil
+            case .light: NSAppearance(named: .aqua)
+            case .dark: NSAppearance(named: .darkAqua)
+            }
+            NSApp.appearance = a
+            ui?.applyAppearance(a)
+        }
+        applied = now
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

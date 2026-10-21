@@ -110,6 +110,7 @@ final class AgentWatcher {
         self.extraKinds = extraKinds
         let now = Date()
         let dt = lastSample.map { now.timeIntervalSince($0) } ?? 0
+        let previousSampleUs = lastSample.map { UInt64($0.timeIntervalSince1970 * 1_000_000) }
         lastSample = now
 
         let pids = Procs.allPids()
@@ -174,10 +175,16 @@ final class AgentWatcher {
             var p = parent[root]
             while let cur = p, cur > 1 { protect.insert(cur); p = parent[cur] }
 
-            let energy = members.reduce(UInt64(0)) { $0 &+ (Procs.usage($1)?.ri_energy_nj ?? 0) }
-            newEnergy[root] = energy
-            var watts = 0.0
-            if dt > 0, let prev = lastTreeEnergy[root], energy >= prev { watts = Double(energy - prev) / 1e9 / dt }
+            // Per process, so a child that exits doesn't make the whole tree read 0 W: each process counts what it
+            // used since the last sample, and one that started since then counts everything it used.
+            var used: UInt64 = 0
+            for pid in members {
+                guard let e = Procs.usage(pid)?.ri_energy_nj else { continue }
+                newEnergy[pid] = e
+                if let prev = lastTreeEnergy[pid] { if e >= prev { used &+= e - prev } }
+                else if let since = previousSampleUs, let start = Procs.startTime(pid), start >= since { used &+= e }
+            }
+            let watts = dt > 0 && previousSampleUs != nil ? Double(used) / 1e9 / dt : 0
 
             let previous = sessions.first { $0.pid == root && $0.kind == kind }
             var tool = false
