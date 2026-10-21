@@ -55,6 +55,7 @@ h2{font-size:17px;margin:0 0 8px;font-weight:600}
 .foot{color:var(--sub);font-size:12px;text-align:center;margin-top:24px;line-height:1.7}
 .foot button{background:none;border:0;padding:0;font:inherit;color:inherit;text-decoration:underline}
 .empty{color:var(--sub);font-size:14px}
+#cam{display:block;width:100%;aspect-ratio:1;object-fit:cover;border-radius:12px;background:#000;margin-top:12px}
 button:disabled{opacity:.5}
 input[type=text]{width:100%;font:15px ui-monospace,SFMono-Regular,Menlo,monospace;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--text)}
 ol{margin:8px 0 0;padding-left:22px}
@@ -74,13 +75,18 @@ ol li{margin:4px 0}
   <section id="pair" class="card" hidden>
     <h1>Pair with your laptop</h1>
     <ol class="detail">
-      <li>On the laptop, open Ajar's menu › Settings › Phone Control and turn it on.</li>
-      <li>Scan the QR code with your phone's camera. Or copy the pairing code there and paste it here:</li>
+      <li>On the laptop, open Ajar's menu › Settings › Phone and turn it on.</li>
+      <li>Tap Scan QR Code and point your phone at the code on the laptop. Or paste the pairing code below.</li>
     </ol>
+    <button class="btn primary" type="button" id="scanbtn">Scan QR Code</button>
+    <div id="scanner" hidden>
+      <video id="cam" playsinline muted autoplay></video>
+      <button class="btn" type="button" id="scanstop">Cancel</button>
+    </div>
     <form id="pairform" style="margin-top:12px" autocomplete="off">
       <input type="text" id="code" placeholder="Pairing code or link" aria-label="Pairing code or link" autocapitalize="off" autocorrect="off" spellcheck="false">
       <p class="err" id="pairerr" role="alert"></p>
-      <button class="btn primary" type="submit">Pair</button>
+      <button class="btn" type="submit">Pair</button>
     </form>
   </section>
 
@@ -187,6 +193,17 @@ async function seal(topicName, obj) {
   return b64u.enc(new Uint8Array([...nonce, ...new Uint8Array(ct)]));
 }
 
+/** ntfy turns messages over 4 KB into attachments; fetch those (still encrypted) from the same relay. */
+async function messageText(ev) {
+  const a = ev.attachment;
+  if (a && a.url && a.size < 65536) {
+    try {
+      if (new URL(a.url).origin === new URL(server).origin) return await (await fetch(a.url)).text();
+    } catch (_) {}
+  }
+  return ev.message || "";
+}
+
 async function unseal(topicName, msg) {
   try {
     const raw = b64u.dec(msg);
@@ -209,7 +226,7 @@ function openStream() {
     let ev; try { ev = JSON.parse(e.data); } catch (_) { return; }
     if (ev.event !== "message") return;
     lastId = ev.id;
-    const m = await unseal(replyTopic, ev.message || "");
+    const m = await unseal(replyTopic, await messageText(ev));
     if (m && waiters.has(m.re)) { waiters.get(m.re)(m); waiters.delete(m.re); }
   };
   return streamReady;
@@ -261,11 +278,70 @@ async function waitFor(n, since) {
       let ev; try { ev = JSON.parse(line); } catch (_) { continue; }
       if (ev.event !== "message") continue;
       lastId = ev.id; since = ev.id;
-      const m = await unseal(replyTopic, ev.message || "");
+      const m = await unseal(replyTopic, await messageText(ev));
       if (m && m.re === n) return m;
     }
   }
   return null;
+}
+
+// QR scanning on the pairing screen. A home-screen app can't receive the link the Camera app opens (that goes to
+// Safari), so it scans by itself: the built-in BarcodeDetector where there is one (Android), jsQR elsewhere (iPhone).
+let camStream = null, scanTimer = null;
+function loadScript(src) {
+  return new Promise((res, rej) => { const e = document.createElement("script"); e.src = src; e.onload = res; e.onerror = () => rej(new Error(src)); document.head.appendChild(e); });
+}
+async function startScan() {
+  $("pairerr").textContent = "";
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    $("pairerr").textContent = "This browser can't use the camera here. Scan with the Camera app, or paste the code.";
+    return;
+  }
+  let detector = null;
+  try { if ("BarcodeDetector" in window && (await BarcodeDetector.getSupportedFormats()).includes("qr_code")) detector = new BarcodeDetector({ formats: ["qr_code"] }); } catch (_) {}
+  try { if (!detector && !window.jsQR) await loadScript("jsQR.js"); }
+  catch (_) { $("pairerr").textContent = "The scanner didn't load. Check your connection, or paste the code."; return; }
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+  } catch (e) {
+    $("pairerr").textContent = e && e.name === "NotAllowedError" ? "Camera access is off for this page. Allow it, or paste the code." : "Couldn't open the camera. Paste the code instead.";
+    return;
+  }
+  const v = $("cam");
+  v.srcObject = camStream;
+  $("scanner").hidden = false; $("scanbtn").hidden = true;
+  try { await v.play(); } catch (_) {}
+  const c = document.createElement("canvas"), g = c.getContext("2d", { willReadFrequently: true });
+  let warned = false;
+  const tick = async () => {
+    if (!camStream) return;
+    let text = null;
+    if (v.readyState >= 2 && v.videoWidth) {
+      try {
+        if (detector) { const r = await detector.detect(v); if (r.length) text = r[0].rawValue; }
+        else {
+          const sc = Math.min(1, 720 / Math.max(v.videoWidth, v.videoHeight));
+          c.width = Math.round(v.videoWidth * sc); c.height = Math.round(v.videoHeight * sc);
+          g.drawImage(v, 0, 0, c.width, c.height);
+          const r = jsQR(g.getImageData(0, 0, c.width, c.height).data, c.width, c.height, { inversionAttempts: "dontInvert" });
+          if (r) text = r.data;
+        }
+      } catch (_) {}
+    }
+    if (text) {
+      const { k, s } = parsePairing(text);
+      if (k && keyBytes(k)) { stopScan(); save(k, s); await begin(k, s); return; }
+      if (!warned) { warned = true; $("pairerr").textContent = "That QR code isn't from Ajar. Point at the one in Ajar's Settings › Phone."; }
+    }
+    scanTimer = setTimeout(tick, 120);
+  };
+  tick();
+}
+function stopScan() {
+  clearTimeout(scanTimer); scanTimer = null;
+  if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
+  $("cam").srcObject = null;
+  $("scanner").hidden = true; $("scanbtn").hidden = false;
 }
 
 function note(msg) {
@@ -418,6 +494,9 @@ async function start() {
     location.replace(location.pathname);
   });
   document.addEventListener("visibilitychange", () => { if (document.hidden) closeStream(); else if (key) send("panel"); });
+  $("scanbtn").addEventListener("click", startScan);
+  $("scanstop").addEventListener("click", stopScan);
+  document.addEventListener("visibilitychange", () => { if (document.hidden) stopScan(); });
   $("pairform").addEventListener("submit", async e => {
     e.preventDefault();
     const { k, s } = parsePairing($("code").value);
