@@ -16,11 +16,12 @@ With the lid shut it pauses apps you aren't using and turns on Low Power Mode. O
 - **Windows / Linux:** download from the same page (Linux: unpack, run `./install.sh`).
 - **Connect your agent:** `ajar connect`, then paste the output of `ajar prompt` into Claude Code or Codex.
 
-<p align="center"><img src="docs/menu.png" width="320" alt="Ajar's menu: When Busy, 'Close the lid: it keeps working', battery line"> &nbsp; <img src="docs/phone.png" width="220" alt="Ajar's phone page"></p>
+<p align="center"><img src="docs/menu.png" width="320" alt="Ajar's menu on the Now tab: When Busy, 'Close the lid: it keeps working', battery figures"> &nbsp; <img src="docs/phone.png" width="220" alt="Ajar's phone page"></p>
 
 ## What it does
 
 - **Off, When Busy or Always.** When Busy keeps it awake while an agent works and sleeps a few minutes after.
+- **Apps tab.** What keeps it awake (add any app with +), what closing the lid slows or pauses, the battery limit, and a rule per app.
 - **Saves power with the lid shut.** Pauses other apps, simulators and silent audio, turns on Low Power Mode. Opening the lid puts it all back.
 - **Measures it.** `ajar power test` reads whole-laptop power from the battery controller.
 - **Agents can use it.** MCP server and CLI, so agents keep the laptop awake for long jobs.
