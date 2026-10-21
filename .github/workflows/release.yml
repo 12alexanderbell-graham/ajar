@@ -1,5 +1,6 @@
 name: Release
-# Push a tag like v1.0.1: GitHub builds every download from this source and publishes them as a release.
+# Publish a release on GitHub with a new tag like v1.0.1 (Releases › Draft a new release), or push such a tag:
+# GitHub builds every download from that tag's source and attaches them to the release.
 on:
   push:
     tags: ['v*']
@@ -43,5 +44,10 @@ jobs:
       - run: cd out && sha256sum * > SHA256SUMS && cat SHA256SUMS
       - env: { GH_TOKEN: "${{ github.token }}" }
         run: |
-          gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --title "Ajar ${GITHUB_REF_NAME#v}" \
-            --notes "Built by GitHub Actions from this tag's source. macOS 14+ (universal), Windows 10/11 and Linux with systemd (x86-64). Checksums in SHA256SUMS." out/*
+          if gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # Created by hand on github.com: attach the builds to it.
+            gh release upload "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" out/*
+          else
+            gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --title "Ajar ${GITHUB_REF_NAME#v}" \
+              --notes "Built by GitHub Actions from this tag's source. macOS 14+ (universal), Windows 10/11 and Linux with systemd (x86-64). Checksums in SHA256SUMS." out/*
+          fi
