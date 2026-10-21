@@ -550,6 +550,9 @@ async function begin(k, s) {
 function save(k, s) {
   store.set("ajar.k", k);
   if (s) store.set("ajar.s", s); else store.del("ajar.s");
+  // In a browser tab, keep the key in the address too: Add to Home Screen saves this address in the icon, so
+  // the app re-pairs itself on every launch even if the phone ever clears the page's storage.
+  if (!standalone) { try { history.replaceState(null, "", "#k=" + k + (s ? "&s=" + encodeURIComponent(s) : "")); } catch (_) {} }
 }
 
 async function start() {
