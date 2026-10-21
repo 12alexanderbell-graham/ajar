@@ -9,7 +9,10 @@ struct MainWindowView: View {
 
     var body: some View {
         Group {
-            if engine.setupReady {
+            if engine.setupReady && UIState.shared.windowSettings {
+                SettingsPage(engine: engine, back: { UIState.shared.windowSettings = false }, quit: actions.quit)
+                    .padding(.top, 20)
+            } else if engine.setupReady {
                 ScrollView {
                     if showConnect {
                         ConnectCard { showConnect = false; UserDefaults.standard.set(true, forKey: "aiCardDismissed") }

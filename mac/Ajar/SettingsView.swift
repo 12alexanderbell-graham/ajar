@@ -1,7 +1,37 @@
 import AppKit
 import SwiftUI
 
-/// Standard macOS Settings window.
+/// Settings as a page inside Ajar's panel or window: a back arrow, then the settings list.
+struct SettingsPage: View {
+    @Bindable var engine: Engine
+    var back: () -> Void
+    var quit: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Button(action: back) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "chevron.left").font(.system(size: 13, weight: .semibold))
+                        Text("Settings").font(.headline)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.cancelAction)
+                .help("Back (Esc)")
+                Spacer()
+                Button("Quit Ajar", action: quit).buttonStyle(.plain).font(.subheadline).foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 2)
+            SettingsView(engine: engine)
+        }
+    }
+}
+
+/// Every setting, grouped like System Settings. Shown inside `SettingsPage`.
 struct SettingsView: View {
     @Bindable var engine: Engine
     @State private var login = false
@@ -51,11 +81,12 @@ struct SettingsView: View {
                         ForEach(Notifier.sounds, id: \.self) { Text($0).tag($0) }
                     }
                 }
-                LabeledContent("Phone alerts") {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Phone alerts")
                     HStack {
                         TextField("ntfy topic", text: $topic, prompt: Text("ntfy topic (off)"))
                             .labelsHidden()
-                            .textFieldStyle(.roundedBorder).frame(width: 170)
+                            .textFieldStyle(.roundedBorder)
                             .onSubmit { saveTopic() }
                         if topic.isEmpty {
                             Button("Suggest") { topic = "ajar-" + UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(12).lowercased(); saveTopic() }
@@ -72,7 +103,7 @@ struct SettingsView: View {
             } header: {
                 Text("When Work Stops")
             } footer: {
-                Text("Fires once an agent that was busy for at least a minute has been quiet for 2 minutes. It says \"went idle\", not \"finished\": Ajar can't tell a finished task from a crash or a question waiting for you. The chime plays even with the lid closed. For phone alerts, install the free ntfy app and subscribe to the same topic name; anyone who knows the name can read it, so keep the random one.")
+                Text("Sent when a busy agent has been quiet for 2 minutes. It says \"went idle\": Ajar can't tell finished from stuck. For phone alerts, install the free ntfy app and subscribe to the same topic; keep the random name, anyone who knows it can read it.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
@@ -81,9 +112,16 @@ struct SettingsView: View {
             if Registry.hasLid { Section {
                 Picker("Screen", selection: Binding(get: { engine.config.lockOnClose ? 2 : (engine.config.screenOffNoLock ? 1 : 0) },
                                                     set: { v in engine.update { $0.lockOnClose = v == 2; $0.screenOffNoLock = v == 1 } })) {
-                    Text("Dark, no lock screen").tag(0)
-                    Text("Fully off, no lock screen (experimental)" + Self.effect(engine.powerEffects["screen_off"])).tag(1)
-                    Text("Fully off, locks like normal" + Self.effect(engine.powerEffects["screen"])).tag(2)
+                    Text("Dark, no lock").tag(0)
+                    // Experimental and refused or locked by macOS on some Macs, so only offered in advanced settings.
+                    if advanced || engine.config.screenOffNoLock {
+                        Text("Off, no lock (experimental)" + Self.effect(engine.powerEffects["screen_off"])).tag(1)
+                    }
+                    Text("Off, locks" + Self.effect(engine.powerEffects["screen"])).tag(2)
+                }
+                if engine.config.screenOffNoLock, lockGrace == 0 {
+                    Text("Your Mac asks for the password as soon as its display turns off (System Settings › Lock Screen), so this will most likely lock it. Ajar then goes back to Dark by itself.")
+                        .font(.caption).foregroundStyle(.orange)
                 }
                 if engine.config.lockOnClose {
                     LabeledContent("Your Mac locks") {
@@ -96,7 +134,9 @@ struct SettingsView: View {
             } header: {
                 Text("When the Lid Closes")
             } footer: {
-                Text("\"Dark\" keeps the screen on at zero brightness. \"Fully off, no lock screen\" switches the built-in display off without sleeping it, which saves more. If macOS refuses, or locks the Mac anyway (some Macs do), Ajar goes back to dark by itself. The screen comes back the moment you open the lid. Apps keep running either way.")
+                Text(advanced
+                     ? "Dark: the screen stays on at zero brightness, so there's no password when you open the lid. Off, no lock: switches the display off without sleeping it, which saves a little more; if macOS refuses or locks the Mac anyway (some Macs do), Ajar goes back to Dark by itself. Off, locks: the most saving, but you type your password when you open the lid. Apps keep running either way."
+                     : "Dark: the screen stays on at zero brightness, so there's no password when you open the lid. Off, locks: saves more, but you type your password when you open the lid. Apps keep running either way.")
                     .font(.caption).foregroundStyle(.secondary)
             } }
 
@@ -109,12 +149,14 @@ struct SettingsView: View {
                         ForEach(Array(Set([1, 2, 5, 10, 20, 30, 60, engine.quietMinutes])).sorted(), id: \.self) { Text("\($0) min").tag($0) }
                     }
                 }
-                LabeledContent("Sleep at battery level") {
+                VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        Slider(value: Binding(get: { Double(engine.batteryFloor) }, set: { engine.batteryFloor = Int($0) }), in: 0...50, step: 5)
-                            .frame(width: 160)
-                        Text(engine.batteryFloor == 0 ? "Never" : "\(engine.batteryFloor)%").monospacedDigit().frame(width: 44, alignment: .trailing)
+                        Text("Sleep at battery level")
+                        Spacer()
+                        Text(engine.batteryFloor == 0 ? "Never" : "\(engine.batteryFloor)%").monospacedDigit().foregroundStyle(.secondary)
                     }
+                    Slider(value: Binding(get: { Double(engine.batteryFloor) }, set: { engine.batteryFloor = Int($0) }), in: 0...50, step: 5)
+                        .labelsHidden()
                 }
                 if engine.batteryFloor == 0 {
                     Text("Ajar will keep going until the battery is empty, and the Mac switches off abruptly at 0%.")
@@ -136,7 +178,7 @@ struct SettingsView: View {
                     Text("Pause simulators and Xcode previews") + Text(Self.effect(engine.powerEffects["simulators"])).foregroundColor(.secondary)
                 }
                 if engine.config.pauseSimulators {
-                    Toggle("Shut simulators down instead (frees everything, doesn't reopen them)", isOn: Binding(get: { engine.config.shutDownSimulators }, set: { v in engine.update { $0.shutDownSimulators = v } }))
+                    Toggle("Shut them down instead (frees everything; they don't reopen)", isOn: Binding(get: { engine.config.shutDownSimulators }, set: { v in engine.update { $0.shutDownSimulators = v } }))
                         .font(.callout)
                 }
                 Toggle(isOn: Binding(get: { engine.config.pauseBackgroundAudio }, set: { v in engine.update { $0.pauseBackgroundAudio = v } })) {
@@ -158,7 +200,7 @@ struct SettingsView: View {
             } header: {
                 Text("While the Lid Is Closed")
             } footer: {
-                Text("Music, calls, and services agents use (Docker, local models, browsers) keep running; agents and everything they started are never touched. Everything comes back the moment you open the lid. To measure what each saving is worth on this Mac, close the lid and run ajar power test from your phone or AI.")
+                Text("Music, calls and anything your agents use keep running. Everything comes back when you open the lid. ajar power test (lid closed) measures what each saving is worth on this Mac.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
@@ -202,15 +244,9 @@ struct SettingsView: View {
             }
 
             Section {
-                LabeledContent("Claude Code") {
-                    connectButton(AIConnect.claudeCodeConnected) { AIConnect.connectClaudeCode() }
-                }
-                LabeledContent("Codex") {
-                    connectButton(AIConnect.codexConnected) { AIConnect.connectCodex() }
-                }
-                LabeledContent("Claude app") {
-                    connectButton(AIConnect.claudeAppConnected) { AIConnect.connectClaudeApp() }
-                }
+                connectRow("Claude Code", AIConnect.claudeCodeConnected) { AIConnect.connectClaudeCode() }
+                connectRow("Codex", AIConnect.codexConnected) { AIConnect.connectCodex() }
+                connectRow("Claude app", AIConnect.claudeAppConnected) { AIConnect.connectClaudeApp() }
                 LabeledContent("Setup prompt") {
                     Button("Copy") {
                         NSPasteboard.general.clearContents()
@@ -229,7 +265,7 @@ struct SettingsView: View {
             } header: {
                 Text("Connect Your AI")
             } footer: {
-                Text("Connected agents can keep the Mac awake while they work, read what's using power, and change any setting (ajar settings lists them all). Paste the setup prompt and your agent tunes Ajar with you. Only you, here, can loosen the safety settings: turn off the heat guard, lower the battery limit, or allow going below it. Edits to the settings file that try to are undone.")
+                Text("Connected agents can keep the Mac awake while they work and change any setting. Only you, here, can loosen the safety settings (heat guard, battery limit).")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
@@ -254,8 +290,9 @@ struct SettingsView: View {
                 LabeledContent("Setup") {
                     if engine.setupReady { Text("Done").foregroundStyle(.secondary) } else { Button("Set Up…") { engine.runSetup() } }
                 }
-                LabeledContent("Shortcuts") {
-                    Text("Keep Mac Awake, Let Mac Sleep, Get Ajar Status").foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Shortcuts")
+                    Text("In the Shortcuts app: Keep Mac Awake, Let Mac Sleep, Get Ajar Status.").font(.caption).foregroundStyle(.secondary)
                 }
                 LabeledContent("Remove Ajar") {
                     Button("Remove Helper…") {
@@ -264,12 +301,13 @@ struct SettingsView: View {
                     }
                 }
             } footer: {
-                Text("Removing puts every setting Ajar changed back first, and only then takes out the sleep permission, the watchdog and the ajar command. If something can't be put back yet, it stops and keeps them so it can keep trying.")
+                Text("Puts back everything Ajar changed first, then removes its sleep permission, watchdog and the ajar command.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
-        .frame(width: 500, height: 700)
+        .scrollContentBackground(.hidden)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { login = engine.launchAtLogin; cliInstalled = Setup.cliInstalled; lockGrace = LockSetting.gracePeriod(); topic = engine.config.ntfyTopic }
         .onDisappear { saveTopic() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -283,9 +321,16 @@ struct SettingsView: View {
         note = "Copied. Paste it into Terminal."
     }
 
-    @ViewBuilder private func connectButton(_ connected: Bool, _ action: @escaping () -> String) -> some View {
+    @ViewBuilder private func connectRow(_ name: String, _ connected: Bool, _ action: @escaping () -> String) -> some View {
         let _ = refresh   // re-read the connected state after a connect
-        Button(connected ? "Connected ✓ Reconnect" : "Connect") { note = action(); refresh.toggle() }
+        LabeledContent {
+            Button(connected ? "Reconnect" : "Connect") { note = action(); refresh.toggle() }
+        } label: {
+            HStack(spacing: 4) {
+                Text(name)
+                if connected { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).help("Connected") }
+            }
+        }
     }
 
     /// " · saves 1.2 W" once measured on this Mac.
@@ -335,10 +380,10 @@ enum LockSetting {
 
 #Preview("Settings") {
     UserDefaults.standard.set(false, forKey: "settingsAdvanced")
-    return SettingsView(engine: .preview())
+    return SettingsPage(engine: .preview(), back: {}, quit: {}).frame(width: 320, height: 1500).background(.regularMaterial)
 }
 
 #Preview("Settings, advanced") {
     UserDefaults.standard.set(true, forKey: "settingsAdvanced")
-    return SettingsView(engine: .preview())
+    return SettingsPage(engine: .preview(), back: {}, quit: {}).frame(width: 320, height: 2600).background(.regularMaterial)
 }

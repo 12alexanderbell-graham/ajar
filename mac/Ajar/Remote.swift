@@ -236,11 +236,17 @@ struct PhoneControlSection: View {
                 }))
                 if remote.enabled {
                     LabeledContent("Status") { Text(remote.status ?? "Starting…").foregroundStyle(.secondary) }
-                    HStack {
-                        Button("Show QR Code…") { showPairing = true }
-                        Spacer()
-                        Button("Unpair All Phones") { remote.enable(newKey: true) }
-                            .help("Makes a new key; phones paired before stop working")
+                    if showPairing {
+                        // Inline rather than a sheet: Settings live in the menu bar panel, which can't host sheets.
+                        PairingView(settings: remote.settings) { showPairing = false }
+                            .frame(maxWidth: .infinity)
+                    } else {
+                        HStack {
+                            Button("Show QR Code") { showPairing = true }
+                            Spacer()
+                            Button("Unpair All") { remote.enable(newKey: true) }
+                                .help("Makes a new key; phones paired before stop working")
+                        }
                     }
                 }
             } header: {
@@ -249,7 +255,6 @@ struct PhoneControlSection: View {
                 Text("A small page on your phone with the same controls, from anywhere. Messages go through ntfy.sh end to end encrypted; the key is only in the QR code. The phone can't loosen the battery limit or the heat guard.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            .sheet(isPresented: $showPairing) { PairingView(settings: remote.settings) { showPairing = false } }
         }
     }
 }
@@ -259,10 +264,10 @@ struct PairingView: View {
     var done: () -> Void
 
     var body: some View {
-        VStack(spacing: 14) {
-            Text("Pair Your Phone").font(.title2.weight(.semibold))
+        VStack(spacing: 10) {
+            Text("Pair Your Phone").font(.headline)
             if let link = settings.pairingLink, let qr = Self.qr(link) {
-                Image(nsImage: qr).interpolation(.none).resizable().frame(width: 220, height: 220)
+                Image(nsImage: qr).interpolation(.none).resizable().frame(width: 180, height: 180)
                     .padding(10).background(.white, in: RoundedRectangle(cornerRadius: 12))
                 Text("Scan with your phone's camera, then add the page to your Home Screen (Share › Add to Home Screen on iPhone, ⋮ › Add to Home screen on Android). It opens like an app.")
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
@@ -281,8 +286,7 @@ struct PairingView: View {
                 .font(.caption).foregroundStyle(.secondary)
             Button("Done", action: done).keyboardShortcut(.defaultAction)
         }
-        .padding(24)
-        .frame(width: 380)
+        .padding(.vertical, 8)
     }
 
     static func qr(_ s: String) -> NSImage? {

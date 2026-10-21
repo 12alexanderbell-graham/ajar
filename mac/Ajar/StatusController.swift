@@ -10,16 +10,16 @@ final class StatusController: NSObject, NSPopoverDelegate {
     let island: Island
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let popover = NSPopover()
-    private var settingsWindow: NSWindow?
     private var mainWindow: NSWindow?
     private var measurer: NSHostingController<PanelView>!
     private var fitTimer: Timer?
 
     /// Fit the popover to its content, outside any layout pass, capped to the screen.
     private func fitPopover() {
-        let ideal = measurer.sizeThatFits(in: CGSize(width: 320, height: 4000))
         let maxH = (NSScreen.main?.visibleFrame.height ?? 900) - 40
-        let size = NSSize(width: 320, height: min(ceil(ideal.height), maxH))
+        // Settings scroll inside a fixed page; the main page is as tall as its content.
+        let h = UIState.shared.panelSettings ? UIState.settingsHeight : ceil(measurer.sizeThatFits(in: CGSize(width: 320, height: 4000)).height)
+        let size = NSSize(width: 320, height: min(h, maxH))
         if abs(popover.contentSize.height - size.height) > 1 || popover.contentSize.width != size.width {
             popover.contentSize = size
         }
@@ -37,7 +37,8 @@ final class StatusController: NSObject, NSPopoverDelegate {
         let actions = PanelActions(openSettings: { [weak self] in self?.showSettings() }, quit: { NSApp.terminate(nil) })
         // Sized by hand from a separate measuring copy. Letting SwiftUI drive the popover's size from live content
         // made AppKit's constraint pass loop and crash ("more Update Constraints passes than views").
-        let host = NSHostingController(rootView: AnyView(ScrollView { PanelView(engine: engine, actions: actions) }.scrollIndicators(.never)))
+        let host = NSHostingController(rootView: PopoverRoot(engine: engine, actions: actions,
+                                                             back: { [weak self] in UIState.shared.panelSettings = false; self?.fitPopover() }))
         host.sizingOptions = []
         popover.contentViewController = host
         measurer = NSHostingController(rootView: PanelView(engine: engine, actions: actions))
@@ -143,32 +144,28 @@ final class StatusController: NSObject, NSPopoverDelegate {
 
     func popoverDidClose(_ notification: Notification) {
         fitTimer?.invalidate()
+        UIState.shared.panelSettings = false   // opens on the main page next time, like system menus
         engine.panelOpen = false
     }
 
     // MARK: Windows
 
+    /// Settings live inside Ajar's own panel (or its window when that's open), never in a separate window.
     func showSettings() {
-        popover.performClose(nil)
-        if settingsWindow == nil {
-            let sh = NSHostingController(rootView: SettingsView(engine: engine))
-            sh.sizingOptions = []
-            let w = NSWindow(contentViewController: sh)
-            w.setContentSize(NSSize(width: 500, height: 700))
-            w.title = "Ajar Settings"
-            w.styleMask = [.titled, .closable, .miniaturizable]
-            w.isReleasedWhenClosed = false
-            w.center()
-            settingsWindow = w
+        if let w = mainWindow, w.isVisible {
+            UIState.shared.windowSettings = true
+            present(w)
+            return
         }
-        present(settingsWindow!)
+        UIState.shared.panelSettings = true
+        if popover.isShown { fitPopover() } else { showPopover() }
     }
 
     /// A normal window with the same controls, for when the menu bar is crowded or on first launch.
     func showMainWindow() {
         if mainWindow == nil {
             let host = NSHostingController(rootView: MainWindowView(engine: engine, actions: .init(
-                openSettings: { [weak self] in self?.showSettings() },
+                openSettings: { UIState.shared.windowSettings = true },
                 quit: { NSApp.terminate(nil) })))
             // Fixed size: letting SwiftUI resize the window from live-updating content caused an AppKit layout-loop crash.
             host.sizingOptions = []
@@ -203,8 +200,8 @@ final class StatusController: NSObject, NSPopoverDelegate {
     private func windowClosed() {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            let anyOpen = [self.settingsWindow, self.mainWindow].contains { $0?.isVisible == true }
-            if !anyOpen {
+            if self.mainWindow?.isVisible != true {
+                UIState.shared.windowSettings = false
                 if !self.engine.config.showInDock { NSApp.setActivationPolicy(.accessory) }
                 if !self.popover.isShown { self.engine.panelOpen = false }
             }
@@ -218,7 +215,7 @@ final class StatusController: NSObject, NSPopoverDelegate {
         let view: NSView?
         if settings {
             showSettings()
-            view = settingsWindow?.contentView
+            view = popover.contentViewController?.view
         } else if window {
             showMainWindow()
             view = mainWindow?.contentView
@@ -238,4 +235,42 @@ final class StatusController: NSObject, NSPopoverDelegate {
 struct PanelActions {
     var openSettings: () -> Void
     var quit: () -> Void
+}
+
+/// Which page Ajar's panel and window show. Not saved: both open on the main page.
+@Observable @MainActor
+final class UIState {
+    static let shared = UIState()
+    var panelSettings = false
+    var windowSettings = false
+    /// Height of the settings page in the menu bar panel (it scrolls inside).
+    static let settingsHeight: CGFloat = 620
+}
+
+/// The menu bar panel's content: the main page, or Settings sliding in over it.
+struct PopoverRoot: View {
+    @Bindable var engine: Engine
+    var actions: PanelActions
+    var back: () -> Void
+    private var ui = UIState.shared
+
+    init(engine: Engine, actions: PanelActions, back: @escaping () -> Void) {
+        self.engine = engine; self.actions = actions; self.back = back
+    }
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            if ui.panelSettings {
+                SettingsPage(engine: engine, back: back, quit: actions.quit)
+                    .frame(width: 320)
+                    .transition(.move(edge: .trailing))
+            } else {
+                ScrollView { PanelView(engine: engine, actions: actions) }
+                    .scrollIndicators(.never)
+                    .transition(.move(edge: .leading))
+            }
+        }
+        .animation(.snappy(duration: 0.25), value: ui.panelSettings)
+        .clipped()
+    }
 }
