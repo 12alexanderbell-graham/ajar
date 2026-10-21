@@ -1357,6 +1357,10 @@ final class Engine {
             "host": Host.current().localizedName ?? "Mac",
         ]
         if let w = systemWatts { d["watts"] = (w * 10).rounded() / 10 }
+        // Phone page: measure what each saving is worth (needs the lid shut and the Mac kept awake).
+        d["canMeasure"] = lidClosed && holding && !powerTestRunning && PowerSensor.isMeasured
+        if powerTestRunning { d["powerTest"] = powerTestProgress ?? "running" }
+        if !powerEffects.isEmpty { d["savings"] = powerEffects.mapValues { ($0 * 10).rounded() / 10 } }
         if let u = onUntil { d["alwaysUntil"] = u.formatted(date: .omitted, time: .shortened) }
         if let b = battery {
             if !onBattery { d["battery"] = "\(b.percent)% · plugged in" + (closedHours.map { " (≈\(PanelFormat.hm($0)) on battery, lid closed)" } ?? "") }

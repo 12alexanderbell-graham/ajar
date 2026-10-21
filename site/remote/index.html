@@ -125,6 +125,12 @@ ol li{margin:4px 0}
       <button data-preset="full_speed" role="radio">Full Speed</button>
     </div>
 
+    <div id="savingsbox" hidden>
+      <div class="label">What each saving is worth</div>
+      <section class="card" id="savings"></section>
+      <button class="btn" id="measure">Measure now (about 2½ min)</button>
+    </div>
+
     <div class="foot">
       <span id="updated"></span> · <button id="refresh">Refresh</button><br>
       End-to-end encrypted. The relay only sees scrambled messages.<br>
@@ -317,7 +323,31 @@ function render(p) {
   const watch = p.watch || [];
   if (!watch.length) empty(wl, "Busy apps on the laptop show up here");
   watch.forEach(a => wl.appendChild(toggleRow(a.name, null, a.on, ev => send("watch", { app: a.id, remove: !ev.target.checked }))));
+  renderSavings(p);
   $("updated").textContent = "Updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+const SAVING_NAMES = [["screen_off", "Screen fully off"], ["screen", "Screen off (locks)"], ["low_power", "Low Power Mode"],
+  ["apps", "Slowing other apps"], ["simulators", "Pausing simulators"], ["audio", "Pausing background audio"]];
+let measurePoll = null;
+/** Mac only: what each lid-closed saving is worth, measured on that laptop. */
+function renderSavings(p) {
+  const box = $("savingsbox"), el = $("savings"), s = p.savings || {};
+  const has = Object.keys(s).length > 0;
+  box.hidden = !(has || p.powerTest || p.canMeasure);
+  el.textContent = "";
+  if (p.powerTest) empty(el, "Measuring: " + p.powerTest + ". Agents keep running.");
+  else if (has) SAVING_NAMES.filter(([k]) => k in s).forEach(([k, name]) => {
+    const r = document.createElement("div"); r.className = "row";
+    const a = document.createElement("span"); a.textContent = name;
+    const b = document.createElement("span"); b.className = "empty"; b.textContent = s[k] >= 0.05 ? "saves " + s[k].toFixed(1) + " W" : "≈0 W";
+    r.append(a, b); el.appendChild(r);
+  });
+  else empty(el, "With the lid shut, Ajar switches each saving off for 15 s and back on and measures the whole laptop.");
+  $("measure").hidden = !p.canMeasure;
+  $("measure").textContent = (has ? "Measure again" : "Measure now") + " (about 2½ min)";
+  clearTimeout(measurePoll); measurePoll = null;
+  if (p.powerTest) measurePoll = setTimeout(() => send("panel"), 10000);
 }
 
 /** Actions that let a closed laptop sleep can't be undone from the phone (a sleeping laptop can't hear it). Two taps. */
@@ -375,6 +405,7 @@ async function start() {
   document.querySelectorAll("[data-until]").forEach(b => b.addEventListener("click", () => send("mode", { mode: "always", until_hour: +b.dataset.until })));
   confirmTap($("sleepnow"), "Tap again. You can't wake it from here", () => send("sleep_now"));
   $("refresh").addEventListener("click", () => send("panel"));
+  $("measure").addEventListener("click", async () => { await send("power_test"); setTimeout(() => send("panel"), 3000); });
   $("tipclose").addEventListener("click", () => { store.set("ajar.tipHidden", "1"); $("tip").hidden = true; });
   $("copycode").addEventListener("click", async () => {
     const text = keyText + (server !== DEFAULT_SERVER ? "&s=" + encodeURIComponent(server) : "");
