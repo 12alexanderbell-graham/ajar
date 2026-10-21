@@ -96,7 +96,7 @@ struct SettingsView: View {
             } header: {
                 Text("When the Lid Closes")
             } footer: {
-                Text("\"Dark\" keeps the screen on at zero brightness. \"Fully off, no lock screen\" switches the built-in display off without sleeping it, which saves more; if macOS won't, it stays dark. The screen comes back the moment you open the lid. Apps keep running either way.")
+                Text("\"Dark\" keeps the screen on at zero brightness. \"Fully off, no lock screen\" switches the built-in display off without sleeping it, which saves more. If macOS refuses, or locks the Mac anyway (some Macs do), Ajar goes back to dark by itself. The screen comes back the moment you open the lid. Apps keep running either way.")
                     .font(.caption).foregroundStyle(.secondary)
             } }
 

@@ -176,8 +176,9 @@ private struct NowTab: View {
                 }
                 if !engine.onBattery {
                     // On a charger that keeps up, it runs forever; the battery figure is what you'd get unplugged.
-                    Figure(value: "∞", caption: engine.closedHours.map { "plugged in (\(PanelFormat.hm($0)) if unplugged, lid closed)" } ?? "plugged in")
-                        .help("Running on the charger, so there's no limit. The figure in brackets is how long the battery would last with the lid closed if you unplugged now.")
+                    Figure(value: engine.closedHours.map { PanelFormat.hm($0) } ?? "No limit",
+                           caption: engine.closedHours == nil ? "on the charger" : "on battery with the lid closed (charger in now)")
+                        .help("Running on the charger, so there's no limit now. The figure is how long the battery would last with the lid closed if you unplugged.")
                     Text(drawLine).font(.caption).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
                 } else if let closed = engine.closedHours {
                     let open = engine.openHours
@@ -220,10 +221,10 @@ private struct NowTab: View {
             HStack(alignment: .firstTextBaseline) {
                 Text("Last 7 days").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
                 Spacer()
-                Text("≈\(String(format: "%.1f", w.whSaved)) Wh saved")
+                Text("\(PanelFormat.hm(w.closedHours)) working, lid closed")
                     .font(.subheadline.weight(.semibold)).monospacedDigit()
             }
-            Text("\(w.sessions) session\(w.sessions == 1 ? "" : "s") · \(PanelFormat.hm(w.closedHours)) with lid closed" + (w.percentSaved >= 5 ? " · ≈\(String(format: "%.1f", w.percentSaved / 100)) full charges" : ""))
+            Text("\(w.sessions) session\(w.sessions == 1 ? "" : "s")" + (w.whSaved >= 1 ? " · ≈\(String(format: "%.0f", w.whSaved)) Wh saved" : "") + (w.percentSaved >= 5 ? " · ≈\(String(format: "%.1f", w.percentSaved / 100)) full charges" : ""))
                 .font(.caption).foregroundStyle(.secondary).monospacedDigit()
         }
         .help("Estimated, not metered: power macOS attributes to apps before and while Ajar slowed them (net, including any that used more), plus confirmed sleeps after the work stopped, valued at the power drawn just before.")

@@ -44,7 +44,7 @@ final class Engine {
         }
         if old.watchedApps != c.watchedApps || old.countRequests != c.countRequests || old.customAgents != c.customAgents { sampleWatchers() }
         if old.screenOffNoLock != c.screenOffNoLock && lidClosed && holding && !c.lockOnClose {
-            if c.screenOffNoLock { screenOff = DisplayPower.turnOffBuiltIn() } else { DisplayPower.restoreBuiltIn(); screenOff = false }
+            if c.screenOffNoLock { switchScreenOff() } else { DisplayPower.restoreBuiltIn(); screenOff = false }
         }
         if (old.preset != c.preset || old.appRules != c.appRules || old.lowPowerWhileClosed != c.lowPowerWhileClosed
             || old.pauseSimulators != c.pauseSimulators || old.pauseBackgroundAudio != c.pauseBackgroundAudio) && lidClosed && holding {
@@ -822,7 +822,7 @@ final class Engine {
             holdDisplayAwake(true)
             Brightness.dimForClosedLid()
             // Fully off without a sleep (no lock screen), when chosen and macOS allows it; otherwise stays dark.
-            if config.screenOffNoLock { screenOff = DisplayPower.turnOffBuiltIn() }
+            if config.screenOffNoLock { switchScreenOff() }
             // Lid events bring the brightness back the moment it opens. Only if they're unavailable, poll
             // (twice a second) so the screen isn't dark for up to 2 s after opening.
             lidPoll?.invalidate()
@@ -871,6 +871,26 @@ final class Engine {
     private var lidPoll: Timer?
     /// The built-in display is configured off right now (screen_off).
     private(set) var screenOff = false
+
+    /// Screen fully off without a sleep. On some Macs macOS locks the session anyway when its only display
+    /// goes off (its "require password after the display is turned off" rule). Ajar can't prevent that, so if
+    /// the session locks within a few seconds it puts the screen back, switches to the dark screen for good
+    /// and says why, so it's at most one surprise password prompt.
+    private func switchScreenOff() {
+        let wasLocked = DisplayPower.sessionLocked
+        screenOff = DisplayPower.turnOffBuiltIn()
+        guard screenOff, !wasLocked else { return }
+        for delay in [2.0, 6.0, 12.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, self.screenOff, self.config.screenOffNoLock, DisplayPower.sessionLocked else { return }
+                DisplayPower.restoreBuiltIn()
+                self.screenOff = false
+                Brightness.dimForClosedLid()
+                self.update { $0.screenOffNoLock = false }
+                self.warning = "macOS locks this Mac when its screen is switched fully off, so Ajar went back to the dark screen (no lock screen)."
+            }
+        }
+    }
 
     private func restoreClosedState() {
         lidPoll?.invalidate()
@@ -1179,7 +1199,7 @@ final class Engine {
             applyClosedTargets(preset: effectivePreset == .speed ? .balanced : effectivePreset, skip: on ? [] : [step])
         case "low_power": if on { setLowPower() } else { restorePowerMode() }
         case "screen_off":
-            if on { screenOff = DisplayPower.turnOffBuiltIn() } else { DisplayPower.restoreBuiltIn(); screenOff = false; Brightness.dimForClosedLid() }
+            if on { switchScreenOff() } else { DisplayPower.restoreBuiltIn(); screenOff = false; Brightness.dimForClosedLid() }
         case "screen":
             if on { Shell.run("/usr/bin/pmset", ["displaysleepnow"]) }
             else { Shell.run("/usr/bin/caffeinate", ["-u", "-t", "2"]) }   // declares activity: the display comes back on
@@ -1339,7 +1359,7 @@ final class Engine {
         if let w = systemWatts { d["watts"] = (w * 10).rounded() / 10 }
         if let u = onUntil { d["alwaysUntil"] = u.formatted(date: .omitted, time: .shortened) }
         if let b = battery {
-            if !onBattery { d["battery"] = "\(b.percent)% · ∞ plugged in" + (closedHours.map { " (≈\(PanelFormat.hm($0)) if unplugged, lid closed)" } ?? "") }
+            if !onBattery { d["battery"] = "\(b.percent)% · plugged in" + (closedHours.map { " (≈\(PanelFormat.hm($0)) on battery, lid closed)" } ?? "") }
             else { d["battery"] = "\(b.percent)%" + (closedHours.map { " · ≈\(PanelFormat.hm($0)) left with the lid closed" } ?? "") }
         }
         return d

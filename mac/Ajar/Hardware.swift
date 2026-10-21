@@ -85,6 +85,10 @@ enum DisplayPower {
         .map { unsafeBitCast($0, to: Configure.self) }
 
     static var available: Bool { configure != nil }
+    /// Whether macOS has locked the login session (the lock screen is up).
+    static var sessionLocked: Bool {
+        (CGSessionCopyCurrentDictionary() as? [String: Any])?["CGSSessionScreenIsLocked"] as? Bool ?? false
+    }
     static var marker: URL { StateFiles.dir.appendingPathComponent("display-off") }
 
     private static var builtIn: CGDirectDisplayID? {
