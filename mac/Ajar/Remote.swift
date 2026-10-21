@@ -47,6 +47,28 @@ struct RemoteSettings: Codable, Equatable {
 enum RemoteCrypto {
     static let allowed: Set<String> = ["panel", "mode", "release", "preset", "watch", "track", "sleep_now", "set", "power", "power_test"]
 
+    /// ntfy.sh turns messages over 4096 bytes into file attachments, which the phone page can't read as a reply.
+    /// A sealed message is about 4/3 of the plaintext plus 38 bytes, so replies stay under this many bytes.
+    static let maxReply = 2800
+
+    /// The command's outcome (not its full result: for `panel` that's the panel itself, which doubled the size)
+    /// plus the panel, trimmed to fit one ntfy message. Same rules as the Windows/Linux app.
+    static func phoneReply(_ result: [String: Any], panel: [String: Any]) -> [String: Any] {
+        var r: [String: Any] = [:]
+        for k in ["ok", "error", "next"] { if let v = result[k] { r[k] = v } }
+        var p = panel
+        func size() -> Int { r["panel"] = p; return Wire.json(r).utf8.count }
+        if size() > maxReply, let w = p["watch"] as? [[String: Any]] {
+            p["watch"] = w.filter { $0["on"] as? Bool == true }   // offered apps go first; the ones kept awake stay
+        }
+        if size() > maxReply {
+            if let a = p["agents"] as? [[String: Any]] { p["agents"] = Array(a.prefix(4)) }
+            p["holds"] = nil
+        }
+        r["panel"] = p
+        return r
+    }
+
     static func newKey() -> String {
         b64encode(SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) })
     }
@@ -213,9 +235,7 @@ final class RemoteControl {
             run(cmd, args) { [weak self] result in
                 guard !done else { return }
                 done = true
-                var r = result
-                if let self { r["panel"] = self.engine.panelJSON() }
-                cont.resume(returning: r)
+                cont.resume(returning: RemoteCrypto.phoneReply(result, panel: self?.engine.panelJSON() ?? [:]))
             }
         }
     }

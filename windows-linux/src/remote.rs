@@ -180,6 +180,38 @@ fn agent() -> ureq::Agent {
 }
 
 /// Publishes one encrypted message.
+/// ntfy.sh turns messages over 4096 bytes into file attachments, which the phone page can't read as a reply.
+/// A sealed message is about 4/3 of the plaintext plus 38 bytes, so replies are kept under this many bytes.
+pub const MAX_REPLY: usize = 2800;
+
+/// The reply the phone gets: the command's outcome (not its full result, which for `panel` is the panel
+/// itself) plus the panel, trimmed to fit in one ntfy message.
+pub fn phone_reply(result: &Value, panel: Value) -> Value {
+    let mut r = json!({});
+    for k in ["ok", "error", "next"] {
+        if let Some(v) = result.get(k) {
+            r[k] = v.clone();
+        }
+    }
+    r["panel"] = panel;
+    let size = |r: &Value| r.to_string().len();
+    if size(&r) > MAX_REPLY {
+        // Offered apps first (the ones already kept awake stay), then the agent list, then the holds.
+        if let Some(w) = r["panel"]["watch"].as_array_mut() {
+            w.retain(|a| a["on"].as_bool() == Some(true));
+        }
+    }
+    if size(&r) > MAX_REPLY {
+        if let Some(a) = r["panel"]["agents"].as_array_mut() {
+            a.truncate(4);
+        }
+        if let Some(o) = r["panel"].as_object_mut() {
+            o.remove("holds");
+        }
+    }
+    r
+}
+
 pub fn publish(server: &str, key: &[u8; 32], topic: &str, body: &Value) -> Result<(), String> {
     let sealed = seal(key, topic, &body.to_string());
     agent()
@@ -338,5 +370,23 @@ mod tests {
         assert!(link.starts_with("https://example.org/panel#k=") && !link.contains("&s="));
         assert!(qr_svg(&link).unwrap().contains("<svg"));
         assert!(Settings { panel_url: String::new(), ..s }.pairing_link().is_none());
+    }
+
+    #[test]
+    fn phone_reply_fits_one_ntfy_message() {
+        let key = parse_key(&new_key()).unwrap();
+        let (_, rep) = topics(&key);
+        let watch: Vec<Value> = (0..40).map(|i| json!({ "id": format!("/Applications/Some Long Application Name {i}.app"), "name": format!("Some Long Application Name {i}"), "on": i < 2 })).collect();
+        let agents: Vec<Value> = (0..12).map(|i| json!({ "id": format!("agent{i}"), "name": format!("Agent number {i}"), "working": true, "keeps": true, "instances": 1 })).collect();
+        let holds = vec!["Asked to stay awake"; 20];
+        let panel = json!({ "headline": "Close the lid: keeps working", "watch": watch, "agents": agents, "holds": holds });
+        let result = json!({ "ok": true, "headline": "dup", "watch": panel["watch"].clone() });
+        let r = phone_reply(&result, panel);
+        assert!(r.get("headline").is_none(), "the command's full result isn't repeated");
+        assert_eq!(r["panel"]["watch"].as_array().unwrap().len(), 2, "apps already kept awake stay");
+        let mut msg = r.clone();
+        msg["re"] = json!("0123456789abcdef");
+        msg["t"] = json!(1_800_000_000u64);
+        assert!(seal(&key, &rep, &msg.to_string()).len() < 4096);
     }
 }

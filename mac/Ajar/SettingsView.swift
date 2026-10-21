@@ -1,19 +1,21 @@
 import AppKit
 import SwiftUI
 
-/// Settings as a page inside Ajar's panel or window: a back arrow, then the settings list.
+/// Settings as pages inside Ajar's panel or window, organised like iOS Settings: a short list of topics,
+/// each opening its own page. Short pages fit the narrow panel without a wall of options.
 struct SettingsPage: View {
     @Bindable var engine: Engine
     var back: () -> Void
     var quit: () -> Void
+    @State private var page: SettingsTopic?
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Button(action: back) {
+                Button { if page != nil { page = nil } else { back() } } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "chevron.left").font(.system(size: 13, weight: .semibold))
-                        Text("Settings").font(.headline)
+                        Text(page?.title ?? "Settings").font(.headline)
                     }
                     .contentShape(Rectangle())
                 }
@@ -21,27 +23,52 @@ struct SettingsPage: View {
                 .keyboardShortcut(.cancelAction)
                 .help("Back (Esc)")
                 Spacer()
-                Button("Quit Ajar", action: quit).buttonStyle(.plain).font(.subheadline).foregroundStyle(.secondary)
+                if page == nil {
+                    Button("Quit Ajar", action: quit).buttonStyle(.plain).font(.subheadline).foregroundStyle(.secondary)
+                }
             }
             .padding(.horizontal, 16)
             .padding(.top, 14)
             .padding(.bottom, 2)
-            SettingsView(engine: engine)
+            SettingsView(engine: engine, page: $page)
+                .id(page)   // each page starts scrolled to the top
+        }
+        .animation(.snappy(duration: 0.2), value: page)
+    }
+}
+
+enum SettingsTopic: String, CaseIterable, Identifiable {
+    case lid, sleep, awake, alerts, phone, ai, general, about
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .lid: "Lid Closed"; case .sleep: "Sleep & Safety"; case .awake: "Keep Awake For"; case .alerts: "Notifications"
+        case .phone: "Phone"; case .ai: "AI Agents"; case .general: "General"; case .about: "About"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .lid: "laptopcomputer"; case .sleep: "moon.zzz.fill"; case .awake: "sparkles"; case .alerts: "bell.badge.fill"
+        case .phone: "iphone"; case .ai: "terminal.fill"; case .general: "gearshape.fill"; case .about: "info"
+        }
+    }
+    var color: Color {
+        switch self {
+        case .lid: .blue; case .sleep: .indigo; case .awake: .orange; case .alerts: .red
+        case .phone: .green; case .ai: .teal; case .general: .gray; case .about: .gray
         }
     }
 }
 
-/// Every setting, grouped like System Settings. Shown inside `SettingsPage`.
 struct SettingsView: View {
     @Bindable var engine: Engine
+    @Binding var page: SettingsTopic?
     @State private var login = false
     @State private var cliInstalled = Setup.cliInstalled
     @State private var note: String?
     @State private var lockGrace: Int?
     @State private var topic = ""
     @State private var refresh = false
-    /// Off: only the settings most people need. On: everything.
-    @AppStorage("settingsAdvanced") private var advanced = false
 
     private func saveTopic() {
         let t = topic.trimmingCharacters(in: .whitespaces)
@@ -51,258 +78,16 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section("General") {
-                Picker("Menu bar shows", selection: $engine.menuBarText) {
-                    ForEach(MenuBarText.allCases, id: \.self) { Text($0.label).tag($0) }
-                }
-                if advanced {
-                    Picker("Appearance", selection: Binding(get: { engine.config.appearance }, set: { v in engine.update { $0.appearance = v } })) {
-                        ForEach(AppearanceChoice.allCases, id: \.self) { Text($0.label).tag($0) }
-                    }
-                    Toggle("Notch island (pops out of the notch, hover for controls)", isOn: Binding(get: { engine.config.notchIsland }, set: { v in engine.update { $0.notchIsland = v } }))
-                    Toggle("Show in Dock", isOn: Binding(get: { engine.config.showInDock }, set: { v in engine.update { $0.showInDock = v } }))
-                    Toggle("⌃⌥⌘A switches Off / When Busy / Always", isOn: Binding(get: { engine.config.hotkey }, set: { v in engine.update { $0.hotkey = v } }))
-                }
-                Toggle("Open at login", isOn: Binding(get: { login }, set: { engine.launchAtLogin = $0; login = engine.launchAtLogin }))
-            }
-
-            if advanced {
-            Section {
-                Toggle("Notify me when an agent goes idle", isOn: Binding(get: { engine.config.notifyDone }, set: { v in engine.update { $0.notifyDone = v } }))
-                Toggle("Play a chime too", isOn: Binding(get: { engine.config.doneChime }, set: { v in
-                    engine.update { $0.doneChime = v }
-                    if v { Notifier.play(engine.config.chimeSound) }
-                }))
-                if engine.config.doneChime {
-                    Picker("Chime", selection: Binding(get: { engine.config.chimeSound }, set: { v in
-                        engine.update { $0.chimeSound = v }
-                        Notifier.play(v)
-                    })) {
-                        ForEach(Notifier.sounds, id: \.self) { Text($0).tag($0) }
-                    }
-                }
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Phone alerts")
-                    HStack {
-                        TextField("ntfy topic", text: $topic, prompt: Text("ntfy topic (off)"))
-                            .labelsHidden()
-                            .textFieldStyle(.roundedBorder)
-                            .onSubmit { saveTopic() }
-                        if topic.isEmpty {
-                            Button("Suggest") { topic = "ajar-" + UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(12).lowercased(); saveTopic() }
-                        } else {
-                            Button("Send Test") {
-                                saveTopic()
-                                Notifier.push(topic: topic, title: "Ajar test", body: "Phone alerts work. You'll get one when an agent goes idle.") { ok in
-                                    note = ok ? "Sent. Check the ntfy app on your phone." : "Couldn't reach ntfy.sh. Check the topic and your connection."
-                                }
-                            }
-                        }
-                    }
-                }
-            } header: {
-                Text("When Work Stops")
-            } footer: {
-                Text("Sent when a busy agent has been quiet for 2 minutes. It says \"went idle\": Ajar can't tell finished from stuck. For phone alerts, install the free ntfy app and subscribe to the same topic; keep the random name, anyone who knows it can read it.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-
-            }
-
-            if Registry.hasLid { Section {
-                Picker("Screen", selection: Binding(get: { engine.config.lockOnClose ? 2 : (engine.config.screenOffNoLock ? 1 : 0) },
-                                                    set: { v in engine.update { $0.lockOnClose = v == 2; $0.screenOffNoLock = v == 1 } })) {
-                    Text("Dark, no lock").tag(0)
-                    // Experimental and refused or locked by macOS on some Macs, so only offered in advanced settings.
-                    if advanced || engine.config.screenOffNoLock {
-                        Text("Off, no lock (experimental)" + Self.effect(engine.powerEffects["screen_off"])).tag(1)
-                    }
-                    Text("Off, locks" + Self.effect(engine.powerEffects["screen"])).tag(2)
-                }
-                if engine.config.screenOffNoLock, lockGrace == 0 {
-                    Text("Your Mac asks for the password as soon as its display turns off (System Settings › Lock Screen), so this will most likely lock it. Ajar then goes back to Dark by itself.")
-                        .font(.caption).foregroundStyle(.orange)
-                }
-                if engine.config.lockOnClose {
-                    LabeledContent("Your Mac locks") {
-                        Text(LockSetting.describe(lockGrace)).foregroundStyle(.secondary)
-                    }
-                }
-                if advanced {
-                    Toggle("Menu bar icon follows the real lid angle", isOn: Binding(get: { engine.config.liveLidIcon }, set: { v in engine.update { $0.liveLidIcon = v } }))
-                }
-            } header: {
-                Text("When the Lid Closes")
-            } footer: {
-                Text(advanced
-                     ? "Dark: the screen stays on at zero brightness, so there's no password when you open the lid. Off, no lock: switches the display off without sleeping it, which saves a little more; if macOS refuses or locks the Mac anyway (some Macs do), Ajar goes back to Dark by itself. Off, locks: the most saving, but you type your password when you open the lid. Apps keep running either way."
-                     : "Dark: the screen stays on at zero brightness, so there's no password when you open the lid. Off, locks: saves more, but you type your password when you open the lid. Apps keep running either way.")
-                    .font(.caption).foregroundStyle(.secondary)
-            } }
-
-            PhoneControlSection(engine: engine)
-
-            Section("When to Sleep") {
-                Toggle("Sleep when the work is done", isOn: $engine.sleepWhenDone)
-                if engine.sleepWhenDone {
-                    Picker("After nothing happens for", selection: $engine.quietMinutes) {
-                        ForEach(Array(Set([1, 2, 5, 10, 20, 30, 60, engine.quietMinutes])).sorted(), id: \.self) { Text("\($0) min").tag($0) }
-                    }
-                }
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text("Sleep at battery level")
-                        Spacer()
-                        Text(engine.batteryFloor == 0 ? "Never" : "\(engine.batteryFloor)%").monospacedDigit().foregroundStyle(.secondary)
-                    }
-                    Slider(value: Binding(get: { Double(engine.batteryFloor) }, set: { engine.batteryFloor = Int($0) }), in: 0...50, step: 5)
-                        .labelsHidden()
-                }
-                if engine.batteryFloor == 0 {
-                    Text("Ajar will keep going until the battery is empty, and the Mac switches off abruptly at 0%.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Toggle("Only stay awake when plugged in", isOn: $engine.onlyOnPower)
-                Toggle("Heat guard", isOn: $engine.heatGuard)
-                Text("Pauses everything it can when the Mac gets hot with the lid shut, and sleeps if it stays hot for 5 minutes or gets critical.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-
-            Section {
-                Picker("Other apps", selection: $engine.preset) {
-                    ForEach(Preset.allCases) { Text($0.label).tag($0) }
-                }
-                Text(engine.preset.detail).font(.caption).foregroundStyle(.secondary)
-                if advanced {
-                Toggle(isOn: Binding(get: { engine.config.pauseSimulators }, set: { v in engine.update { $0.pauseSimulators = v } })) {
-                    Text("Pause simulators and Xcode previews") + Text(Self.effect(engine.powerEffects["simulators"])).foregroundColor(.secondary)
-                }
-                if engine.config.pauseSimulators {
-                    Toggle("Shut them down instead (frees everything; they don't reopen)", isOn: Binding(get: { engine.config.shutDownSimulators }, set: { v in engine.update { $0.shutDownSimulators = v } }))
-                        .font(.callout)
-                }
-                Toggle(isOn: Binding(get: { engine.config.pauseBackgroundAudio }, set: { v in engine.update { $0.pauseBackgroundAudio = v } })) {
-                    Text("Pause background apps holding the speakers") + Text(Self.effect(engine.powerEffects["audio"])).foregroundColor(.secondary)
-                }
-                Toggle(isOn: $engine.lowPowerWhileClosed) {
-                    Text("Turn on Low Power Mode") + Text(Self.effect(engine.powerEffects["low_power"])).foregroundColor(.secondary)
-                }
-                LabeledContent("Using now") {
-                    Text(engine.systemWatts.map { String(format: "%.1f W", $0) + (PowerSensor.isMeasured ? ", measured" : "") } ?? "—")
-                        .monospacedDigit().foregroundStyle(.secondary)
-                }
-                if let o = engine.openDraw, let c = engine.closedDraw {
-                    LabeledContent("Lid open → closed") {
-                        Text(String(format: "%.1f W → %.1f W", o, c)).monospacedDigit().foregroundStyle(.secondary)
-                    }
-                }
-                }
-            } header: {
-                Text("While the Lid Is Closed")
-            } footer: {
-                Text("Music, calls and anything your agents use keep running. Everything comes back when you open the lid. To see what each saving is worth on this Mac, shut the lid and tap Measure on the phone page (or run ajar power test).")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-
-            if advanced {
-            Section("Keep Awake For") {
-                Toggle("Claude app (Cowork, computer use)", isOn: $engine.countClaudeApp)
-                Toggle("Apps that ask macOS to stay awake (downloads, exports, builds)", isOn: $engine.countRequests)
-                ForEach(engine.watchedApps) { app in
-                    HStack {
-                        Image(nsImage: NSWorkspace.shared.icon(forFile: app.id)).resizable().frame(width: 16, height: 16)
-                        Text(app.name)
-                        Spacer()
-                        Button("Remove") { engine.removeWatched(app) }
-                    }
-                }
-                ForEach(engine.config.customAgents, id: \.self) { a in
-                    HStack {
-                        Image(systemName: "terminal")
-                        Text(a.name)
-                        Text(a.executables.joined(separator: ", ")).foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Remove") { engine.update { $0.customAgents.removeAll { $0 == a } } }
-                    }
-                }
-                Menu("Add App…") {
-                    ForEach(engine.addableApps.prefix(25)) { app in Button(app.name) { engine.addWatched(app) } }
-                }
-            }
-
-            if !engine.appRules.isEmpty {
-                Section("App Rules") {
-                    ForEach(engine.appRules.keys.sorted(), id: \.self) { id in
-                        Picker(Self.appName(id), selection: Binding(get: { engine.appRules[id] ?? .leave }, set: { engine.setRule($0, for: id) })) {
-                            ForEach(AppRule.allCases, id: \.self) { Text($0.menuTitle).tag($0) }
-                        }
-                    }
-                    Button("Reset All Rules") { engine.appRules = [:] }
-                }
-            }
-
-            }
-
-            Section {
-                connectRow("Claude Code", AIConnect.claudeCodeConnected) { AIConnect.connectClaudeCode() }
-                connectRow("Codex", AIConnect.codexConnected) { AIConnect.connectCodex() }
-                connectRow("Claude app", AIConnect.claudeAppConnected) { AIConnect.connectClaudeApp() }
-                LabeledContent("Setup prompt") {
-                    Button("Copy") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(AIConnect.setupPrompt, forType: .string)
-                        note = "Copied. Paste it into Claude or Codex and it will set Ajar up with you."
-                    }
-                }
-                LabeledContent("ajar command") {
-                    if cliInstalled { Text("Installed").foregroundStyle(.secondary) }
-                    else { Button("Install…") { do { try Setup.installCLI() } catch { note = error.localizedDescription }; cliInstalled = Setup.cliInstalled } }
-                }
-                LabeledContent("Settings file") {
-                    Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([Config.url]) }
-                }
-                if let note { Text(note).font(.caption).foregroundStyle(.secondary) }
-            } header: {
-                Text("Connect Your AI")
-            } footer: {
-                Text("Connected agents can keep the Mac awake while they work and change any setting. Only you, here, can loosen the safety settings (heat guard, battery limit).")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-
-            if advanced && !engine.stats.sessions.isEmpty {
-                Section("Recent Lid-Closed Sessions") {
-                    ForEach(Array(engine.stats.sessions.suffix(8).reversed().enumerated()), id: \.offset) { _, s in
-                        LabeledContent {
-                            Text(Self.sessionLine(s)).monospacedDigit().foregroundStyle(.secondary)
-                        } label: {
-                            Text(s.date.formatted(.relative(presentation: .named)).capitalized + (s.agent.map { " · \($0)" } ?? ""))
-                                .lineLimit(1)
-                        }
-                    }
-                    LabeledContent("All time, estimated") {
-                        Text(String(format: "≈%.1f Wh", engine.stats.allTimeWhSaved + engine.stats.allTimeWhAvoided)).monospacedDigit()
-                    }
-                }
-            }
-
-            Section {
-                Toggle("Show advanced settings", isOn: $advanced)
-                LabeledContent("Setup") {
-                    if engine.setupReady { Text("Done").foregroundStyle(.secondary) } else { Button("Set Up…") { engine.runSetup() } }
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Shortcuts")
-                    Text("In the Shortcuts app: Keep Mac Awake, Let Mac Sleep, Get Ajar Status.").font(.caption).foregroundStyle(.secondary)
-                }
-                LabeledContent("Remove Ajar") {
-                    Button("Remove Helper…") {
-                        do { try engine.uninstallHelper(); note = "Removed. Quit Ajar and move it to the Trash to finish." }
-                        catch { note = error.localizedDescription }
-                    }
-                }
-            } footer: {
-                Text("Puts back everything Ajar changed first, then removes its sleep permission, watchdog and the ajar command.")
-                    .font(.caption).foregroundStyle(.secondary)
+            switch page {
+            case nil: home
+            case .lid: lidPage
+            case .sleep: sleepPage
+            case .awake: awakePage
+            case .alerts: alertsPage
+            case .phone: PhoneControlSection(engine: engine)
+            case .ai: aiPage
+            case .general: generalPage
+            case .about: aboutPage
             }
         }
         .formStyle(.grouped)
@@ -315,10 +100,268 @@ struct SettingsView: View {
         }
     }
 
-    private func copy(_ s: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(s, forType: .string)
-        note = "Copied. Paste it into Terminal."
+    // MARK: Home
+
+    @ViewBuilder private var home: some View {
+        Section {
+            if Registry.hasLid { topicRow(.lid, screenName + " · " + engine.preset.label) }
+            topicRow(.sleep, sleepSummary)
+            topicRow(.awake, engine.countClaudeApp ? "Agents, Claude app, downloads" : "Agents, downloads")
+        }
+        Section {
+            topicRow(.alerts, engine.config.notifyDone ? (engine.config.ntfyTopic.isEmpty ? "On" : "On, and on your phone") : "Off")
+            topicRow(.phone, AjarShared.remote?.enabled == true ? "Paired" : "Off")
+            topicRow(.ai, aiSummary)
+        }
+        Section {
+            topicRow(.general, "Menu bar, login, look")
+            topicRow(.about, "Setup, shortcuts, history, remove")
+        }
+    }
+
+    private func topicRow(_ t: SettingsTopic, _ summary: String) -> some View {
+        Button { page = t } label: {
+            HStack(spacing: 10) {
+                IconTile(symbol: t.symbol, color: t.color)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(t.title).foregroundStyle(.primary)
+                    Text(summary).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(.tertiary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var screenName: String {
+        engine.config.lockOnClose ? "Screen off, locks" : (engine.config.screenOffNoLock ? "Screen off" : "Screen dark")
+    }
+    private var sleepSummary: String {
+        var p = [engine.sleepWhenDone ? "After \(engine.quietMinutes) min idle" : "Not when idle"]
+        p.append(engine.batteryFloor == 0 ? "no battery limit" : "at \(engine.batteryFloor)%")
+        return p.joined(separator: ", ")
+    }
+    private var aiSummary: String {
+        let _ = refresh
+        let n = [AIConnect.claudeCodeConnected, AIConnect.codexConnected, AIConnect.claudeAppConnected].filter { $0 }.count
+        return n == 0 ? "Not connected" : "\(n) connected"
+    }
+
+    // MARK: Lid Closed
+
+    @ViewBuilder private var lidPage: some View {
+        Section {
+            Picker("Screen", selection: Binding(get: { engine.config.lockOnClose ? 2 : (engine.config.screenOffNoLock ? 1 : 0) },
+                                                set: { v in engine.update { $0.lockOnClose = v == 2; $0.screenOffNoLock = v == 1 } })) {
+                Text("Dark, no lock").tag(0)
+                Text("Off, no lock (experimental)" + Self.effect(engine.powerEffects["screen_off"])).tag(1)
+                Text("Off, locks" + Self.effect(engine.powerEffects["screen"])).tag(2)
+            }
+            if engine.config.screenOffNoLock, lockGrace == 0 {
+                Text("Your Mac asks for the password as soon as its display turns off (System Settings › Lock Screen), so this will most likely lock it. Ajar then goes back to Dark by itself.")
+                    .font(.caption).foregroundStyle(.orange)
+            }
+            if engine.config.lockOnClose {
+                LabeledContent("Your Mac locks") { Text(LockSetting.describe(lockGrace)).foregroundStyle(.secondary) }
+            }
+        } footer: {
+            Text("Dark: no password when you open the lid. Off, locks: saves more, but you type your password. Off, no lock: in between; on some Macs macOS locks anyway.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        Section {
+            Picker("Other apps", selection: $engine.preset) {
+                ForEach(Preset.allCases) { Text($0.label).tag($0) }
+            }
+            Text(engine.preset.detail).font(.caption).foregroundStyle(.secondary)
+            Toggle(isOn: $engine.lowPowerWhileClosed) {
+                Text("Low Power Mode") + Text(Self.effect(engine.powerEffects["low_power"])).foregroundColor(.secondary)
+            }
+            Toggle(isOn: Binding(get: { engine.config.pauseSimulators }, set: { v in engine.update { $0.pauseSimulators = v } })) {
+                Text("Pause simulators and previews") + Text(Self.effect(engine.powerEffects["simulators"])).foregroundColor(.secondary)
+            }
+            if engine.config.pauseSimulators {
+                Toggle("Shut them down instead", isOn: Binding(get: { engine.config.shutDownSimulators }, set: { v in engine.update { $0.shutDownSimulators = v } }))
+                    .help("Frees everything; they don't reopen by themselves")
+            }
+            Toggle(isOn: Binding(get: { engine.config.pauseBackgroundAudio }, set: { v in engine.update { $0.pauseBackgroundAudio = v } })) {
+                Text("Pause apps holding the speakers") + Text(Self.effect(engine.powerEffects["audio"])).foregroundColor(.secondary)
+            }
+        } header: {
+            Text("Saving Power")
+        } footer: {
+            Text("Music, calls and anything your agents use keep running, and everything comes back when you open the lid. To see what each saving is worth on this Mac, shut the lid and tap Measure on the phone page.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        Section {
+            LabeledContent("Using now") {
+                Text(engine.systemWatts.map { String(format: "%.1f W", $0) } ?? "—").monospacedDigit().foregroundStyle(.secondary)
+            }
+            if let o = engine.openDraw, let c = engine.closedDraw {
+                LabeledContent("Lid open → closed") {
+                    Text(String(format: "%.1f W → %.1f W", o, c)).monospacedDigit().foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    // MARK: Sleep & Safety
+
+    @ViewBuilder private var sleepPage: some View {
+        Section {
+            Toggle("Sleep when the work is done", isOn: $engine.sleepWhenDone)
+            if engine.sleepWhenDone {
+                Picker("After nothing happens for", selection: $engine.quietMinutes) {
+                    ForEach(Array(Set([1, 2, 5, 10, 20, 30, 60, engine.quietMinutes])).sorted(), id: \.self) { Text("\($0) min").tag($0) }
+                }
+            }
+        }
+        Section {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Sleep at battery level")
+                    Spacer()
+                    Text(engine.batteryFloor == 0 ? "Never" : "\(engine.batteryFloor)%").monospacedDigit().foregroundStyle(.secondary)
+                }
+                Slider(value: Binding(get: { Double(engine.batteryFloor) }, set: { engine.batteryFloor = Int($0) }), in: 0...50, step: 5)
+                    .labelsHidden()
+            }
+            if engine.batteryFloor == 0 {
+                Text("Ajar keeps going until the battery is empty, and the Mac switches off abruptly at 0%.")
+                    .font(.caption).foregroundStyle(.orange)
+            }
+            Toggle("Only stay awake when plugged in", isOn: $engine.onlyOnPower)
+            Toggle("Heat guard", isOn: $engine.heatGuard)
+        } header: {
+            Text("Safety")
+        } footer: {
+            Text("Heat guard pauses everything it can when the Mac gets hot with the lid shut, and sleeps it if it stays hot for 5 minutes or gets critical. Only you can loosen these; AI agents and the phone can't.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: Keep Awake For
+
+    @ViewBuilder private var awakePage: some View {
+        Section {
+            Toggle("Claude app (Cowork, computer use)", isOn: $engine.countClaudeApp)
+            Toggle("Downloads, exports and builds", isOn: $engine.countRequests)
+                .help("Any app that asks macOS to stay awake")
+        } footer: {
+            Text("Claude Code, Codex, Gemini, Cursor and other agents are picked up on their own.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        Section("Also While These Run") {
+            ForEach(engine.watchedApps) { app in
+                HStack {
+                    Image(nsImage: NSWorkspace.shared.icon(forFile: app.id)).resizable().frame(width: 16, height: 16)
+                    Text(app.name)
+                    Spacer()
+                    Button("Remove") { engine.removeWatched(app) }
+                }
+            }
+            ForEach(engine.config.customAgents, id: \.self) { a in
+                HStack {
+                    Image(systemName: "terminal")
+                    Text(a.name)
+                    Spacer()
+                    Button("Remove") { engine.update { $0.customAgents.removeAll { $0 == a } } }
+                }
+            }
+            Menu("Add App…") {
+                ForEach(engine.addableApps.prefix(25)) { app in Button(app.name) { engine.addWatched(app) } }
+            }
+        }
+        if !engine.appRules.isEmpty {
+            Section {
+                ForEach(engine.appRules.keys.sorted(), id: \.self) { id in
+                    Picker(Self.appName(id), selection: Binding(get: { engine.appRules[id] ?? .leave }, set: { engine.setRule($0, for: id) })) {
+                        ForEach(AppRule.allCases, id: \.self) { Text($0.menuTitle).tag($0) }
+                    }
+                }
+                Button("Reset All Rules") { engine.appRules = [:] }
+            } header: {
+                Text("App Rules While Closed")
+            }
+        }
+    }
+
+    // MARK: Notifications
+
+    @ViewBuilder private var alertsPage: some View {
+        Section {
+            Toggle("Notify me when an agent goes idle", isOn: Binding(get: { engine.config.notifyDone }, set: { v in engine.update { $0.notifyDone = v } }))
+            Toggle("Play a chime too", isOn: Binding(get: { engine.config.doneChime }, set: { v in
+                engine.update { $0.doneChime = v }
+                if v { Notifier.play(engine.config.chimeSound) }
+            }))
+            if engine.config.doneChime {
+                Picker("Chime", selection: Binding(get: { engine.config.chimeSound }, set: { v in
+                    engine.update { $0.chimeSound = v }
+                    Notifier.play(v)
+                })) {
+                    ForEach(Notifier.sounds, id: \.self) { Text($0).tag($0) }
+                }
+            }
+        } footer: {
+            Text("Sent when a busy agent has been quiet for 2 minutes. It says \"went idle\": Ajar can't tell finished from stuck. The chime plays even with the lid shut.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        Section {
+            HStack {
+                TextField("ntfy topic", text: $topic, prompt: Text("ntfy topic (off)"))
+                    .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { saveTopic() }
+                if topic.isEmpty {
+                    Button("Suggest") { topic = "ajar-" + UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(12).lowercased(); saveTopic() }
+                } else {
+                    Button("Send Test") {
+                        saveTopic()
+                        Notifier.push(topic: topic, title: "Ajar test", body: "Phone alerts work. You'll get one when an agent goes idle.") { ok in
+                            note = ok ? "Sent. Check the ntfy app on your phone." : "Couldn't reach ntfy.sh. Check the topic and your connection."
+                        }
+                    }
+                }
+            }
+            if let note { Text(note).font(.caption).foregroundStyle(.secondary) }
+        } header: {
+            Text("On Your Phone")
+        } footer: {
+            Text("Install the free ntfy app and subscribe to the same topic. Keep the random name: anyone who knows it can read the alerts.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: AI Agents
+
+    @ViewBuilder private var aiPage: some View {
+        Section {
+            connectRow("Claude Code", AIConnect.claudeCodeConnected) { AIConnect.connectClaudeCode() }
+            connectRow("Codex", AIConnect.codexConnected) { AIConnect.connectCodex() }
+            connectRow("Claude app", AIConnect.claudeAppConnected) { AIConnect.connectClaudeApp() }
+        } footer: {
+            Text("Connected agents can keep the Mac awake while they work, see what's using power and change settings. They can't loosen the safety settings.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        Section {
+            LabeledContent("Setup prompt") {
+                Button("Copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(AIConnect.setupPrompt, forType: .string)
+                    note = "Copied. Paste it into Claude or Codex and it sets Ajar up with you."
+                }
+            }
+            LabeledContent("ajar command") {
+                if cliInstalled { Text("Installed").foregroundStyle(.secondary) }
+                else { Button("Install…") { do { try Setup.installCLI() } catch { note = error.localizedDescription }; cliInstalled = Setup.cliInstalled } }
+            }
+            LabeledContent("Settings file") {
+                Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([Config.url]) }
+            }
+            if let note { Text(note).font(.caption).foregroundStyle(.secondary) }
+        }
     }
 
     @ViewBuilder private func connectRow(_ name: String, _ connected: Bool, _ action: @escaping () -> String) -> some View {
@@ -330,6 +373,69 @@ struct SettingsView: View {
                 Text(name)
                 if connected { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).help("Connected") }
             }
+        }
+    }
+
+    // MARK: General
+
+    @ViewBuilder private var generalPage: some View {
+        Section {
+            Toggle("Open at login", isOn: Binding(get: { login }, set: { engine.launchAtLogin = $0; login = engine.launchAtLogin }))
+            Picker("Menu bar shows", selection: $engine.menuBarText) {
+                ForEach(MenuBarText.allCases, id: \.self) { Text($0.label).tag($0) }
+            }
+            if Registry.hasLid {
+                Toggle("Icon follows the real lid angle", isOn: Binding(get: { engine.config.liveLidIcon }, set: { v in engine.update { $0.liveLidIcon = v } }))
+            }
+            Toggle("Show in Dock", isOn: Binding(get: { engine.config.showInDock }, set: { v in engine.update { $0.showInDock = v } }))
+        }
+        Section {
+            Picker("Appearance", selection: Binding(get: { engine.config.appearance }, set: { v in engine.update { $0.appearance = v } })) {
+                ForEach(AppearanceChoice.allCases, id: \.self) { Text($0.label).tag($0) }
+            }
+            Toggle("Notch island", isOn: Binding(get: { engine.config.notchIsland }, set: { v in engine.update { $0.notchIsland = v } }))
+                .help("Short announcements pop out of the notch; hover for controls")
+            Toggle("⌃⌥⌘A switches mode", isOn: Binding(get: { engine.config.hotkey }, set: { v in engine.update { $0.hotkey = v } }))
+                .help("Off → When Busy → Always")
+        }
+    }
+
+    // MARK: About
+
+    @ViewBuilder private var aboutPage: some View {
+        Section {
+            LabeledContent("Version") {
+                Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—").foregroundStyle(.secondary)
+            }
+            LabeledContent("Setup") {
+                if engine.setupReady { Text("Done").foregroundStyle(.secondary) } else { Button("Set Up…") { engine.runSetup() } }
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Shortcuts")
+                Text("In the Shortcuts app: Keep Mac Awake, Let Mac Sleep, Get Ajar Status.").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        if !engine.stats.sessions.isEmpty {
+            Section("Recent Lid-Closed Sessions") {
+                ForEach(Array(engine.stats.sessions.suffix(8).reversed().enumerated()), id: \.offset) { _, s in
+                    LabeledContent {
+                        Text(Self.sessionLine(s)).monospacedDigit().foregroundStyle(.secondary)
+                    } label: {
+                        Text(s.date.formatted(.relative(presentation: .named)).capitalized + (s.agent.map { " · \($0)" } ?? ""))
+                            .lineLimit(1)
+                    }
+                }
+            }
+        }
+        Section {
+            Button("Remove Ajar…", role: .destructive) {
+                do { try engine.uninstallHelper(); note = "Removed. Quit Ajar and move it to the Trash to finish." }
+                catch { note = error.localizedDescription }
+            }
+            if let note { Text(note).font(.caption).foregroundStyle(.secondary) }
+        } footer: {
+            Text("Puts back everything Ajar changed first, then removes its sleep permission, watchdog and the ajar command.")
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 
@@ -379,11 +485,17 @@ enum LockSetting {
 }
 
 #Preview("Settings") {
-    UserDefaults.standard.set(false, forKey: "settingsAdvanced")
-    return SettingsPage(engine: .preview(), back: {}, quit: {}).frame(width: 320, height: 1500).background(.regularMaterial)
+    SettingsPage(engine: .preview(), back: {}, quit: {}).frame(width: 320, height: 620).background(.regularMaterial)
 }
 
-#Preview("Settings, advanced") {
-    UserDefaults.standard.set(true, forKey: "settingsAdvanced")
-    return SettingsPage(engine: .preview(), back: {}, quit: {}).frame(width: 320, height: 2600).background(.regularMaterial)
+#Preview("Settings pages") {
+    let e = Engine.preview()
+    return ScrollView(.horizontal) {
+        HStack(alignment: .top, spacing: 12) {
+            ForEach(SettingsTopic.allCases) { t in
+                SettingsView(engine: e, page: .constant(t)).frame(width: 320, height: 760).background(.regularMaterial)
+            }
+        }
+    }
+    .frame(width: 8 * 332, height: 760)
 }

@@ -95,4 +95,28 @@ extension Engine {
         let wh = w.wh + w.whAvoided
         return WeekSummary(sessions: w.count, closedHours: w.closedMinutes / 60, whSaved: wh, percentSaved: percent(ofWh: wh))
     }
+
+    /// The Now tab's figures as text, so the phone page shows exactly what the Mac panel shows.
+    var phoneFigures: [String: Any] {
+        var d: [String: Any] = [:]
+        if let b = battery {
+            d["batteryState"] = b.charging ? "\(b.percent)% · charging"
+                : (onBattery ? (drawNow.map { "\(b.percent)% · \(PanelFormat.pct(percentPerHour($0))) an hour now" } ?? "\(b.percent)%") : "\(b.percent)% · plugged in")
+            if !onBattery {
+                d["figure"] = closedHours.map { PanelFormat.hm($0) } ?? "No limit"
+                d["figureCaption"] = closedHours == nil ? "on the charger" : "on battery with the lid closed (charger in now)"
+            } else if let c = closedHours {
+                d["figure"] = PanelFormat.hm(c)
+                d["figureCaption"] = "left with lid closed" + (openHours.map { c > $0 ? " · +\(PanelFormat.hm(c - $0)) vs. lid open" : "" } ?? "")
+            }
+            var line = "Uses ≈\(PanelFormat.w(closedEstimate)) closed"
+            if let o = openWatts { line += " · \(PanelFormat.w(o)) open" }
+            d["drawLine"] = line
+        }
+        if let w = weekSummary {
+            d["weekTitle"] = "\(PanelFormat.hm(w.closedHours)) working, lid closed"
+            d["weekLine"] = "\(w.sessions) session\(w.sessions == 1 ? "" : "s")" + (w.whSaved >= 10 ? " · ≈\(String(format: "%.0f", w.whSaved)) Wh saved" : "")
+        }
+        return d
+    }
 }
