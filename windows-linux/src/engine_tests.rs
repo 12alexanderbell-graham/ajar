@@ -826,3 +826,76 @@ fn a_power_profile_that_failed_to_go_back_stays_recorded_and_is_retried() {
     assert!(e.restore.power_profile.is_none() && !e.platform.low_power, "retried once it works");
     assert!(!e.root.join("restore.json").exists());
 }
+
+#[test]
+fn check_ins_arm_a_wake_only_with_the_lid_shut_and_read_the_phone_on_a_lid_closed_wake() {
+    let mut m = Mock::laptop();
+    m.can_wake = true;
+    let mut e = engine("checkin", m);
+    e.update(|c| c.check_in_minutes = 30);
+    let now = crate::now();
+    e.tick(now, None);
+    assert_eq!(e.platform.wake_armed, None, "lid open: no check-in wake (it would light the screen)");
+    e.platform.lid = true;
+    e.tick(now + 2, None);
+    assert_eq!(e.platform.wake_armed, Some(1800), "lid shut and asleep soon: wake in 30 min");
+    // Asleep for half an hour, then the timer wakes it with the lid still shut.
+    let woke = now + 2 + 1800;
+    e.tick(woke, None);
+    assert!(e.platform.holding, "kept up while the phone's commands are read");
+    assert!(e.platform.log.iter().any(|l| l == "begin Checking for phone commands"));
+    let slept = e.platform.slept;
+    e.tick(woke + 10, None);
+    assert!(e.platform.holding, "still within the check-in");
+    e.tick(woke + 26, None);
+    assert!(!e.platform.holding, "nothing asked for it: let go");
+    assert_eq!(e.platform.slept, slept + 1, "and back to sleep");
+    assert_eq!(e.platform.wake_armed, Some(1800), "with the next check-in pending");
+}
+
+#[test]
+fn a_wake_from_the_phone_during_a_check_in_keeps_it_awake() {
+    let mut m = Mock::laptop();
+    m.can_wake = true;
+    m.lid = true;
+    let mut e = engine("checkin-wake", m);
+    e.update(|c| c.check_in_minutes = 15);
+    let now = crate::now();
+    e.tick(now, None);
+    e.tick(now + 900, None); // woke for a check-in
+    let r = e.handle("wake", &json!({ "minutes": 60 }));
+    assert_eq!(r["ok"], true);
+    e.tick(now + 930, None);
+    assert!(e.holding && e.platform.holding, "the phone's wake holds it");
+    assert_eq!(e.platform.wake_armed, None, "no wake timer while it's awake anyway");
+}
+
+#[test]
+fn a_scheduled_wake_holds_for_its_minutes_and_clears_itself() {
+    let mut m = Mock::laptop();
+    m.can_wake = true;
+    m.lid = true;
+    let mut e = engine("wake-at", m);
+    let now = crate::now();
+    e.set_wake(Some(now + 2 * 3600), Some(45));
+    e.tick(now, None);
+    assert_eq!(e.platform.wake_armed, Some(3600), "reached in steps");
+    // (Holds run on the real clock, so the test wakes it 10 minutes out rather than 2 hours.)
+    e.set_wake(Some(now + 600), Some(45));
+    e.tick(now + 2, None);
+    e.tick(now + 600, None);
+    assert!(e.holding, "awake at the set time");
+    assert_eq!(e.cfg.wake_at, None, "one-off");
+    assert!(e.holds.iter().any(|h| h.reason == "Scheduled wake"));
+}
+
+#[test]
+fn old_commands_are_dropped_but_a_wake_waits_up_to_three_hours() {
+    let mut g = crate::remote::Guard::default();
+    let now = crate::now();
+    assert!(g.check_aged(now - 400, "a", now, 300).is_err());
+    assert!(g.check_aged(now - 2 * 3600, "b", now, crate::wake::WAKE_MAX_AGE).is_ok());
+    assert!(g.check_aged(now - 2 * 3600, "b", now, crate::wake::WAKE_MAX_AGE).is_err(), "never twice");
+    assert!(crate::format::parse_wake_time("07:30", now).is_some_and(|t| t > now && t <= now + 86_400 + 3600));
+    assert!(crate::format::parse_wake_time("25:00", now).is_none());
+}

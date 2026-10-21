@@ -294,11 +294,36 @@ fn engine_thread(root: PathBuf, rx: Receiver<Cmd>, tx: Sender<Cmd>, shared: Arc<
     let mut remote = start_remote(&root, tx.clone());
     let mut last_tick = Instant::now() - Duration::from_secs(10);
     let mut wakes = e.wakes();
+    let approve_paths = ajar::approve::Paths::new(&root);
+    // First click on "Approve everything" arms a confirmation for 30 s; only the second click turns it on.
+    let mut approve_armed: Option<Instant> = None;
     let mut last_ui: Option<UiState> = None;
     loop {
         let mut changed = false;
         match rx.recv_timeout(Duration::from_millis(250)) {
             Ok(Cmd::Quit) => quit(&mut e, remote.as_ref()),
+            Ok(Cmd::Action(Action::ApproveToggle)) => {
+                if ajar::approve::is_on(&approve_paths) {
+                    let msg = match ajar::approve::turn_off(&approve_paths) {
+                        Ok(()) => "Off. Your previous Claude Code and Codex settings are back.".to_string(),
+                        Err(err) => err,
+                    };
+                    e.outbox.push(ajar::engine::Announcement { title: "Approve everything".into(), body: msg });
+                } else {
+                    approve_armed = Some(Instant::now());
+                }
+                changed = true;
+            }
+            Ok(Cmd::Action(Action::ApproveConfirm)) => {
+                if approve_armed.take().is_some_and(|t| t.elapsed() < Duration::from_secs(30)) {
+                    let msg = match ajar::approve::turn_on(&approve_paths) {
+                        Ok(()) => "On. New Claude Code and Codex sessions won't ask before acting; running ones keep their mode.".to_string(),
+                        Err(err) => err,
+                    };
+                    e.outbox.push(ajar::engine::Announcement { title: "Approve everything".into(), body: msg });
+                }
+                changed = true;
+            }
             Ok(Cmd::Action(a)) => {
                 apply(&mut e, a, &root, &tx, &mut remote);
                 changed = true;
@@ -349,6 +374,11 @@ fn engine_thread(root: PathBuf, rx: Receiver<Cmd>, tx: Sender<Cmd>, shared: Arc<
         if changed {
             let mut ui = UiState::from_engine(&e, ajar::now());
             ui.phone_on = remote.is_some();
+            ui.auto_approve = ajar::approve::is_on(&approve_paths);
+            if approve_armed.is_some_and(|t| t.elapsed() >= Duration::from_secs(30)) {
+                approve_armed = None;
+            }
+            ui.approve_confirm = approve_armed.is_some();
             if last_ui.as_ref() != Some(&ui) {
                 if let Ok(mut g) = shared.lock() {
                     *g = Some(ui.clone());
@@ -432,7 +462,13 @@ fn apply<P: Platform>(e: &mut Engine<P>, a: Action, root: &Path, tx: &Sender<Cmd
             }
             e.remote_status = None;
         }
-        Action::EditConfig | Action::OpenFolder | Action::Quit => {}
+        Action::CheckIn(m) => e.update(|c| c.check_in_minutes = m),
+        Action::WakeAt(h) => {
+            let now = ajar::now();
+            e.set_wake(Some(ajar::format::next_local_hour(now, h)), None);
+        }
+        Action::WakeOff => e.set_wake(None, None),
+        Action::EditConfig | Action::OpenFolder | Action::Quit | Action::ApproveToggle | Action::ApproveConfirm => {}
     }
 }
 

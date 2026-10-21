@@ -179,6 +179,11 @@ enum Setup {
     /// launchd actually has the watchdog loaded (files on disk aren't proof it runs). Spawns launchctl: call off the main thread.
     static var watchdogLoaded: Bool { Shell.run("/bin/launchctl", ["print", "gui/\(getuid())/\(label)"]).code == 0 }
     static var isReady: Bool { watchdogReady && sudoReady }
+    /// The scheduled-wake commands were added after 1.0; an older sudoers entry lacks them until Set Up runs again.
+    static var wakeReady: Bool {
+        Shell.run("/usr/bin/sudo", ["-n", "-l", "/usr/bin/pmset"] + WakePlan.pmsetArgs(seconds: 900)).code == 0
+            && Shell.run("/usr/bin/sudo", ["-n", "-l", "/usr/bin/tmutil", "enable"]).code == 0
+    }
 
     static let commands = [
         "-a disablesleep 1", "-a disablesleep 0",
@@ -186,6 +191,8 @@ enum Setup {
         "-b lowpowermode 0", "-b lowpowermode 1",
         "sleepnow",
     ].map { "/usr/bin/pmset " + $0 }
+        + WakePlan.steps.map { "/usr/bin/pmset " + WakePlan.pmsetArgs(seconds: $0).joined(separator: " ") }
+        + ["/usr/bin/tmutil disable", "/usr/bin/tmutil enable"]
 
     static func sudoersText(user: String) -> String {
         "# Installed by Ajar. Lets Ajar flip only these power switches without a password.\n"
@@ -195,7 +202,7 @@ enum Setup {
 
     static func install() throws {
         try installWatchdog()
-        if !sudoReady { try installSudoers() }
+        if !sudoReady || !wakeReady { try installSudoers() }
     }
 
     private static func installSudoers() throws {
@@ -212,6 +219,7 @@ enum Setup {
         try runAsAdmin(cmd, prompt: "Ajar needs your password once to control sleep while the lid is closed.")
         try? FileManager.default.removeItem(at: tmp)
         guard sudoReady else { throw SetupError(message: "Installed, but sudo isn't accepting it yet. Try Set up again.") }
+        if !wakeReady { NSLog("Ajar: sudoers installed but the wake commands aren't accepted") }
     }
 
     static let cliPath = "/usr/local/bin/ajar"

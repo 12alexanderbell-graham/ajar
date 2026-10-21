@@ -49,6 +49,28 @@ pub fn next_local_hour(now: u64, hour: u32) -> u64 {
     (target - off2).max(0) as u64
 }
 
+/// "7:00" / "07:00" / "19:30" → the next time the local clock shows it; or Unix seconds within the next week.
+pub fn parse_wake_time(t: &str, now: u64) -> Option<u64> {
+    let t = t.trim();
+    if let Ok(secs) = t.parse::<u64>() {
+        return (secs > now + 60 && secs < now + 7 * 86_400).then_some(secs);
+    }
+    let (h, m) = t.split_once(':')?;
+    let (h, m): (u32, u32) = (h.parse().ok()?, m.parse().ok()?);
+    if h > 23 || m > 59 {
+        return None;
+    }
+    let off = local_offset(now);
+    let local = now as i64 + off;
+    let midnight = local - local.rem_euclid(86_400);
+    let mut target = midnight + h as i64 * 3600 + m as i64 * 60;
+    if target <= local + 60 {
+        target += 86_400;
+    }
+    let off2 = local_offset((target - off).max(0) as u64);
+    Some((target - off2).max(0) as u64)
+}
+
 /// "Today 14:05", "Yesterday 09:30", "3 days ago" for the recent-sessions list.
 pub fn when(t: u64, now: u64) -> String {
     let day = |x: u64| (x as i64 + local_offset(x)).div_euclid(86_400);

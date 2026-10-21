@@ -236,7 +236,44 @@ impl Platform for Linux {
         None
     }
 
+    fn screen_off(&mut self, on: bool) {
+        if self.kde() {
+            // Plasma (Wayland and X11): kscreen-doctor ships with Plasma.
+            let _ = std::process::Command::new("kscreen-doctor").args(["--dpms", if on { "off" } else { "on" }])
+                .stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status();
+            return;
+        }
+        // GNOME (Mutter): PowerSaveMode 3 = off, 0 = on. Other desktops don't have this service; nothing happens.
+        if let Some(s) = self.session.as_ref() {
+            let mode: i32 = if on { 3 } else { 0 };
+            let _ = s.call_method(
+                Some("org.gnome.Mutter.DisplayConfig"),
+                "/org/gnome/Mutter/DisplayConfig",
+                Some("org.freedesktop.DBus.Properties"),
+                "Set",
+                &("org.gnome.Mutter.DisplayConfig", "PowerSaveMode", Value::from(mode)),
+            );
+        }
+    }
+
+    fn arm_wake(&mut self, secs: u64) -> bool {
+        crate::wake::STEPS.contains(&secs) && power_helper_args(&["wake", &secs.to_string()])
+    }
+
+    fn disarm_wake(&mut self) {
+        power_helper_args(&["wake", "off"]);
+    }
+
     fn set_low_power(&mut self, on: bool, restore: &mut Restore) -> bool {
+        // The optional root helper (installed by install.sh if the person agreed): turbo off and the kernel's
+        // power saving while closed. sudo -n: never prompts; if it isn't installed, nothing happens.
+        if on && !restore.linux_tuned {
+            if power_helper("apply") {
+                restore.linux_tuned = true;
+            }
+        } else if !on && restore.linux_tuned && power_helper("restore") {
+            restore.linux_tuned = false;
+        }
         let Some((dest, path, current)) = self.power_profile() else { return false };
         if on {
             if current == "power-saver" {
@@ -255,7 +292,7 @@ impl Platform for Linux {
     fn restore_settings(&mut self, restore: &mut Restore) {
         // A profile that couldn't be put back stays recorded, to be retried.
         self.set_low_power(false, restore);
-        if restore.power_profile.is_none() {
+        if restore.power_profile.is_none() && !restore.linux_tuned {
             *restore = Restore::default();
         }
     }
@@ -405,6 +442,25 @@ impl Platform for Linux {
 
 /// Sends a signal only if `pid` is still the process that started at `start`. With a pidfd (Linux 5.3+) the
 /// check and the signal refer to the same process even if the pid is reused in between.
+pub const POWER_HELPER: &str = "/usr/local/libexec/ajar-power";
+
+fn power_helper(action: &str) -> bool {
+    power_helper_args(&[action])
+}
+
+fn power_helper_args(args: &[&str]) -> bool {
+    Path::new(POWER_HELPER).exists()
+        && std::process::Command::new("sudo")
+            .arg("-n")
+            .arg(POWER_HELPER)
+            .args(args)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
+}
+
 pub fn signal_if_same(pid: u32, start: u64, sig: i32) -> bool {
     use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
     let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid as libc::c_int, 0) };

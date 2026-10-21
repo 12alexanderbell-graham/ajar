@@ -108,6 +108,17 @@ struct Config: Codable, Equatable {
     var alwaysUntil: Double?
     /// The mode to go back to when a timed Always ends.
     var modeBeforeAlways: Mode?
+    /// While asleep with the lid shut, wake every this many minutes (0, 15, 30 or 60) to pick up a "wake" from the
+    /// phone. 0 = off. Each check-in keeps the Mac up for about 25 seconds.
+    var checkInMinutes = 0
+    /// A one-off scheduled wake, in Unix seconds: the Mac wakes then and stays awake for `wakeForMinutes`.
+    var wakeAt: Double?
+    var wakeForMinutes = 30
+    /// Experimental: with the lid closed, run the agent's build tools (compilers, linkers, cargo, xcodebuild…) on the
+    /// efficiency cores. Builds take several times longer; whether that saves energy overall depends on the job.
+    var slowBuildsWhileClosed = false
+    /// Pause Time Machine's automatic backups while the lid is closed (an agent's file changes trigger them).
+    var pauseTimeMachine = true
 
     init() {}
 
@@ -145,6 +156,12 @@ struct Config: Codable, Equatable {
         liveLidIcon = (try? c.decodeIfPresent(Bool.self, forKey: .liveLidIcon)) ?? d.liveLidIcon
         alwaysUntil = (try? c.decodeIfPresent(Double.self, forKey: .alwaysUntil)).flatMap { $0.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } }
         modeBeforeAlways = (try? c.decodeIfPresent(Mode.self, forKey: .modeBeforeAlways)).flatMap { $0 == .on ? nil : $0 }
+        let ci = (try? c.decodeIfPresent(Int.self, forKey: .checkInMinutes)) ?? d.checkInMinutes
+        checkInMinutes = WakePlan.checkInChoices.contains(ci) ? ci : d.checkInMinutes
+        wakeAt = (try? c.decodeIfPresent(Double.self, forKey: .wakeAt)).flatMap { $0.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } }
+        slowBuildsWhileClosed = (try? c.decodeIfPresent(Bool.self, forKey: .slowBuildsWhileClosed)) ?? d.slowBuildsWhileClosed
+        pauseTimeMachine = (try? c.decodeIfPresent(Bool.self, forKey: .pauseTimeMachine)) ?? d.pauseTimeMachine
+        wakeForMinutes = min(24 * 60, max(5, (try? c.decodeIfPresent(Int.self, forKey: .wakeForMinutes)) ?? d.wakeForMinutes))
     }
 
     static var url: URL { StateFiles.dir.appendingPathComponent("config.json") }

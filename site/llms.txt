@@ -36,6 +36,7 @@ ajar power test [--screen]    ajar set <key> <value>        ajar rule <app> leav
 ajar watch <app>              ajar on [--for 2h] | auto | off
 ajar hold / release           ajar run -- <command>         ajar connect [claude|codex]
 ajar prompt                   ajar doctor                   ajar rescue
+ajar wake-at 07:00 | off      ajar check-in 0|15|30|60
 ```
 
 ## Settings (keys for set / set_setting)
@@ -46,7 +47,10 @@ ajar prompt                   ajar doctor                   ajar rescue
 - `screen_off` (macOS, experimental, off by default): switch the built-in screen fully off while closed instead of keeping it dark. If macOS refuses or locks the Mac anyway (some Macs do), Ajar switches back to the dark screen and turns this off. Ask the person first.
 - `shut_down_simulators` (macOS): shut simulators down on close instead of pausing them (frees everything; they don't reopen).
 - `pause_background_audio` (macOS): freeze background processes holding the speakers open (keeps audio hardware powered).
-- `low_power`: Low Power Mode / power saver while closed.
+- `low_power`: Low Power Mode / power saver while closed (Windows also turns turbo off on battery; Linux with the optional helper turns turbo off and switches on kernel power saving).
+- `pause_time_machine` (macOS): pause Time Machine's automatic backups while closed.
+- `slow_builds` (macOS, experimental, off by default): run the agent's own build tools on efficiency cores while closed. Builds take several times longer.
+- `check_in_minutes`: 0 | 15 | 30 | 60. While asleep with the lid shut, wake this often for ~25 s to pick up a "wake" sent from the phone. A shut-down laptop can't be woken.
 - `lock_on_close` (macOS): screen fully off while closed. Biggest single saving, but macOS asks for the password on reopen. Ask the person first.
 - `battery_floor`: sleep at this % (0 = never). Commands can only raise it.
 - `heat_guard`: strictest rules when hot, sleep if critical. Commands can only turn it on.
@@ -58,6 +62,7 @@ The settings file (config.json) can also be edited directly and reloads instantl
 
 - Hold before long work, release when done. Holds from MCP end when the agent session ends.
 - Never try to turn off the heat guard, lower the battery limit or allow going below it. Ajar refuses; those are the person's calls in Ajar's own settings.
+- "Approve everything" (agents run without asking) can only be turned on by the person in Ajar's own window or tray menu, never by a command.
 - Ask before `lock_on_close on` or `ajar_power_test` with `screen: true`.
 - Agents, their process trees and anything a hold is tied to are never slowed or paused.
 

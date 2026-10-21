@@ -28,6 +28,9 @@ pub struct Mock {
     pub hold_drift: Option<String>,
     pub docked: bool,
     pub user_keeps_awake_on_close: bool,
+    /// Last wake timer asked for (seconds), None when disarmed; `can_wake` false = unsupported.
+    pub wake_armed: Option<u64>,
+    pub can_wake: bool,
 }
 
 impl Mock {
@@ -91,4 +94,10 @@ impl Platform for Mock {
     fn set_open_at_login(&mut self, _on: bool) -> Result<(), String> { Ok(()) }
     fn install_watchdog(&mut self) -> Result<(), String> { Ok(()) }
     fn sleeps_on_close_itself(&mut self) -> bool { self.desktop_sleeps_on_close.unwrap_or(true) }
+    fn arm_wake(&mut self, secs: u64) -> bool {
+        if !self.can_wake { return false; }
+        self.wake_armed = Some(secs);
+        true
+    }
+    fn disarm_wake(&mut self) { self.wake_armed = None; }
 }

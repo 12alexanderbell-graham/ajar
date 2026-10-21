@@ -120,6 +120,12 @@ pub struct Config {
     pub always_until: Option<u64>,
     /// The mode to go back to when a timed Always ends.
     pub mode_before_always: Option<Mode>,
+    /// While asleep with the lid shut, wake every this many minutes (0, 15, 30, 60) for about 25 seconds to pick
+    /// up a wake sent from the phone. 0 = off.
+    pub check_in_minutes: u32,
+    /// A one-off scheduled wake (Unix seconds); the laptop wakes then and stays awake `wake_for_minutes`.
+    pub wake_at: Option<u64>,
+    pub wake_for_minutes: u32,
 }
 
 impl Default for Config {
@@ -143,6 +149,9 @@ impl Default for Config {
             open_at_login: false,
             always_until: None,
             mode_before_always: None,
+            check_in_minutes: 0,
+            wake_at: None,
+            wake_for_minutes: 30,
         }
     }
 }
@@ -230,6 +239,9 @@ impl Config {
             open_at_login: b("openAtLogin", d.open_at_login),
             always_until: v.get("alwaysUntil").and_then(Value::as_f64).filter(|x| x.is_finite() && *x > 0.0).map(|x| x as u64),
             mode_before_always: s("modeBeforeAlways").and_then(Mode::parse).filter(|m| *m != Mode::On),
+            check_in_minutes: Some(u("checkInMinutes", d.check_in_minutes, 0, 60)).filter(|m| crate::wake::CHECK_IN_CHOICES.contains(m)).unwrap_or(0),
+            wake_at: v.get("wakeAt").and_then(Value::as_f64).filter(|x| x.is_finite() && *x > 0.0).map(|x| x as u64),
+            wake_for_minutes: u("wakeForMinutes", d.wake_for_minutes, 5, 24 * 60),
         }
     }
 

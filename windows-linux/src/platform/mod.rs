@@ -104,6 +104,15 @@ pub trait Platform {
     fn watchdog_installed(&mut self) -> Option<bool> {
         None
     }
+    /// Lid shut during a hold: turn the built-in screen off (some desktops leave it lit under the lid when lid
+    /// handling is inhibited). `false` when the lid opens. Input wakes it anyway, so a crash can't leave it dark.
+    fn screen_off(&mut self, _on: bool) {}
+    /// Ask the OS to wake the machine `secs` seconds from now if it's asleep then (replaces an earlier request).
+    /// False if this machine or setup can't (no helper installed, wake timers disallowed).
+    fn arm_wake(&mut self, _secs: u64) -> bool {
+        false
+    }
+    fn disarm_wake(&mut self) {}
 }
 
 /// Puts back one setting recorded in `restore.json`. The record is cleared only once that worked, or when there

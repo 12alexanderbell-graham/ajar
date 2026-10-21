@@ -64,6 +64,8 @@ struct SettingsView: View {
     @State private var login = false
     @State private var cliInstalled = Setup.cliInstalled
     @State private var note: String?
+    @State private var approveOn = AutoApprove.isOn
+    @State private var approveConfirm = false
     @State private var lockGrace: Int?
     @State private var topic = ""
     /// The topic field was edited here: only then is it saved (never overwrite a change made by the phone or an agent).
@@ -228,6 +230,10 @@ struct SettingsView: View {
             Toggle(isOn: Binding(get: { engine.config.pauseBackgroundAudio }, set: { v in engine.update { $0.pauseBackgroundAudio = v } })) {
                 Text("Pause apps holding the speakers") + Text(Self.effect(engine.powerEffects["audio"])).foregroundColor(.secondary)
             }
+            Toggle("Pause Time Machine backups", isOn: Binding(get: { engine.config.pauseTimeMachine }, set: { v in engine.update { $0.pauseTimeMachine = v } }))
+                .help("Backups switch back on when the lid opens")
+            Toggle("Run builds on efficiency cores", isOn: Binding(get: { engine.config.slowBuildsWhileClosed }, set: { v in engine.update { $0.slowBuildsWhileClosed = v } }))
+                .help("Experimental: the agent's compilers and build tools use less power but take several times longer")
         } header: {
             Text("Saving Power")
         } footer: {
@@ -262,6 +268,7 @@ struct SettingsView: View {
                 }
             }
         }
+        wakeSection
         Section {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
@@ -282,6 +289,44 @@ struct SettingsView: View {
             Text("Safety")
         } footer: {
             Text("Heat guard puts the Mac to sleep if it gets too hot with the lid shut.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: Waking up
+
+    @ViewBuilder private var wakeSection: some View {
+        Section {
+            Toggle("Wake at a set time", isOn: Binding(get: { engine.config.wakeAt != nil }, set: { on in
+                engine.setWake(at: on ? PanelFormatTime.next(hour: 7) : nil)
+            }))
+            .disabled(!engine.wakeReady)
+            if let at = engine.config.wakeAt {
+                DatePicker("Wake at", selection: Binding(get: { Date(timeIntervalSince1970: at) }, set: { d in
+                    engine.setWake(at: d > Date() ? d : Calendar.current.date(byAdding: .day, value: 1, to: d))
+                }), displayedComponents: [.hourAndMinute])
+                Picker("Then stay awake for", selection: Binding(get: { engine.config.wakeForMinutes }, set: { m in engine.update { $0.wakeForMinutes = m } })) {
+                    ForEach(Array(Set([15, 30, 60, 120, engine.config.wakeForMinutes])).sorted(), id: \.self) { Text(Engine.formatMinutes(Double($0))).tag($0) }
+                }
+            }
+            Picker("Check for a wake from your phone", selection: Binding(get: { engine.config.checkInMinutes }, set: { engine.setCheckIn(minutes: $0) })) {
+                Text("Never").tag(0)
+                Text("Every 15 min").tag(15)
+                Text("Every 30 min").tag(30)
+                Text("Every hour").tag(60)
+            }
+            .disabled(!engine.wakeReady)
+            if !engine.wakeReady {
+                HStack {
+                    Text("Needs Set Up to run once more after this update.").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Set Up") { engine.runSetup() }
+                }
+            }
+        } header: {
+            Text("Waking Up")
+        } footer: {
+            Text("While it's asleep with the lid shut, it wakes for about 25 seconds at each check, picks up a wake you sent from the phone, and sleeps again. Each check uses a little battery. A Mac that's shut down can't be woken.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -336,6 +381,49 @@ struct SettingsView: View {
     // MARK: AI Agents
 
     @ViewBuilder private var aiPage: some View {
+        Section {
+            if approveConfirm {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Approve everything?").font(.headline)
+                    Text("Claude Code and Codex will run any command, edit or delete any file, and use the network without asking you first. If an agent misunderstands a task, nothing stops it, and with the lid closed you won't see it happen. Turn it off here at any time; your old settings come back.")
+                        .font(.callout).foregroundStyle(.secondary)
+                    HStack {
+                        Button("Cancel") { approveConfirm = false }
+                        Spacer()
+                        Button("Turn On") {
+                            do { try AutoApprove.turnOn(); note = "On. New Claude Code and Codex sessions won't ask; running ones keep their mode." }
+                            catch { note = error.localizedDescription }
+                            approveOn = AutoApprove.isOn
+                            approveConfirm = false
+                        }
+                        .tint(.red).buttonStyle(.borderedProminent)
+                    }
+                }
+                .padding(.vertical, 4)
+            } else {
+                Toggle(isOn: Binding(get: { approveOn }, set: { on in
+                    if on { approveConfirm = true; return }
+                    do { try AutoApprove.turnOff(); note = "Off. Your previous Claude Code and Codex settings are back." }
+                    catch { note = error.localizedDescription }
+                    approveOn = AutoApprove.isOn
+                })) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Approve everything automatically")
+                        Text("Risky: agents never ask before acting").font(.caption).foregroundStyle(approveOn ? Color.red : Color.secondary)
+                    }
+                }
+            }
+            LabeledContent("macOS permission prompts") {
+                Button("Grant Full Disk Access…") {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!)
+                }
+            }
+        } header: {
+            Text("Approvals")
+        } footer: {
+            Text("macOS's own permission dialogs can't be clicked for you. Give Terminal (and Claude, Codex or your editor) Full Disk Access once, and they stop appearing.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
         Section {
             let server = AIConnect.serverCommand
             connectRow("Claude Code", connected[0]) { AIConnect.connectClaudeCode(server: server) }

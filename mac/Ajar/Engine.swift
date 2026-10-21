@@ -78,6 +78,16 @@ final class Engine {
     private(set) var lidClosed = Registry.lidClosed
     private(set) var battery: BatteryReading? = Battery.read()
     private(set) var holding = false
+    /// Set while a check-in wake keeps the Mac up for a few seconds to read the phone's commands.
+    private(set) var checkInUntil: Date?
+    private var checkInActivity: NSObjectProtocol?
+    private var powerEvents: PowerEvents?
+    /// The sudoers entry has the scheduled-wake commands (added after 1.0; Set Up again adds them).
+    private(set) var wakeReady = Setup.wakeReady
+    /// When the last wake was asked for, for the panel ("next check-in about 3:40").
+    private(set) var nextWakeAt: Date?
+    /// The phone listener reconnects at once on a check-in (wired by RemoteControl).
+    var onCheckIn: (() -> Void)?
     private(set) var holdReason: String?
     private(set) var blockedReason: String?
     private(set) var sessions: [AgentSession] = []
@@ -195,6 +205,10 @@ final class Engine {
             }
             NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.snoozed = false; self?.evaluate() }
+            }
+            // Also fires for dark wakes (lid shut, screen off), which is what a scheduled wake usually is.
+            powerEvents = PowerEvents { [weak self] in
+                MainActor.assumeIsolated { self?.poweredOn() }
             }
             configWatcher = ConfigWatcher { [weak self] in
                 MainActor.assumeIsolated { self?.reloadConfigFromDisk() }
@@ -890,6 +904,7 @@ final class Engine {
     private func reapplyClosedState(forcing: Preset? = nil) {
         let p = forcing ?? config.preset
         if p != .speed && config.lowPowerWhileClosed { setLowPower() } else { restorePowerMode() }
+        if config.pauseTimeMachine && p != .speed { TimeMachine.pause() } else { TimeMachine.resume() }
         applyClosedTargets(preset: p)
     }
 
@@ -929,6 +944,7 @@ final class Engine {
         holdDisplayAwake(false)
         restoreApps()
         restorePowerMode()
+        if !TimeMachine.resume() { warning = "Couldn't switch Time Machine's automatic backups back on. Run: sudo tmutil enable" }
     }
 
     // MARK: Low Power Mode
@@ -1045,6 +1061,14 @@ final class Engine {
                 add(pid, r, bundle: b)
             }
         }
+        if config.slowBuildsWhileClosed && !skip.contains("builds") {
+            // The agent's own build tools: inside its process tree, so the protection above skips them on purpose.
+            for pid in all where protectedPids.contains(pid) && pid != mine {
+                guard let path = Procs.path(pid), BuildTools.names.contains((path as NSString).lastPathComponent),
+                      let start = Procs.startTime(pid) else { continue }
+                out[pid] = ClosedTarget(rule: .slow, start: start, path: path, bundle: nil)
+            }
+        }
         guard p != .speed else { return out }
         if config.pauseSimulators && !found.simulatorsInUse && !skip.contains("simulators") {
             // With "shut them down instead", simulators are shut down on close (frozen ones can't shut down).
@@ -1110,6 +1134,7 @@ final class Engine {
         touched = Journal.undo(Journal.load())
         Journal.save(touched)
         restorePowerMode()
+        TimeMachine.resume()
         DisplayPower.restoreBuiltIn()
         Brightness.restore()
         if Registry.sleepDisabled && StateFiles.exists(StateFiles.hold) {
@@ -1186,6 +1211,10 @@ final class Engine {
         suspects.append(["id": "apps", "active": !busy.isEmpty, "title": busy.isEmpty ? "No other app is busy" : "Busy apps: " + busy.map { "\($0.name) \(String(format: "%.1f", $0.watts)) W (\(rule(for: $0.bundleID).rawValue))" }.joined(separator: ", "),
                          "setting": "preset", "value": ["longest": "max_battery", "balanced": "balanced", "speed": "full_speed"][config.preset.rawValue] ?? "", "suggested_value": "max_battery",
                          "per_app": "ajar rule <app> pause", "measured_saving_watts": r1(powerEffects["apps"])])
+        if Displays.externalConnected {
+            suspects.append(["id": "external_display", "active": true, "title": "An external display is connected",
+                             "why": "With a display attached the Mac keeps its graphics and display pipeline running, often several watts. Unplug it if nobody is using it."])
+        }
         suspects.append(["id": "low_power", "active": !config.lowPowerWhileClosed, "title": config.lowPowerWhileClosed ? "Low Power Mode turns on with the lid closed" : "Low Power Mode stays off with the lid closed",
                          "setting": "low_power", "value": config.lowPowerWhileClosed, "suggested_value": "on", "measured_saving_watts": r1(powerEffects["low_power"])])
         return [
@@ -1435,6 +1464,7 @@ final class Engine {
         }
         do { try Setup.install(); setupError = nil } catch { setupError = error.localizedDescription }
         setupReady = Setup.isReady
+        wakeReady = Setup.wakeReady
         evaluate()
     }
 
@@ -1453,7 +1483,71 @@ final class Engine {
     private func macWillSleep() {
         if receipt?.sleepRequestedAt != nil, receipt?.sleptAt == nil { receipt?.sleptAt = Date() }
         sleepRetries = 0
+        scheduleWake()
     }
+
+    // MARK: Waking while asleep (see Wake.swift)
+
+    /// Just before sleep: ask macOS to wake the Mac for the next check-in or the scheduled wake. Check-ins only
+    /// when the lid is shut: with it open, a wake turns the screen on.
+    private func scheduleWake() {
+        nextWakeAt = nil
+        guard !previewOnly, wakeReady else { return }
+        let untilWake = config.wakeAt.map { $0 - Date().timeIntervalSince1970 }
+        let checkIn = Registry.lidClosed ? config.checkInMinutes : 0
+        guard let secs = WakePlan.nextStep(untilWake: untilWake, checkInMinutes: checkIn) else { return }
+        if Shell.pmsetRoot(WakePlan.pmsetArgs(seconds: secs)) { nextWakeAt = Date().addingTimeInterval(TimeInterval(secs)) }
+        else { wakeReady = Setup.wakeReady }
+    }
+
+    /// Any wake, dark or full. With the lid open the person is here: nothing to do. With it shut and nothing
+    /// holding the Mac, this is a scheduled wake or a check-in.
+    private func poweredOn() {
+        guard !previewOnly, !holding, checkInUntil == nil, Registry.lidClosed else { return }
+        if let at = config.wakeAt, Date().timeIntervalSince1970 >= at - 90 {
+            let minutes = config.wakeForMinutes
+            update { $0.wakeAt = nil }
+            addHold(reason: "Scheduled wake", minutes: Double(minutes), pid: nil)
+            return
+        }
+        guard config.checkInMinutes > 0 || config.wakeAt != nil, setupReady else { return }
+        // Keep it up for a few seconds (the same switch a hold uses; the marker lets the watchdog undo it if
+        // Ajar dies), reconnect to the relay and read what the phone sent while it slept.
+        StateFiles.touch(StateFiles.hold)
+        guard Shell.pmsetRoot(["-a", "disablesleep", "1"]) else { StateFiles.remove(StateFiles.hold); return }
+        let until = Date().addingTimeInterval(WakePlan.checkInSeconds)
+        checkInUntil = until
+        checkInActivity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated], reason: "Checking for phone commands")
+        onCheckIn?()
+        DispatchQueue.main.asyncAfter(deadline: .now() + WakePlan.checkInSeconds + 0.5) { [weak self] in
+            MainActor.assumeIsolated { if self?.checkInUntil == until { self?.endCheckIn() } }
+        }
+    }
+
+    /// Nothing asked for the Mac during the check-in: sleep again (the next wake is asked for on the way down).
+    private func endCheckIn() {
+        checkInUntil = nil
+        if let a = checkInActivity { ProcessInfo.processInfo.endActivity(a); checkInActivity = nil }
+        guard !holding else { return }   // a phone command or an agent took over; the hold owns sleep now
+        if Shell.pmsetRoot(["-a", "disablesleep", "0"]) { StateFiles.remove(StateFiles.hold) } else { pendingRelease = true }
+        if Registry.lidClosed { Shell.pmsetRoot(["sleepnow"]) }
+    }
+
+    /// "Wake at 7:00": the next time that clock time comes round, staying awake for `minutes` (nil = off).
+    func setWake(at date: Date?, forMinutes minutes: Int? = nil) {
+        update { c in
+            c.wakeAt = date.map { $0.timeIntervalSince1970 }
+            if let m = minutes { c.wakeForMinutes = min(24 * 60, max(5, m)) }
+        }
+    }
+
+    func setCheckIn(minutes: Int) {
+        guard WakePlan.checkInChoices.contains(minutes) else { return }
+        update { $0.checkInMinutes = minutes }
+    }
+
+    /// Set Up again after an update that added commands to the sudoers entry.
+    func refreshWakeReady() { wakeReady = Setup.wakeReady }
 
     /// "Let it sleep now": ends holds and timers; agents don't keep the Mac awake until the lid next opens
     /// (or it wakes). With the lid open the Mac sleeps right away.
@@ -1499,6 +1593,10 @@ final class Engine {
         if let a = powerTestAborted, !powerTestRunning { d["powerTestAborted"] = a }
         d.merge(phoneFigures) { a, _ in a }
         if let u = onUntil { d["alwaysUntil"] = u.formatted(date: .omitted, time: .shortened) }
+        d["checkIn"] = config.checkInMinutes
+        if AutoApprove.isOn { d["autoApprove"] = true }
+        if let w = config.wakeAt { d["wakeAt"] = Date(timeIntervalSince1970: w).formatted(date: .omitted, time: .shortened) }
+        if !wakeReady { d["wakeNeedsSetup"] = true }
         if let b = battery {
             if !onBattery { d["battery"] = "\(b.percent)% · plugged in" + (closedHours.map { " (≈\(PanelFormat.hm($0)) on battery, lid closed)" } ?? "") }
             else { d["battery"] = "\(b.percent)%" + (closedHours.map { " · ≈\(PanelFormat.hm($0)) left with the lid closed" } ?? "") }

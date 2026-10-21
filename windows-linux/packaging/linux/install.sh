@@ -40,6 +40,30 @@ StartupNotify=false
 EOF
 "$bin/ajar" install || echo "Couldn't register the watchdog; run 'ajar install' later." >&2
 
+# Optional: let Ajar turn off turbo and switch on the kernel's power saving while the lid is closed. Needs root
+# once, for a fixed helper and a sudoers entry for exactly its commands (also used for waking from sleep).
+helper=/usr/local/libexec/ajar-power
+if [ -t 0 ] && command -v sudo >/dev/null 2>&1 && [ ! -x "$helper" ]; then
+  printf 'Save more battery with the lid closed (turbo off, kernel power saving) and allow waking from sleep for phone control? Asks for your password once. [y/N] '
+  read -r answer || answer=n
+  case "$answer" in
+    y|Y|yes)
+      user=$(id -un)
+      tmp=$(mktemp)
+      cmds="$helper apply, $helper restore, $helper wake off"
+      for n in 60 300 900 1800 3600; do cmds="$cmds, $helper wake $n"; done
+      printf '# Installed by Ajar: only these commands, nothing else.\n%s ALL=(root) NOPASSWD: %s\n' "$user" "$cmds" > "$tmp"
+      if sudo sh -c "install -d -m 755 /usr/local/libexec && install -m 755 -o root -g root '$here/ajar-power' '$helper' \
+          && install -m 440 -o root -g root '$tmp' /etc/sudoers.d/.ajar-power.new && visudo -cf /etc/sudoers.d/.ajar-power.new \
+          && mv -f /etc/sudoers.d/.ajar-power.new /etc/sudoers.d/ajar-power"; then
+        echo "Done. Ajar uses it while the lid is closed and puts everything back when it opens."
+      else
+        echo "Skipped: couldn't install the power helper." >&2
+      fi
+      rm -f "$tmp" ;;
+  esac
+fi
+
 case ":$PATH:" in *":$bin:"*) ;; *) echo "Add $bin to your PATH to use the 'ajar' command.";; esac
 setsid -f "$bin/ajar-app" >/dev/null 2>&1 < /dev/null
 echo "Ajar is installed and running in the tray. Turn on 'Open at login' in its Settings menu."

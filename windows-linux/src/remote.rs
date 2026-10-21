@@ -28,8 +28,14 @@ use std::time::Duration;
 pub const DEFAULT_SERVER: &str = "https://ntfy.sh";
 /// Commands the phone panel may send.
 /// `power_test` (the phone's Measure button) is accepted only to answer that it's Mac-only.
-pub const ALLOWED: &[&str] = &["panel", "mode", "release", "preset", "watch", "track", "sleep_now", "set", "schema", "power", "power_test"];
+pub const ALLOWED: &[&str] = &["panel", "mode", "release", "preset", "watch", "track", "sleep_now", "set", "schema", "power", "power_test", "wake", "wake_at"];
 const MAX_AGE: u64 = 300;
+
+/// A "wake" sent while the laptop slept waits at the relay until its next check-in; everything else is dropped
+/// after 5 minutes (the phone stopped waiting).
+fn max_age(cmd: &str) -> u64 {
+    if cmd == "wake" { crate::wake::WAKE_MAX_AGE } else { MAX_AGE }
+}
 const TOO_OLD: &str = "too old";
 const REPLAYED: &str = "already handled";
 
@@ -132,7 +138,11 @@ pub struct Guard {
 
 impl Guard {
     pub fn check(&mut self, t: u64, id: &str, now: u64) -> Result<(), &'static str> {
-        if t + MAX_AGE < now {
+        self.check_aged(t, id, now, MAX_AGE)
+    }
+
+    pub fn check_aged(&mut self, t: u64, id: &str, now: u64, max_age: u64) -> Result<(), &'static str> {
+        if t + max_age < now {
             return Err(TOO_OLD);
         }
         if id.is_empty() || id.len() > 64 {
@@ -141,7 +151,8 @@ impl Guard {
         if t > now + 60 {
             return Err("from the future (check the phone's clock)");
         }
-        while self.seen.front().is_some_and(|(_, at)| at + MAX_AGE + 60 < now) {
+        // Ids are remembered as long as any command can still be accepted, so none runs twice.
+        while self.seen.front().is_some_and(|(_, at)| at + crate::wake::WAKE_MAX_AGE + 60 < now) {
             self.seen.pop_front();
         }
         if self.seen.iter().any(|(s, _)| s == id) {
@@ -187,7 +198,7 @@ pub fn decode_command(key: &[u8; 32], topic: &str, message: &str, guard: &mut Gu
     let id = v["n"].as_str().unwrap_or("").to_string();
     let refuse = |error: &str| Rejected::Refused { re: id.clone(), error: error.to_string() };
     let t = v["t"].as_u64().ok_or_else(|| refuse("no timestamp"))?;
-    match guard.check(t, &id, now) {
+    match guard.check_aged(t, &id, now, max_age(v["cmd"].as_str().unwrap_or(""))) {
         Err(e @ (TOO_OLD | REPLAYED)) => return Err(Rejected::Silent(e.into())),
         Err(e) => return Err(refuse(e)),
         Ok(()) => {}

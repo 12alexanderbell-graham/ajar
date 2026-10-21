@@ -108,6 +108,7 @@ enum Watchdog {
         if StateFiles.exists(StateFiles.hold) {
             if !Registry.sleepDisabled || Shell.pmsetRoot(["-a", "disablesleep", "0"]) { StateFiles.remove(StateFiles.hold) } else { ok = false }
         }
+        if !TimeMachine.resume() { ok = false }
         return ok ? "restored" : "partly restored"
     }
 
@@ -116,6 +117,8 @@ enum Watchdog {
         var out = Journal.load().map { "\($0.paused ? "paused" : "slowed") \(($0.path as NSString).lastPathComponent) (pid \($0.pid))" }
         if StateFiles.exists(StateFiles.hold) || Registry.sleepDisabled { out.append(Registry.sleepDisabled ? "sleep is switched off (pmset disablesleep 1)" : "hold marker present") }
         if StateFiles.exists(StateFiles.modeRestore) { out.append("Low Power Mode changed") }
+        if TimeMachine.paused { out.append("Time Machine automatic backups paused") }
+        if AutoApprove.isOn { out.append("Approve everything is on: Claude Code and Codex run without asking (turn off in Settings › AI)") }
         if StateFiles.exists(Brightness.restoreFile) { out.append("screen dimmed to zero") }
         if StateFiles.exists(DisplayPower.marker) { out.append("built-in screen switched off") }
         return out

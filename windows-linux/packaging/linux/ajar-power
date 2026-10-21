@@ -1,0 +1,63 @@
+#!/bin/sh
+# Ajar's power helper, run as root through sudo with a fixed set of arguments (see /etc/sudoers.d/ajar-power).
+# apply: while the lid is closed, turn off turbo and switch on the kernel's power saving that powertop recommends
+#        (except for network devices, which the agent needs). The old values are saved first.
+# restore: put every saved value back. Also reset by a reboot.
+# wake N|off: set or clear the RTC wake alarm (fixed lengths only), for scheduled wakes and phone check-ins.
+set -u
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+state=/run/ajar-power.state
+
+save() {   # path new-value: remember the current value, then write the new one
+  [ -w "$1" ] || return 0
+  cur=$(cat "$1" 2>/dev/null) || return 0
+  [ "$cur" = "$2" ] && return 0
+  printf '%s %s\n' "$1" "$cur" >> "$state.new"
+  printf '%s' "$2" > "$1" 2>/dev/null || true
+}
+
+case "${1:-}" in
+apply)
+  [ -e "$state" ] && exit 0   # already applied
+  umask 077
+  : > "$state.new"
+  save /sys/devices/system/cpu/intel_pstate/no_turbo 1
+  save /sys/devices/system/cpu/cpufreq/boost 0
+  save /proc/sys/kernel/nmi_watchdog 0
+  save /sys/module/snd_hda_intel/parameters/power_save 1
+  for dev in /sys/bus/pci/devices/*; do
+    case "$(cat "$dev/class" 2>/dev/null)" in 0x02*) continue ;; esac   # network: leave it alone
+    save "$dev/power/control" auto
+  done
+  if command -v iw >/dev/null 2>&1; then
+    for i in $(iw dev 2>/dev/null | awk '$1 == "Interface" { print $2 }'); do
+      if iw dev "$i" get power_save 2>/dev/null | grep -q ': off'; then
+        echo "iw $i" >> "$state.new"
+        iw dev "$i" set power_save on 2>/dev/null || true
+      fi
+    done
+  fi
+  mv "$state.new" "$state"
+  ;;
+restore)
+  [ -e "$state" ] || exit 0
+  while read -r a b; do
+    case "$a" in
+      iw) iw dev "$b" set power_save off 2>/dev/null || true ;;
+      /sys/*|/proc/sys/*) printf '%s' "$b" > "$a" 2>/dev/null || true ;;
+    esac
+  done < "$state"
+  rm -f "$state"
+  ;;
+wake)
+  # Wake from sleep N seconds from now (fixed lengths only), or cancel. Uses the RTC alarm.
+  alarm=/sys/class/rtc/rtc0/wakealarm
+  [ -w "$alarm" ] || exit 1
+  case "${2:-}" in
+    60|300|900|1800|3600) echo 0 > "$alarm" && echo "+$2" > "$alarm" ;;
+    off) echo 0 > "$alarm" ;;
+    *) exit 2 ;;
+  esac
+  ;;
+*) echo "usage: ajar-power apply|restore|wake 60|300|900|1800|3600|off" >&2; exit 2 ;;
+esac

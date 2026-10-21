@@ -50,6 +50,13 @@ enum SettingsSchema {
         toggle("screen_off", "While the lid is closed", "Switch the built-in screen fully off while the lid is closed without sleeping it, so there is no lock screen. Experimental: if macOS refuses, or locks the Mac anyway (some Macs do), Ajar switches back to the dark screen by itself and turns this off. Ignored when lock_on_close is on.", \.screenOffNoLock),
         toggle("shut_down_simulators", "While the lid is closed", "Shut booted simulators down when the lid closes instead of pausing them. Frees all their memory and power; they don't come back by themselves. Skipped while tests run.", \.shutDownSimulators),
         toggle("pause_background_audio", "While the lid is closed", "Freeze background processes that hold the speakers open (keeps the audio hardware powered even when silent). Music and call apps are never touched.", \.pauseBackgroundAudio),
+        SettingSpec(key: "check_in_minutes", type: "enum", allowed: ["0", "15", "30", "60"], category: "While asleep",
+                    description: "With the lid shut and the Mac asleep, wake it every this many minutes for about 25 seconds to pick up a wake sent from the phone, then sleep again. 0 = off. Costs a little battery per check-in; a fully shut-down Mac can't be woken.",
+                    get: { $0.checkInMinutes }, set: { c, v in
+                        guard let n = int(v), WakePlan.checkInChoices.contains(n) else { return "0, 15, 30 or 60" }
+                        c.checkInMinutes = n; return nil }),
+        toggle("slow_builds", "While the lid is closed", "Experimental: run the agent's build tools (compilers, linkers, cargo, xcodebuild, make) on the efficiency cores. Builds take several times longer; it saves power per second but not always energy per build.", \.slowBuildsWhileClosed),
+        toggle("pause_time_machine", "While the lid is closed", "Pause Time Machine's automatic backups while the lid is closed (every file an agent changes queues backup work); they switch back on when the lid opens.", \.pauseTimeMachine),
         toggle("low_power", "While the lid is closed", "Turn on Low Power Mode while the lid is closed; your setting comes back when it opens.", \.lowPowerWhileClosed),
         toggle("lock_on_close", "While the lid is closed", "on: the screen turns fully off (the biggest single saving, but macOS asks for your password when you open the lid). off: the screen stays on at zero brightness so there is no lock screen.",
                note: "Ask the person before turning this on: it changes what they see when they open the lid.", \.lockOnClose),

@@ -158,4 +158,11 @@ pub struct Restore {
     pub lid_action: Option<(u32, u32)>,
     /// Windows: the power plan the lid action was changed in (restored in that plan even if the active one changed).
     pub lid_scheme: Option<String>,
+    /// Windows (Modern Standby): the sleep timeouts before Ajar set them to "never" for a hold:
+    /// (plan GUID, [sleep AC, sleep DC, unattended AC, unattended DC]) in seconds.
+    pub sleep_idle: Option<(String, [u32; 4])>,
+    /// Windows: processor boost mode on battery (plan GUID, DC value) before Ajar turned turbo off while closed.
+    pub boost_dc: Option<(String, u32)>,
+    /// Linux: Ajar's root helper applied turbo-off and kernel power saving (its own file holds the old values).
+    pub linux_tuned: bool,
 }

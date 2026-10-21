@@ -45,7 +45,10 @@ struct RemoteSettings: Codable, Equatable {
 }
 
 enum RemoteCrypto {
-    static let allowed: Set<String> = ["panel", "mode", "release", "preset", "watch", "track", "sleep_now", "set", "power", "power_test", "schema"]
+    static let allowed: Set<String> = ["panel", "mode", "release", "preset", "watch", "track", "sleep_now", "set", "power", "power_test", "schema", "wake", "wake_at"]
+    /// Commands still worth running when they arrive late: a "wake" sent while the Mac slept waits at the relay
+    /// until the next check-in. Everything else is dropped after 5 minutes (the phone stopped waiting).
+    static func maxAge(_ cmd: String) -> TimeInterval { cmd == "wake" ? WakePlan.wakeMaxAge : 300 }
 
     /// ntfy.sh turns messages over 4096 bytes into file attachments, which the phone page can't read as a reply.
     /// A sealed message is about 4/3 of the plaintext plus 38 bytes, so replies stay under this many bytes.
@@ -120,11 +123,12 @@ struct RemoteGuard {
     private var seen: [(String, Date)] = []
     private var recent: [Date] = []
 
-    mutating func check(t: Double, id: String, now: Date = Date()) -> String? {
+    mutating func check(t: Double, id: String, maxAge: TimeInterval = 300, now: Date = Date()) -> String? {
         guard !id.isEmpty, id.count <= 64 else { return "bad id" }
         let n = now.timeIntervalSince1970
-        guard t + 300 >= n, t <= n + 60 else { return "too old or from the future (check the phone's clock)" }
-        seen.removeAll { now.timeIntervalSince($0.1) > 360 }
+        guard t + maxAge >= n, t <= n + 60 else { return "too old or from the future (check the phone's clock)" }
+        // Ids are remembered as long as any command can still be accepted, so none runs twice.
+        seen.removeAll { now.timeIntervalSince($0.1) > WakePlan.wakeMaxAge + 60 }
         guard !seen.contains(where: { $0.0 == id }) else { return "already handled" }
         recent.removeAll { now.timeIntervalSince($0) > 60 }
         guard recent.count < 30 else { return "too many commands, wait a minute" }
@@ -149,6 +153,8 @@ final class RemoteControl {
         self.engine = engine
         self.run = run
         if settings.enabled { start() }
+        // A check-in wake (lid shut, screen off): reconnect at once to read what the phone sent while asleep.
+        engine.onCheckIn = { [weak self] in if self?.enabled == true { self?.start() } }
         // After sleep or a network change the open connection is usually dead but only noticed after the idle
         // timeout; reconnect at once instead.
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
@@ -227,9 +233,10 @@ final class RemoteControl {
                         // Reached the relay more than 5 minutes ago (by the relay's clock, not the phone's): the
                         // phone stopped waiting long ago. No reply: after a long sleep there can be a backlog of
                         // these, and every reply counts against the relay's limits.
-                        if let at = (ev["time"] as? NSNumber)?.doubleValue, at + 300 < Date().timeIntervalSince1970 { continue }
+                        let maxAge = RemoteCrypto.maxAge(cmd)
+                        if let at = (ev["time"] as? NSNumber)?.doubleValue, at + maxAge < Date().timeIntervalSince1970 { continue }
                         guard let me = self else { return }
-                        let problem = me.guardian.check(t: sent, id: n)
+                        let problem = me.guardian.check(t: sent, id: n, maxAge: maxAge)
                             ?? (RemoteCrypto.allowed.contains(cmd) ? nil : "\(cmd) isn't allowed from the phone")
                         var reply: [String: Any] = problem.map { ["ok": false, "error": $0] } ?? [:]
                         if problem == nil, let me = self {

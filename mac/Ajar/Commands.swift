@@ -137,6 +137,22 @@ final class CommandCenter {
         case "release":
             ok(["released": engine.releaseHold(str("id"))])
 
+        case "wake":
+            // From the phone while the Mac slept (picked up at the next check-in), or any time: stay awake a while.
+            guard engine.setupReady else { return fail("Ajar needs its one-time setup first. Open Ajar from the menu bar and click Continue.") }
+            let minutes = num("minutes", max: 24 * 60).map { max(5, $0) } ?? 60
+            let h = engine.addHold(reason: String((str("reason") ?? "Woken from your phone").prefix(80)), minutes: minutes, pid: nil)
+            ok(["hold": holdDict(h)])
+
+        case "wake_at":
+            // "07:00" (the next time the clock shows it), "off", or Unix seconds; optional minutes to stay awake.
+            guard let t = str("time") ?? (a["time"] as? NSNumber).map({ $0.stringValue }) else { return fail("time: HH:MM, off, or Unix seconds") }
+            if ["off", "none", "cancel"].contains(t.lowercased()) { engine.setWake(at: nil); return ok(["wakeAt": NSNull()]) }
+            guard engine.wakeReady else { return fail("Scheduled wakes need Set Up to run again (Settings › About › Set Up), once, after this update.") }
+            guard let date = Self.parseWakeTime(t) else { return fail("time: HH:MM (24-hour), off, or Unix seconds") }
+            engine.setWake(at: date, forMinutes: num("minutes", max: 24 * 60).map { Int($0) })
+            ok(["wakeAt": date.formatted(date: .abbreviated, time: .shortened)])
+
         case "preset":
             guard let p = str("preset").flatMap(Self.parsePreset) else { return fail("preset must be max_battery, balanced or full_speed") }
             engine.preset = p
@@ -336,6 +352,20 @@ final class CommandCenter {
     }
 
     // MARK: Parsing
+
+    /// "7:00" / "07:00" / "19:30" → the next time the clock shows it; or Unix seconds within the next week.
+    static func parseWakeTime(_ t: String) -> Date? {
+        let s = t.trimmingCharacters(in: .whitespaces)
+        if let secs = Double(s), secs.isFinite {
+            let d = Date(timeIntervalSince1970: secs)
+            return d > Date().addingTimeInterval(60) && d < Date().addingTimeInterval(7 * 86400) ? d : nil
+        }
+        let parts = s.split(separator: ":").compactMap { Int($0) }
+        guard parts.count == 2, (0...23).contains(parts[0]), (0...59).contains(parts[1]) else { return nil }
+        let cal = Calendar.current
+        guard let today = cal.date(bySettingHour: parts[0], minute: parts[1], second: 0, of: Date()) else { return nil }
+        return today > Date().addingTimeInterval(60) ? today : cal.date(byAdding: .day, value: 1, to: today)
+    }
 
     static func parseMode(_ s: String) -> Mode? {
         switch s.lowercased().replacingOccurrences(of: " ", with: "_") {

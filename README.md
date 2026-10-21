@@ -24,7 +24,9 @@ With the lid shut it pauses apps you aren't using and turns on Low Power Mode. O
 - **Saves power with the lid shut.** Pauses other apps, simulators and silent audio, turns on Low Power Mode. Opening the lid puts it all back.
 - **Measures it.** `ajar power test` reads whole-laptop power from the battery controller.
 - **Agents can use it.** MCP server and CLI, so agents keep the laptop awake for long jobs.
-- **Phone page.** Check on it from anywhere, end-to-end encrypted over ntfy.sh.
+- **Phone page.** Check on it from anywhere, end-to-end encrypted over ntfy.sh. While it sleeps with the lid shut it can check in every 15–60 minutes, so a Wake from the phone gets through.
+- **Wakes on a schedule.** `ajar wake-at 07:00` wakes it from sleep and keeps it awake a while.
+- **Approve everything (optional, risky).** One switch sets Claude Code and Codex to run without asking; turning it off puts your settings back. Only you can turn it on, in Ajar itself.
 - **Battery and heat limits.** Sleeps at your battery limit or if it gets too hot. Agents can't loosen these.
 
 ## Is it safe to give it sudo?

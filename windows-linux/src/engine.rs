@@ -131,6 +131,10 @@ pub struct Engine<P: Platform> {
     last_tick_at: u64,
     /// How many wakes from sleep (gaps in the ticks) this run has seen; the app reconnects phone control on one.
     wakes: u64,
+    /// A check-in wake is keeping the machine up until then (Unix seconds) to read the phone's commands.
+    checkin_until: Option<u64>,
+    /// When the OS wake timer was last armed (None = not armed).
+    wake_armed_at: Option<u64>,
     sleep_retries: u32,
     pub hold_warning: Option<String>,
     pub watchdog_warning: Option<String>,
@@ -201,6 +205,8 @@ impl<P: Platform> Engine<P> {
             last_seen: None,
             last_tick_at: 0,
             wakes: 0,
+            checkin_until: None,
+            wake_armed_at: None,
             sleep_retries: 0,
             hold_warning: None,
             watchdog_warning: None,
@@ -406,6 +412,10 @@ impl<P: Platform> Engine<P> {
                 self.lid_changed(closed, now);
             }
         }
+        if gap {
+            self.resumed(now);
+        }
+        self.check_in_tick(now);
         if let Some(p) = procs_now {
             self.procs = p;
             self.watcher.sample(&self.procs, &self.cfg, now);
@@ -453,7 +463,10 @@ impl<P: Platform> Engine<P> {
         if !self.touched.is_empty() && !(self.lid_closed && self.holding) {
             self.restore_apps();
         }
-        if self.ticks % 15 == 11 && !(self.lid_closed && self.holding) && (self.restore.power_profile.is_some() || self.restore.power_overlay.is_some()) {
+        if self.ticks % 15 == 11
+            && !(self.lid_closed && self.holding)
+            && (self.restore.power_profile.is_some() || self.restore.power_overlay.is_some() || self.restore.boost_dc.is_some() || self.restore.linux_tuned)
+        {
             self.platform.set_low_power(false, &mut self.restore);
             self.save_restore();
         }
@@ -464,6 +477,96 @@ impl<P: Platform> Engine<P> {
         }
         state::heartbeat(&self.path("alive"));
         self.evaluate(now);
+        self.keep_wake_armed(now);
+    }
+
+    // MARK: waking while asleep (see wake.rs)
+
+    /// Keeps one OS wake timer pending while it could be needed, re-armed about once a minute so it's due at most
+    /// a step after the machine falls asleep. Check-ins only with the lid shut (with it open a wake may light the
+    /// screen); a scheduled wake always.
+    fn keep_wake_armed(&mut self, now: u64) {
+        let check_in = if self.lid_closed { self.cfg.check_in_minutes } else { 0 };
+        let until = self.cfg.wake_at.map(|at| at as i64 - now as i64);
+        let step = if self.holding || self.checkin_until.is_some() { None } else { crate::wake::next_step(until, check_in) };
+        match step {
+            Some(s) if self.wake_armed_at.is_none_or(|t| now.saturating_sub(t) >= 50) => {
+                self.wake_armed_at = self.platform.arm_wake(s).then_some(now);
+            }
+            Some(_) => {}
+            None if self.wake_armed_at.is_some() => {
+                self.platform.disarm_wake();
+                self.wake_armed_at = None;
+            }
+            None => {}
+        }
+    }
+
+    /// Asks for the wake right before Ajar itself puts the machine to sleep (the minute timer may be stale).
+    fn arm_before_sleep(&mut self, now: u64) {
+        self.wake_armed_at = None;
+        self.keep_wake_armed(now);
+    }
+
+    /// Back from sleep. With the lid open someone is there: nothing to do. With it shut and nothing holding the
+    /// machine, this was a scheduled wake or a check-in.
+    fn resumed(&mut self, now: u64) {
+        // Whatever woke it, a leftover timer has no purpose now; the next one is armed from here.
+        if self.wake_armed_at.take().is_some() {
+            self.platform.disarm_wake();
+        }
+        if !self.lid_closed || self.holding || self.checkin_until.is_some() {
+            return;
+        }
+        if let Some(at) = self.cfg.wake_at {
+            if now + 90 >= at {
+                let minutes = self.cfg.wake_for_minutes;
+                self.update(|c| c.wake_at = None);
+                let _ = self.add_hold("Scheduled wake", Some(minutes as f64), None);
+                return;
+            }
+        }
+        if self.cfg.check_in_minutes == 0 && self.cfg.wake_at.is_none() {
+            return;
+        }
+        // Stay up a few seconds (journaled like a hold, so the watchdog can undo it) while the app reconnects
+        // to the relay and reads what the phone sent while the machine slept.
+        if self.platform.begin_hold("Checking for phone commands", &mut self.restore).is_ok() {
+            self.save_restore();
+            state::touch(&self.path("hold"));
+            self.checkin_until = Some(now + crate::wake::CHECK_IN_SECS);
+        }
+    }
+
+    fn check_in_tick(&mut self, now: u64) {
+        let Some(until) = self.checkin_until else { return };
+        if self.holding {
+            self.checkin_until = None; // a phone command or an agent took over; the hold owns sleep now
+            return;
+        }
+        if now < until {
+            return;
+        }
+        self.checkin_until = None;
+        match self.platform.end_hold(&mut self.restore) {
+            Ok(()) => state::remove(&self.path("hold")),
+            Err(_) => self.pending_release = true,
+        }
+        self.save_restore();
+        if self.lid_closed {
+            self.arm_before_sleep(now);
+            self.platform.sleep_now();
+        }
+    }
+
+    /// "Wake at 7:00" (None = off), staying awake `minutes` after.
+    pub fn set_wake(&mut self, at: Option<u64>, minutes: Option<u32>) {
+        self.update(|c| {
+            c.wake_at = at;
+            if let Some(m) = minutes {
+                c.wake_for_minutes = m.clamp(5, 24 * 60);
+            }
+        });
     }
 
     fn learn_draw(&mut self, b: &Battery) {
@@ -706,6 +809,7 @@ impl<P: Platform> Engine<P> {
             // The lid is already shut, so the OS won't sleep on its own (it only sleeps on the close edge),
             // unless the person's own setting is to keep running with the lid shut.
             if self.platform.sleep_after_hold() {
+                self.arm_before_sleep(now);
                 self.platform.sleep_now();
             } else if let Some(r) = &mut self.receipt {
                 r.sleep_requested_at = None;
@@ -719,11 +823,16 @@ impl<P: Platform> Engine<P> {
 
     fn lid_changed(&mut self, closed: bool, now: u64) {
         self.lid_closed = closed;
+        if closed && !self.holding {
+            // The OS may sleep any moment now: have the check-in wake pending before it does.
+            self.arm_before_sleep(now);
+        }
         if closed {
             if self.holding {
                 self.enter_closed(now);
             } else if !self.platform.sleeps_on_close_itself() {
                 // The desktop leaves lid-close sleep to Ajar (see Platform::sleeps_on_close_itself).
+                self.arm_before_sleep(now);
                 self.platform.sleep_now();
             }
         } else {
@@ -753,6 +862,7 @@ impl<P: Platform> Engine<P> {
             end_percent: None,
             agent: self.holds.last().map(|h| h.reason.clone()).or_else(|| self.active_agent(now).map(|s| s.kind.name.clone())),
         });
+        self.platform.screen_off(true);
         self.reapply_closed_state(None);
     }
 
@@ -784,6 +894,9 @@ impl<P: Platform> Engine<P> {
     }
 
     fn restore_closed_state(&mut self) {
+        if !self.lid_closed {
+            self.platform.screen_off(false);
+        }
         self.restore_apps();
         self.platform.set_low_power(false, &mut self.restore);
         self.save_restore();
@@ -1113,6 +1226,8 @@ impl<P: Platform> Engine<P> {
             "watch": self.watch_candidates().into_iter().map(|(id, name, on)| json!({ "id": id, "name": name, "on": on })).collect::<Vec<_>>(),
             "warnings": warnings,
             "host": hostname(),
+            "checkIn": self.cfg.check_in_minutes,
+            "wakeAt": self.cfg.wake_at.map(crate::format::clock),
         })
     }
 
@@ -1311,6 +1426,35 @@ impl<P: Platform> Engine<P> {
                     Err(e) => fail(e),
                 }
             }
+            "wake" => {
+                // From the phone while asleep (picked up at the next check-in), or any time: stay awake a while.
+                let minutes = num("minutes", 24.0 * 60.0).map(|m| m.max(5.0)).unwrap_or(60.0);
+                let reason = s("reason").unwrap_or_else(|| "Woken from your phone".into());
+                match self.add_hold(&reason, Some(minutes), None) {
+                    Ok(h) => {
+                        let mut r = self.ok();
+                        r["hold"] = serde_json::to_value(&h).unwrap_or(Value::Null);
+                        r
+                    }
+                    Err(e) => fail(e),
+                }
+            }
+            "wake_at" => {
+                // "07:00" (the next time the clock shows it), "off", or Unix seconds; optional minutes awake after.
+                let t = s("time").or_else(|| a.get("time").and_then(Value::as_u64).map(|n| n.to_string())).unwrap_or_default();
+                if ["off", "none", "cancel"].contains(&t.to_lowercase().as_str()) {
+                    self.set_wake(None, None);
+                    let mut r = self.ok();
+                    r["wakeAt"] = Value::Null;
+                    return r;
+                }
+                let now = crate::now();
+                let Some(at) = crate::format::parse_wake_time(&t, now) else { return fail("time: HH:MM (24-hour), off, or Unix seconds".into()) };
+                self.set_wake(Some(at), num("minutes", 24.0 * 60.0).map(|m| m as u32));
+                let mut r = self.ok();
+                r["wakeAt"] = json!(crate::format::clock(at));
+                r
+            }
             "release" => {
                 let n = self.release_hold(s("id").as_deref());
                 let mut r = self.ok();
@@ -1452,6 +1596,10 @@ impl<P: Platform> Engine<P> {
                     "only_on_power" => match v_bool { Some(b) => c.only_on_power = b, None => bad = Some("on/off") },
                     "claude_app" => match v_bool { Some(b) => c.count_claude_app = b, None => bad = Some("on/off") },
                     "notify_done" => match v_bool { Some(b) => c.notify_done = b, None => bad = Some("on/off") },
+                    "check_in_minutes" => match v_num.map(|n| n as u32).filter(|n| crate::wake::CHECK_IN_CHOICES.contains(n)) {
+                        Some(n) => c.check_in_minutes = n,
+                        None => bad = Some("0, 15, 30 or 60"),
+                    },
                     "ntfy_topic" => match v_str { Some(t) if t.is_empty() || crate::config::valid_topic(&t) => c.ntfy_topic = t, _ => bad = Some("letters, numbers, - and _ only (or empty to turn off)") },
                     _ => bad = Some("a known key"),
                 });

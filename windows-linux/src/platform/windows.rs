@@ -112,6 +112,76 @@ fn write_lid_action(scheme: &GUID, ac: u32, dc: u32) -> bool {
     }
 }
 
+// Sleep after (STANDBYIDLE) and the hidden "System unattended sleep timeout" (UNATTENDSLEEP), both in seconds.
+const SLEEP_SUBGROUP: GUID = GUID::from_u128(0x238c9fa8_0aad_41ed_83f4_97be242c8f20);
+const STANDBY_TIMEOUT: GUID = GUID::from_u128(0x29f6c1db_86da_48c5_9fdb_f2b67b1f44da);
+const UNATTEND_SLEEP_TIMEOUT: GUID = GUID::from_u128(0x7bc4a2f9_d8fc_4469_b07b_33eb785aaca0);
+
+// Processor performance boost mode (0 = disabled), under the processor power management subgroup.
+const PROCESSOR_SUBGROUP: GUID = GUID::from_u128(0x54533251_82be_4824_96c1_47b60b740d00);
+const PERF_BOOST_MODE: GUID = GUID::from_u128(0xbe337238_0d82_4146_a960_4f3749d470c7);
+
+fn read_boost_dc(scheme: &GUID) -> Option<u32> {
+    let mut v = 0u32;
+    (unsafe { PowerReadDCValueIndex(std::ptr::null_mut(), scheme, &PROCESSOR_SUBGROUP, &PERF_BOOST_MODE, &mut v) } == 0).then_some(v)
+}
+
+fn write_boost_dc(scheme: &GUID, v: u32) -> bool {
+    unsafe {
+        let ok = PowerWriteDCValueIndex(std::ptr::null_mut(), scheme, &PROCESSOR_SUBGROUP, &PERF_BOOST_MODE, v) == 0;
+        if let Some(active) = active_scheme() {
+            if same(&active, scheme) {
+                PowerSetActiveScheme(std::ptr::null_mut(), scheme);
+            }
+        }
+        ok
+    }
+}
+
+/// [sleep AC, sleep DC, unattended AC, unattended DC]
+fn read_sleep_idle(scheme: &GUID) -> Option<[u32; 4]> {
+    unsafe {
+        let mut v = [0u32; 4];
+        let r = [
+            PowerReadACValueIndex(std::ptr::null_mut(), scheme, &SLEEP_SUBGROUP, &STANDBY_TIMEOUT, &mut v[0]),
+            PowerReadDCValueIndex(std::ptr::null_mut(), scheme, &SLEEP_SUBGROUP, &STANDBY_TIMEOUT, &mut v[1]),
+            PowerReadACValueIndex(std::ptr::null_mut(), scheme, &SLEEP_SUBGROUP, &UNATTEND_SLEEP_TIMEOUT, &mut v[2]),
+            PowerReadDCValueIndex(std::ptr::null_mut(), scheme, &SLEEP_SUBGROUP, &UNATTEND_SLEEP_TIMEOUT, &mut v[3]),
+        ];
+        r.iter().all(|&e| e == 0).then_some(v)
+    }
+}
+
+fn write_sleep_idle(scheme: &GUID, v: [u32; 4]) -> bool {
+    unsafe {
+        let r = [
+            PowerWriteACValueIndex(std::ptr::null_mut(), scheme, &SLEEP_SUBGROUP, &STANDBY_TIMEOUT, v[0]),
+            PowerWriteDCValueIndex(std::ptr::null_mut(), scheme, &SLEEP_SUBGROUP, &STANDBY_TIMEOUT, v[1]),
+            PowerWriteACValueIndex(std::ptr::null_mut(), scheme, &SLEEP_SUBGROUP, &UNATTEND_SLEEP_TIMEOUT, v[2]),
+            PowerWriteDCValueIndex(std::ptr::null_mut(), scheme, &SLEEP_SUBGROUP, &UNATTEND_SLEEP_TIMEOUT, v[3]),
+        ];
+        if let Some(active) = active_scheme() {
+            if same(&active, scheme) {
+                PowerSetActiveScheme(std::ptr::null_mut(), scheme);
+            }
+        }
+        r.iter().all(|&e| e == 0)
+    }
+}
+
+/// Puts the sleep timeouts back if they're still Ajar's "never" (someone may have set them deliberately since).
+fn put_back_sleep_idle(r: &mut Restore) -> bool {
+    let Some((s, prev)) = r.sleep_idle.clone() else { return true };
+    let done = match parse_guid(&s) {
+        Some(g) => read_sleep_idle(&g).is_some_and(|cur| cur != [0; 4]) || write_sleep_idle(&g, prev),
+        None => true,
+    };
+    if done {
+        r.sleep_idle = None;
+    }
+    done
+}
+
 type GetOverlay = unsafe extern "system" fn(*mut GUID) -> u32;
 type SetOverlay = unsafe extern "system" fn(GUID) -> u32;
 
@@ -194,6 +264,12 @@ pub fn restore_lid_from_journal() {
         None => true,
     };
     r.lid_more.retain(|(s, ac, dc)| !put_back(s, *ac, *dc));
+    put_back_sleep_idle(&mut r);
+    if let Some((s, prev)) = r.boost_dc.clone() {
+        if parse_guid(&s).is_none_or(|g| read_boost_dc(&g).is_some_and(|cur| cur != 0) || write_boost_dc(&g, prev)) {
+            r.boost_dc = None;
+        }
+    }
     match (r.lid_action, r.lid_scheme.as_deref()) {
         (Some((ac, dc)), Some(s)) if !put_back(s, ac, dc) => {}
         _ => {
@@ -313,6 +389,8 @@ pub struct Win {
     reason: Vec<u16>,
     caps: Caps,
     heat: super::Sustained<HEAT_SAMPLES>,
+    /// A waitable timer that can wake the machine from sleep (created on first use).
+    wake_timer: HANDLE,
 }
 
 /// Clock-limit readings in a row (one per tick, about 2 s apart) that must agree before it counts as heat.
@@ -321,7 +399,7 @@ const HEAT_SAMPLES: usize = 5;
 impl Win {
     pub fn new() -> Win {
         start_power_window();
-        Win { user_do_nothing: false, request: std::ptr::null_mut(), exec_state: false, reason: vec![], caps: caps(), heat: Default::default() }
+        Win { user_do_nothing: false, request: std::ptr::null_mut(), exec_state: false, reason: vec![], caps: caps(), heat: Default::default(), wake_timer: std::ptr::null_mut() }
     }
 
     fn release_request(&mut self) {
@@ -558,11 +636,31 @@ impl Platform for Win {
                 return Err(e);
             }
         }
+        // Modern Standby on battery ends keep-awake requests 5 minutes after the sleep timeout runs out (and the
+        // unattended timeout sends a screen-off machine back to sleep), so a long lid-closed session would stop.
+        // Set both to "never" for the hold, journaled first so the watchdog can put them back after a crash.
+        if self.caps.modern_standby && restore.sleep_idle.is_none() {
+            if let Some(scheme) = active_scheme() {
+                if let Some(cur) = read_sleep_idle(&scheme) {
+                    if cur != [0; 4] {
+                        restore.sleep_idle = Some((guid_string(&scheme), cur));
+                        if !crate::state::save_json(&crate::state::file("restore.json"), restore) {
+                            restore.sleep_idle = None; // no record, no change: the hold still works until the timeout
+                        } else if !write_sleep_idle(&scheme, [0; 4]) {
+                            write_sleep_idle(&scheme, cur);
+                            restore.sleep_idle = None;
+                            crate::state::save_json(&crate::state::file("restore.json"), restore);
+                        }
+                    }
+                }
+            }
+        }
         Ok(())
     }
 
     fn end_hold(&mut self, restore: &mut Restore) -> Result<(), String> {
         self.release_request();
+        let idle_back = put_back_sleep_idle(restore);
         let mut failed = false;
         restore.lid_more.retain(|(s, ac, dc)| {
             let Some(g) = parse_guid(s) else { return false };
@@ -583,6 +681,9 @@ impl Platform for Win {
             }
             restore.lid_action = None;
             restore.lid_scheme = None;
+        }
+        if !idle_back {
+            return Err("Couldn't put back when Windows goes to sleep".into());
         }
         Ok(())
     }
@@ -606,6 +707,25 @@ impl Platform for Win {
     }
 
     fn set_low_power(&mut self, on: bool, restore: &mut Restore) -> bool {
+        // Turbo off on battery while closed: bursts (builds, tests) are where the watts go once the screen is off.
+        // Only the battery (DC) value changes, journaled; put back only if it's still Ajar's 0.
+        if on {
+            if restore.boost_dc.is_none() {
+                if let Some(scheme) = active_scheme() {
+                    if let Some(cur) = read_boost_dc(&scheme).filter(|&v| v != 0) {
+                        restore.boost_dc = Some((guid_string(&scheme), cur));
+                        if !crate::state::save_json(&crate::state::file("restore.json"), restore) || !write_boost_dc(&scheme, 0) {
+                            restore.boost_dc = None;
+                        }
+                    }
+                }
+            }
+        } else if let Some((s, prev)) = restore.boost_dc.clone() {
+            let done = parse_guid(&s).is_none_or(|g| read_boost_dc(&g).is_some_and(|cur| cur != 0) || write_boost_dc(&g, prev));
+            if done {
+                restore.boost_dc = None;
+            }
+        }
         let Some((get, set)) = overlay_fns() else { return false };
         unsafe {
             let mut cur: GUID = std::mem::zeroed();
@@ -632,7 +752,7 @@ impl Platform for Win {
         let _ = self.end_hold(restore);
         self.set_low_power(false, restore);
         // Whatever couldn't be put back stays recorded, to be retried.
-        if restore.lid_action.is_none() && restore.lid_more.is_empty() && restore.power_overlay.is_none() {
+        if restore.lid_action.is_none() && restore.lid_more.is_empty() && restore.power_overlay.is_none() && restore.sleep_idle.is_none() && restore.boost_dc.is_none() {
             *restore = Restore::default();
         }
     }
@@ -727,6 +847,30 @@ impl Platform for Win {
         };
         unsafe { CloseHandle(h) };
         st >= 0
+    }
+
+    fn arm_wake(&mut self, secs: u64) -> bool {
+        unsafe {
+            if self.wake_timer.is_null() {
+                self.wake_timer = CreateWaitableTimerW(std::ptr::null(), 1, std::ptr::null());
+                if self.wake_timer.is_null() {
+                    return false;
+                }
+            }
+            // Relative due time: negative, in 100 ns units. fResume = wake the machine if it's asleep then (needs
+            // "Allow wake timers"; on Modern Standby it wakes without turning the screen on).
+            let due: i64 = -((secs.min(86_400) as i64) * 10_000_000);
+            windows_sys::Win32::Foundation::SetLastError(0);
+            let ok = SetWaitableTimer(self.wake_timer, &due, 0, None, std::ptr::null(), 1) != 0;
+            // ERROR_NOT_SUPPORTED: the timer is set, but this machine can't be woken by it.
+            ok && windows_sys::Win32::Foundation::GetLastError() != windows_sys::Win32::Foundation::ERROR_NOT_SUPPORTED
+        }
+    }
+
+    fn disarm_wake(&mut self) {
+        if !self.wake_timer.is_null() {
+            unsafe { CancelWaitableTimer(self.wake_timer) };
+        }
     }
 
     fn notify(&mut self, title: &str, body: &str) {

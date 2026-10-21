@@ -46,6 +46,14 @@ enum CLI {
             if let p = flag("--pid", rest).flatMap(Int.init) { a["pid"] = p }
             return show(send("hold", a))
         case "release": return show(send("release", rest.first.map { ["id": $0] } ?? [:]))
+        case "wake-at", "wake_at":
+            guard let t = rest.first else { print("ajar wake-at HH:MM [--for 30m] | off"); return 2 }
+            var w: [String: Any] = ["time": t]
+            if let i = rest.firstIndex(of: "--for"), i + 1 < rest.count, let m = parseDuration(rest[i + 1]) { w["minutes"] = m }
+            return show(send("wake_at", w))
+        case "check-in", "check_in":
+            guard let m = rest.first else { print("ajar check-in 0|15|30|60"); return 2 }
+            return show(send("set", ["key": "check_in_minutes", "value": m]))
         case "run": return runWrapped(rest)
         case "preset":
             guard let p = rest.first else { print("ajar preset max_battery|balanced|full_speed"); return 2 }
@@ -261,6 +269,8 @@ enum CLI {
       ajar hold [--for 90m] [--reason "training"] [--pid N]
                                         keep awake until time runs out, the process exits, or release
       ajar release [id]                 end one hold, or all of them
+      ajar wake-at 07:00 [--for 30m]    wake from sleep at that time and stay awake a while (off cancels)
+      ajar check-in 0|15|30|60          while asleep with the lid shut, wake this often to pick up a wake from the phone
       ajar run [--reason text] -- cmd   keep awake exactly as long as cmd runs
       ajar preset max_battery|balanced|full_speed
       ajar rule <app> leave|slow|pause  what an app does while the lid is closed

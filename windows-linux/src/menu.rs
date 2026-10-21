@@ -76,6 +76,12 @@ pub struct UiState {
     pub phone_on: bool,
     pub phone_status: Option<String>,
     pub snoozed: bool,
+    /// "Approve everything" is on (agents run without asking).
+    pub auto_approve: bool,
+    /// The first click on "Approve everything" asks for a second one (set by the app for 30 s).
+    pub approve_confirm: bool,
+    pub check_in: u32,
+    pub wake_at: Option<u64>,
 }
 
 impl UiState {
@@ -149,6 +155,10 @@ impl UiState {
             phone_on: false,
             phone_status: e.remote_status.clone(),
             snoozed: e.snoozed,
+            auto_approve: false,
+            approve_confirm: false,
+            check_in: e.cfg.check_in_minutes,
+            wake_at: e.cfg.wake_at,
         }
     }
 
@@ -344,6 +354,32 @@ fn settings_menu(s: &UiState) -> Vec<Node> {
         settings.push(text("phone:on", "Phone control…"));
     }
     settings.push(Node::Sep);
+    let mut wake_items: Vec<Node> = vec![info("checkin:help", "While asleep with the lid shut, check for a wake from the phone")];
+    for (m, label) in [(0u32, "Never"), (15, "Every 15 min"), (30, "Every 30 min"), (60, "Every hour")] {
+        wake_items.push(check(&format!("checkin:{m}"), label, s.check_in == m));
+    }
+    wake_items.push(Node::Sep);
+    match s.wake_at {
+        Some(t) => {
+            wake_items.push(info("wakeat:info", format!("Wakes at {}", crate::format::clock(t))));
+            wake_items.push(text("wakeat:off", "Cancel the scheduled wake"));
+        }
+        None => wake_items.push(text("wakeat:7", "Wake at 07:00 tomorrow")),
+    }
+    settings.push(sub("waking", "Waking Up", wake_items));
+    let approve = if s.approve_confirm {
+        vec![
+            info("approve:warn", "Agents will run any command and edit or delete any file without asking."),
+            text("approve:confirm", "Turn on: approve everything"),
+        ]
+    } else {
+        vec![
+            check("approve:toggle", "Approve everything automatically (risky)", s.auto_approve),
+            info("approve:help", "Claude Code and Codex run without asking; new sessions only"),
+        ]
+    };
+    settings.push(sub("approvals", if s.auto_approve { "Approvals: everything approved" } else { "Approvals" }, approve));
+    settings.push(Node::Sep);
     settings.push(text("editconfig", "Edit settings file…"));
     settings.push(text("openfolder", "Open Ajar folder"));
     if !s.recent.is_empty() {
@@ -419,6 +455,11 @@ pub enum Action {
     EditConfig,
     OpenFolder,
     Quit,
+    ApproveToggle,
+    ApproveConfirm,
+    CheckIn(u32),
+    WakeAt(u32),
+    WakeOff,
 }
 
 pub fn action(id: &str) -> Option<Action> {
@@ -454,6 +495,11 @@ pub fn action(id: &str) -> Option<Action> {
         ("editconfig", _) => Action::EditConfig,
         ("openfolder", _) => Action::OpenFolder,
         ("quit", _) => Action::Quit,
+        ("approve", "toggle") => Action::ApproveToggle,
+        ("approve", "confirm") => Action::ApproveConfirm,
+        ("checkin", m) => Action::CheckIn(m.parse::<u32>().ok().filter(|m| crate::wake::CHECK_IN_CHOICES.contains(m))?),
+        ("wakeat", "off") => Action::WakeOff,
+        ("wakeat", h) => Action::WakeAt(h.parse().ok().filter(|h: &u32| *h < 24)?),
         _ => return None,
     })
 }
@@ -513,6 +559,10 @@ mod tests {
             phone_on: true,
             phone_status: Some("Connected".into()),
             snoozed: false,
+            auto_approve: false,
+            approve_confirm: false,
+            check_in: 0,
+            wake_at: None,
         }
     }
 

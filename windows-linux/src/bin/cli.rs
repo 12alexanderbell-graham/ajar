@@ -16,6 +16,8 @@ const HELP: &str = "ajar: keep the laptop awake with the lid closed while work r
   ajar off                      never keep awake (holds from `run` and agents still work)
   ajar hold [minutes] [reason]  keep awake until `ajar release` (or for N minutes)
   ajar release [id]             end one hold, or all
+  ajar wake-at HH:MM [minutes]  wake from sleep then and stay awake a while (off cancels)
+  ajar check-in 0|15|30|60      while asleep with the lid shut, wake this often to pick up a wake from the phone
   ajar preset max_battery | balanced | full_speed
   ajar rule <app> leave | slow | pause | default
   ajar watch <app> [--remove]   an app that keeps it awake while busy (blender, ffmpeg…)
@@ -153,6 +155,14 @@ fn main() -> ExitCode {
             ("hold", json!({ "minutes": minutes, "reason": reason }))
         }
         "release" => ("release", json!({ "id": rest.first() })),
+        "wake-at" | "wake_at" => match rest.first() {
+            Some(t) => ("wake_at", json!({ "time": t, "minutes": rest.get(1).and_then(|m| m.parse::<f64>().ok()) })),
+            None => return fail("usage: ajar wake-at HH:MM [minutes] | off"),
+        },
+        "check-in" | "check_in" => match rest.first() {
+            Some(m) => ("set", json!({ "key": "check_in_minutes", "value": m.parse::<f64>().ok() })),
+            None => return fail("usage: ajar check-in 0 | 15 | 30 | 60"),
+        },
         "preset" => match rest.first() {
             Some(p) => ("preset", json!({ "preset": p })),
             None => return fail("usage: ajar preset max_battery | balanced | full_speed"),

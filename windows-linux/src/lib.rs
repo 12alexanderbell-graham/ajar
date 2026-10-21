@@ -7,6 +7,7 @@
 
 pub mod agents;
 pub mod ai;
+pub mod approve;
 pub mod config;
 pub mod engine;
 pub mod format;
@@ -18,6 +19,7 @@ pub mod platform;
 pub mod procs;
 pub mod remote;
 pub mod state;
+pub mod wake;
 
 /// Seconds since the Unix epoch. All stored times use this so files stay portable and easy to read.
 pub fn now() -> u64 {
