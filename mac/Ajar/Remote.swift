@@ -45,7 +45,7 @@ struct RemoteSettings: Codable, Equatable {
 }
 
 enum RemoteCrypto {
-    static let allowed: Set<String> = ["panel", "mode", "release", "preset", "watch", "track", "sleep_now", "set", "power", "power_test"]
+    static let allowed: Set<String> = ["panel", "mode", "release", "preset", "watch", "track", "sleep_now", "set", "power", "power_test", "schema"]
 
     /// ntfy.sh turns messages over 4096 bytes into file attachments, which the phone page can't read as a reply.
     /// A sealed message is about 4/3 of the plaintext plus 38 bytes, so replies stay under this many bytes.
@@ -53,9 +53,14 @@ enum RemoteCrypto {
 
     /// The command's outcome (not its full result: for `panel` that's the panel itself, which doubled the size)
     /// plus the panel, trimmed to fit one ntfy message. Same rules as the Windows/Linux app.
-    static func phoneReply(_ result: [String: Any], panel: [String: Any]) -> [String: Any] {
+    static func phoneReply(_ result: [String: Any], panel: [String: Any], cmd: String = "") -> [String: Any] {
         var r: [String: Any] = [:]
         for k in ["ok", "error", "next"] { if let v = result[k] { r[k] = v } }
+        if cmd == "schema" {
+            // The phone's Settings page: values and choices only (its labels live in the page), no panel.
+            r["settings"] = (result["settings"] as? [[String: Any]] ?? []).map { s in s.filter { ["key", "type", "allowed", "category", "value"].contains($0.key) } }
+            return r
+        }
         var p = panel
         func size() -> Int { r["panel"] = p; return Wire.json(r).utf8.count }
         if size() > maxReply, let w = p["watch"] as? [[String: Any]] {
@@ -235,7 +240,7 @@ final class RemoteControl {
             run(cmd, args) { [weak self] result in
                 guard !done else { return }
                 done = true
-                cont.resume(returning: RemoteCrypto.phoneReply(result, panel: self?.engine.panelJSON() ?? [:]))
+                cont.resume(returning: RemoteCrypto.phoneReply(result, panel: cmd == "schema" ? [:] : self?.engine.panelJSON() ?? [:], cmd: cmd))
             }
         }
     }

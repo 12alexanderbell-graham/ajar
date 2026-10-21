@@ -91,6 +91,16 @@ input[type=text]{width:100%;font:15px ui-monospace,SFMono-Regular,Menlo,monospac
 .tip .close{position:absolute;right:10px;top:8px;border:0;background:none;color:var(--sub);font-size:22px;line-height:1;padding:4px}
 .tip h2{font-size:16px;margin:0 0 4px;padding-right:24px}
 .share{display:inline-block;width:15px;height:18px;vertical-align:-3px;margin:0 2px}
+.back{border:0;background:none;padding:0;color:var(--accent);font-size:17px;display:flex;align-items:center;gap:4px}
+.title{font-size:28px;font-weight:700;letter-spacing:-.4px;margin:6px 2px 8px}
+select.pick{-webkit-appearance:none;appearance:none;border:0;background:none;color:var(--sub);font:inherit;font-size:16px;text-align:right;text-align-last:right;padding:0 16px 0 0;max-width:55%;background-image:linear-gradient(45deg,transparent 50%,var(--ter) 50%),linear-gradient(135deg,var(--ter) 50%,transparent 50%);background-position:right 6px center,right 1px center;background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+.row input.topic{width:55%;padding:7px 9px;font-size:14px}
+.foot{color:var(--sub);font-size:13px;margin:-8px 16px 16px}
+.row.off{opacity:.45}
+.list button.item{display:block;width:100%;text-align:left;border:0;background:none;padding:12px 0;border-top:1px solid var(--line);color:var(--accent)}
+.list button.item:first-child{border-top:0;padding-top:0}
+.list button.item:last-child{padding-bottom:0}
+.list button.item.danger{color:var(--red)}
 [hidden]{display:none!important}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
@@ -123,7 +133,7 @@ input[type=text]{width:100%;font:15px ui-monospace,SFMono-Regular,Menlo,monospac
     <header class="top">
       <button class="tab sel" data-tab="now">Now</button>
       <button class="tab" data-tab="apps">Apps</button>
-      <button class="iconbtn" id="more" aria-label="More">
+      <button class="iconbtn" id="more" aria-label="Settings">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
       </button>
     </header>
@@ -171,7 +181,7 @@ input[type=text]{width:100%;font:15px ui-monospace,SFMono-Regular,Menlo,monospac
       <div id="savingsbox" hidden>
         <div class="sec">What each saving is worth</div>
         <div class="group" id="savings"></div>
-        <button class="btn" id="measure">Measure now (about 2½ min)</button>
+        <button class="btn" id="measure">Measure now (about 4 min)</button>
       </div>
     </section>
 
@@ -191,18 +201,18 @@ input[type=text]{width:100%;font:15px ui-monospace,SFMono-Regular,Menlo,monospac
       </div>
     </section>
 
-    <div class="scrim" id="sheet" hidden>
-      <div class="sheet" role="dialog" aria-label="More">
-        <div class="grab"></div>
-        <div class="group">
-          <button id="refresh">Refresh now</button>
-          <button id="copycode">Copy pairing code</button>
-          <button id="unpair" class="danger">Unpair this phone</button>
-        </div>
-        <p class="fine"><span id="updated"></span><br>End-to-end encrypted: the relay only sees scrambled messages.</p>
-        <button class="btn" id="sheetclose">Done</button>
+    <section id="settings" hidden>
+      <button class="back" id="settingsback"><svg width="12" height="20" viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2 2 10l8 8"/></svg>Back</button>
+      <div class="title">Settings</div>
+      <div id="settingslist"><div class="group"><div class="empty">Loading…</div></div></div>
+      <div class="sec">This phone</div>
+      <div class="group list">
+        <button class="item" id="refresh">Refresh now</button>
+        <button class="item" id="copycode">Copy pairing code</button>
+        <button class="item danger" id="unpair">Unpair this phone</button>
       </div>
-    </div>
+      <p class="foot"><span id="updated"></span>. End-to-end encrypted: the relay only sees scrambled messages. Pairing, connecting AI apps and removing Ajar are done on the laptop.</p>
+    </section>
   </div>
 </main>
 <script>
@@ -303,6 +313,7 @@ let queue = Promise.resolve();
 /** Taps wait for a request already in flight instead of being dropped; extra refreshes are skipped. */
 function send(cmd, args = {}) {
   if (cmd === "panel" && busy) return queue;
+  setConn("Sending…");   // at once, so a tap always shows it was heard
   queue = queue.then(() => sendNow(cmd, args));
   return queue;
 }
@@ -323,7 +334,9 @@ async function sendNow(cmd, args) {
     if (!reply) { setConn("No answer. Asleep or offline?"); return; }
     if (reply.ok === false && reply.error) note(reply.error);
     if (reply.panel) render(reply.panel);
+    if (reply.settings) renderSettings(reply.settings);
     setConn("Connected");
+    return reply;
   } catch (e) {
     setConn("Can't reach the relay (" + e.message + ")");
   } finally {
@@ -441,6 +454,110 @@ function toggleRow(label, sub, checked, onChange) {
 
 function empty(el, text) { const e = document.createElement("div"); e.className = "empty"; e.textContent = text; el.appendChild(e); }
 
+// Settings page: every setting the laptop reports, grouped like Ajar's Settings on the Mac. Values and choices
+// come from the laptop (the same table its AI tools use); only the words live here.
+const SETTING_GROUPS = [
+  ["Lid Closed", ["screen", "preset", "low_power", "pause_simulators", "shut_down_simulators", "pause_background_audio"], "Dark: no password when you open the lid. Off, locks: saves more, but you type your password."],
+  ["Sleep & Safety", ["sleep_when_done", "quiet_minutes", "battery_floor", "only_on_power", "heat_guard"], "Only the laptop itself can lower the battery limit or turn off the heat guard."],
+  ["Keep Awake For", ["claude_app", "downloads"], "Claude Code, Codex, Gemini, Cursor and other agents are picked up on their own."],
+  ["Notifications", ["notify_done", "done_chime", "ntfy_topic"], ""],
+  ["On the Laptop", ["menubar", "appearance", "live_lid_icon", "notch_island", "show_in_dock", "hotkey"], ""],
+];
+const SETTING_LABELS = {
+  screen: "Screen", preset: "Other apps", low_power: "Low Power Mode", pause_simulators: "Pause simulators and previews",
+  shut_down_simulators: "Shut simulators down instead", pause_background_audio: "Pause apps holding the speakers",
+  sleep_when_done: "Sleep when the work is done", quiet_minutes: "After nothing happens for", battery_floor: "Sleep at battery level",
+  only_on_power: "Only stay awake when plugged in", heat_guard: "Heat guard", claude_app: "Claude app (Cowork, computer use)",
+  downloads: "Downloads, exports and builds", notify_done: "Notify when an agent goes idle", done_chime: "Play a chime too",
+  ntfy_topic: "Phone alerts (ntfy topic)", menubar: "Menu bar shows", appearance: "Appearance", live_lid_icon: "Icon follows the real lid",
+  notch_island: "Notch island", show_in_dock: "Show in Dock", hotkey: "⌃⌥⌘A switches mode",
+};
+const CHOICE_LABELS = {
+  max_battery: "Max Battery", balanced: "Balanced", full_speed: "Full Speed", none: "Icon Only", battery: "Battery %", watts: "Watts",
+  timeLeft: "Time Left", timer: "Timer", system: "Match System", light: "Light", dark: "Dark",
+};
+let settingsCache = null;
+
+function settingRow(label, control, off) {
+  const row = document.createElement("div"); row.className = "row" + (off ? " off" : "");
+  const l = document.createElement("div"); l.textContent = label;
+  row.append(l, control); return row;
+}
+function picker(options, value, onPick) {
+  const sel = document.createElement("select"); sel.className = "pick";
+  options.forEach(([v, label, disabled]) => { const o = document.createElement("option"); o.value = v; o.textContent = label; o.disabled = !!disabled; sel.appendChild(o); });
+  sel.value = String(value);
+  sel.addEventListener("change", () => onPick(sel.value));
+  return sel;
+}
+function switcher(label, checked, onChange, disabled) {
+  const sw = document.createElement("label"); sw.className = "switch";
+  const input = document.createElement("input"); input.type = "checkbox"; input.checked = checked; input.disabled = !!disabled;
+  input.setAttribute("aria-label", label);
+  input.addEventListener("change", () => onChange(input.checked));
+  sw.append(input, document.createElement("span")); return sw;
+}
+async function setSetting(k, v) {
+  const r = await send("set", { key: k, value: v });
+  if (r && r.ok === false) send("schema");   // refused (for example lowering the battery limit): show the real value again
+  else if (settingsCache) { const s = settingsCache.find(x => x.key === k); if (s) s.value = v; }
+}
+
+function renderSettings(list) {
+  settingsCache = list;
+  const by = Object.fromEntries(list.map(s => [s.key, s]));
+  const root = $("settingslist"); root.textContent = "";
+  for (const [title, keys, foot] of SETTING_GROUPS) {
+    const rows = [];
+    for (const k of keys) {
+      if (k === "screen") {
+        if (!by.screen_off && !by.lock_on_close) continue;
+        const cur = by.lock_on_close && by.lock_on_close.value ? "locks" : (by.screen_off && by.screen_off.value ? "off" : "dark");
+        const opts = [["dark", "Dark, no lock"]];
+        if (by.screen_off) opts.push(["off", "Off, no lock (experimental)"]);
+        if (by.lock_on_close) opts.push(["locks", "Off, locks"]);
+        rows.push(settingRow("Screen", picker(opts, cur, async v => {
+          if (by.lock_on_close) await setSetting("lock_on_close", v === "locks" ? "on" : "off");
+          if (by.screen_off) await setSetting("screen_off", v === "off" ? "on" : "off");
+        })));
+        continue;
+      }
+      const s = by[k]; if (!s) continue;
+      const label = SETTING_LABELS[k] || k.replace(/_/g, " ");
+      if (s.type === "bool") {
+        const locked = k === "heat_guard" && s.value;   // can only be turned on from here
+        rows.push(settingRow(label, switcher(label, !!s.value, on => setSetting(k, on ? "on" : "off"), locked)));
+      } else if (s.type === "enum") {
+        rows.push(settingRow(label, picker((s.allowed || []).map(v => [v, CHOICE_LABELS[v] || v]), s.value, v => setSetting(k, v))));
+      } else if (s.type === "int") {
+        const steps = k === "battery_floor" ? [0, 5, 10, 15, 20, 25, 30, 40, 50] : [1, 2, 5, 10, 20, 30, 60];
+        if (!steps.includes(s.value)) steps.push(s.value), steps.sort((a, b) => a - b);
+        const opts = steps.map(n => [n, k === "battery_floor" ? (n === 0 ? "Never" : n + "%") : n + " min", k === "battery_floor" && n < s.value]);
+        if (k === "quiet_minutes" && by.sleep_when_done && !by.sleep_when_done.value) continue;
+        rows.push(settingRow(label, picker(opts, s.value, v => setSetting(k, Number(v)))));
+      } else if (s.type === "string") {
+        const t = document.createElement("input"); t.type = "text"; t.className = "topic"; t.value = s.value || ""; t.placeholder = "off";
+        t.autocapitalize = "off"; t.spellcheck = false;
+        t.addEventListener("change", () => setSetting(k, t.value.trim()));
+        rows.push(settingRow(label, t));
+      }
+    }
+    if (!rows.length) continue;
+    const h = document.createElement("div"); h.className = "sec"; h.textContent = title;
+    const g = document.createElement("div"); g.className = "group"; rows.forEach(r => g.appendChild(r));
+    root.append(h, g);
+    if (foot) { const f = document.createElement("p"); f.className = "foot"; f.textContent = foot; root.appendChild(f); }
+  }
+}
+
+function openSettings(on) {
+  ["tab-now", "tab-apps"].forEach(id => $(id).hidden = on || !document.querySelector(`[data-tab="${id.slice(4)}"]`).classList.contains("sel"));
+  document.querySelector("header.top").hidden = on; $("tip").hidden = on || standalone || !!store.get("ajar.tipHidden");
+  $("settings").hidden = !on;
+  window.scrollTo(0, 0);
+  if (on) send("schema");
+}
+
 const PRESET_DETAIL = { longest: "Pauses other apps until you open the lid (music, calls and services agents use keep going)", balanced: "Slows other apps", speed: "Leaves apps alone (your per-app rules still apply)" };
 function show(id, on) { $(id).hidden = !on; }
 function text(id, t) { $(id).textContent = t || ""; }
@@ -491,20 +608,20 @@ const SAVING_NAMES = [["screen_off", "Screen fully off"], ["screen", "Screen off
 let measurePoll = null;
 /** Mac only: what each lid-closed saving is worth, measured on that laptop. */
 function renderSavings(p) {
-  const box = $("savingsbox"), el = $("savings"), s = p.savings || {};
-  const has = Object.keys(s).length > 0;
+  const box = $("savingsbox"), el = $("savings"), s = p.savings || {}, unclear = p.savingsUnclear || [];
+  const has = Object.keys(s).length > 0 || unclear.length > 0;
   box.hidden = !(has || p.powerTest || p.canMeasure);
   el.textContent = "";
   if (p.powerTest) empty(el, "Measuring: " + p.powerTest + ". Agents keep running.");
-  else if (has) SAVING_NAMES.filter(([k]) => k in s).forEach(([k, name]) => {
+  else if (has) SAVING_NAMES.filter(([k]) => k in s || unclear.includes(k)).forEach(([k, name]) => {
     const r = document.createElement("div"); r.className = "row";
     const a = document.createElement("span"); a.textContent = name;
-    const b = document.createElement("span"); b.className = "v"; b.textContent = s[k] >= 0.05 ? "saves " + s[k].toFixed(1) + " W" : "≈0 W";
+    const b = document.createElement("span"); b.className = "v"; b.textContent = unclear.includes(k) ? "unclear" : s[k] >= 0.05 ? "saves " + s[k].toFixed(1) + " W" : "≈0 W";
     r.append(a, b); el.appendChild(r);
   });
-  else empty(el, "With the lid shut, Ajar switches each saving off for 15 s and back on and measures the whole laptop.");
+  else empty(el, "With the lid shut, Ajar switches each saving off and on twice and measures the whole laptop. Best with the agents quiet.");
   $("measure").hidden = !p.canMeasure;
-  $("measure").textContent = (has ? "Measure again" : "Measure now") + " (about 2½ min)";
+  $("measure").textContent = (has ? "Measure again" : "Measure now") + " (about 4 min)";
   clearTimeout(measurePoll); measurePoll = null;
   if (p.powerTest) measurePoll = setTimeout(() => send("panel"), 10000);
 }
@@ -550,6 +667,9 @@ async function begin(k, s) {
 function save(k, s) {
   store.set("ajar.k", k);
   if (s) store.set("ajar.s", s); else store.del("ajar.s");
+  // In a browser tab, keep the key in the address too: Add to Home Screen saves this address in the icon, so
+  // the app re-pairs itself on every launch even if the phone ever clears the page's storage.
+  if (!standalone) { try { history.replaceState(null, "", "#k=" + k + (s ? "&s=" + encodeURIComponent(s) : "")); } catch (_) {} }
 }
 
 async function start() {
@@ -566,16 +686,15 @@ async function start() {
     store.set("ajar.tab", b.dataset.tab);
   }));
   if (store.get("ajar.tab") === "apps") document.querySelector('[data-tab="apps"]').click();
-  $("more").addEventListener("click", () => show("sheet", true));
-  $("sheetclose").addEventListener("click", () => show("sheet", false));
-  $("sheet").addEventListener("click", e => { if (e.target === $("sheet")) show("sheet", false); });
+  $("more").addEventListener("click", () => openSettings(true));
+  $("settingsback").addEventListener("click", () => openSettings(false));
   // Keep it live while it's on screen: a refresh every 30 s (well inside the relay's limits).
   setInterval(() => { if (key && !document.hidden && Date.now() - lastSent > 25000) send("panel"); }, 5000);
   document.querySelectorAll("[data-preset]").forEach(b => b.addEventListener("click", () => { pick("data-preset", b); send("preset", { preset: b.dataset.preset }); }));
   document.querySelectorAll("[data-for]").forEach(b => b.addEventListener("click", () => send("mode", { mode: "always", minutes: +b.dataset.for })));
   document.querySelectorAll("[data-until]").forEach(b => b.addEventListener("click", () => send("mode", { mode: "always", until_hour: +b.dataset.until })));
   confirmTap($("sleepnow"), "Tap again: you can't wake it from here", () => send("sleep_now"));
-  $("refresh").addEventListener("click", () => { show("sheet", false); send("panel"); });
+  $("refresh").addEventListener("click", () => send("panel"));
   $("measure").addEventListener("click", async () => { await send("power_test"); setTimeout(() => send("panel"), 3000); });
   $("tipclose").addEventListener("click", () => { store.set("ajar.tipHidden", "1"); $("tip").hidden = true; });
   $("copycode").addEventListener("click", async () => {

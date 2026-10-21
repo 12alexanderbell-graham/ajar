@@ -188,7 +188,7 @@ final class CommandCenter {
 
         case "power_test":
             if let problem = engine.startPowerTest(includeScreen: bool("screen") ?? false) { return fail(problem) }
-            ok(["started": true, "about_seconds": (bool("screen") ?? false) ? 180 : 150,
+            ok(["started": true, "about_seconds": (bool("screen") ?? false) ? 270 : 225,
                 "next": "Call power again (ajar power) for results once power_test shows done."])
 
         case "schema":

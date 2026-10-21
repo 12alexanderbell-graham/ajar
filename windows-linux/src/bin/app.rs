@@ -302,7 +302,7 @@ fn engine_thread(root: PathBuf, rx: Receiver<Cmd>, tx: Sender<Cmd>, shared: Arc<
             }
             Ok(Cmd::Remote(cmd, args, reply)) => {
                 let r = if remote::ALLOWED.contains(&cmd.as_str()) { e.handle(&cmd, &args) } else { json!({ "ok": false, "error": "not allowed" }) };
-                let _ = reply.send(remote::phone_reply(&r, e.panel_json(ajar::now())));
+                let _ = reply.send(remote::phone_reply(&cmd, &r, e.panel_json(ajar::now())));
                 changed = true;
             }
             Ok(Cmd::RemoteStatus(s)) => {

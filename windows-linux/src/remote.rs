@@ -27,7 +27,7 @@ use std::time::Duration;
 
 pub const DEFAULT_SERVER: &str = "https://ntfy.sh";
 /// Commands the phone panel may send.
-pub const ALLOWED: &[&str] = &["panel", "mode", "release", "preset", "watch", "track", "sleep_now", "set"];
+pub const ALLOWED: &[&str] = &["panel", "mode", "release", "preset", "watch", "track", "sleep_now", "set", "schema", "power"];
 const MAX_AGE: u64 = 300;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -186,12 +186,21 @@ pub const MAX_REPLY: usize = 2800;
 
 /// The reply the phone gets: the command's outcome (not its full result, which for `panel` is the panel
 /// itself) plus the panel, trimmed to fit in one ntfy message.
-pub fn phone_reply(result: &Value, panel: Value) -> Value {
+pub fn phone_reply(cmd: &str, result: &Value, panel: Value) -> Value {
     let mut r = json!({});
     for k in ["ok", "error", "next"] {
         if let Some(v) = result.get(k) {
             r[k] = v.clone();
         }
+    }
+    if cmd == "schema" {
+        // The phone's Settings page: values and choices only (its labels live in the page), no panel.
+        let keep = ["key", "type", "allowed", "category", "value"];
+        let list: Vec<Value> = result["settings"].as_array().map(|a| {
+            a.iter().map(|s| Value::Object(s.as_object().map(|o| o.iter().filter(|(k, _)| keep.contains(&k.as_str())).map(|(k, v)| (k.clone(), v.clone())).collect()).unwrap_or_default())).collect()
+        }).unwrap_or_default();
+        r["settings"] = Value::Array(list);
+        return r;
     }
     r["panel"] = panel;
     let size = |r: &Value| r.to_string().len();
@@ -381,12 +390,23 @@ mod tests {
         let holds = vec!["Asked to stay awake"; 20];
         let panel = json!({ "headline": "Close the lid: keeps working", "watch": watch, "agents": agents, "holds": holds });
         let result = json!({ "ok": true, "headline": "dup", "watch": panel["watch"].clone() });
-        let r = phone_reply(&result, panel);
+        let r = phone_reply("panel", &result, panel);
         assert!(r.get("headline").is_none(), "the command's full result isn't repeated");
         assert_eq!(r["panel"]["watch"].as_array().unwrap().len(), 2, "apps already kept awake stay");
         let mut msg = r.clone();
         msg["re"] = json!("0123456789abcdef");
         msg["t"] = json!(1_800_000_000u64);
         assert!(seal(&key, &rep, &msg.to_string()).len() < 4096);
+    }
+
+    #[test]
+    fn phone_settings_reply_is_small() {
+        let c = crate::config::Config::default();
+        let full = crate::ai::describe(&c, std::path::Path::new("/tmp/config.json"));
+        let r = phone_reply("schema", &full, json!({}));
+        assert!(r.get("panel").is_none());
+        let first = &r["settings"][0];
+        assert!(first.get("key").is_some() && first.get("value").is_some() && first.get("description").is_none());
+        assert!(r.to_string().len() < MAX_REPLY);
     }
 }

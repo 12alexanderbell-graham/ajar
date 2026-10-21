@@ -74,7 +74,7 @@ enum CLI {
                 let start = send("power_test", ["screen": rest.contains("--screen")])
                 guard (start["ok"] as? Bool) != false else { return show(start) }
                 print("Measuring each saving for about \(start["about_seconds"] ?? 150) s (agents keep running)…")
-                let deadline = Date().addingTimeInterval(240)
+                let deadline = Date().addingTimeInterval(420)
                 while Date() < deadline {
                     Thread.sleep(forTimeInterval: 5)
                     let r = send("power", [:])
@@ -263,7 +263,7 @@ enum CLI {
       ajar set <key> <value>            change any setting (ajar settings lists them all, with what each does)
       ajar settings [--json]            every setting, its value, allowed values and what it does
       ajar power [--json]               whole-Mac watts and what to switch off to save more
-      ajar power test [--screen]        lid closed: measure what each saving is worth on this Mac (~2.5 min)
+      ajar power test [--screen]        lid closed: measure what each saving is worth on this Mac (~4 min)
       ajar connect [claude|codex|claude-app]   add Ajar's MCP server to your agents
       ajar prompt                       the prompt that has your agent set Ajar up with you
       ajar anyway off                   stop going below the battery limit (allowing it is done in Ajar)
@@ -369,7 +369,7 @@ enum MCPServer {
              description: "Whole-Mac power right now (measured from the battery controller, also on the charger) and a list of what is using it with the setting that would cut each: screen kept on while closed, booted simulators and Xcode previews, apps holding the speakers, busy apps, Low Power Mode. Includes savings measured by ajar_power_test.",
              schema: schema([:])) { _ in CLI.send("power", [:], timeout: 10) },
         Tool(name: "ajar_power_test",
-             description: "With the lid closed: switch each saving off for 15 s and back on and measure the whole-Mac difference, so you know what each is worth on this Mac. Takes about 2.5 minutes; agents keep running. Returns at once; call ajar_power afterwards (power_test: done). Pass screen: true to include turning the screen off, which locks the Mac: ask the person first.",
+             description: "With the lid closed: switch each saving off and on twice (8 s each) and measure the whole-Mac difference, so you know what each is worth on this Mac; results that the Mac's own load made unclear are listed as unclear. Takes about 4 minutes; agents keep running. Returns at once; call ajar_power afterwards (power_test: done). Pass screen: true to include turning the screen off, which locks the Mac: ask the person first.",
              schema: schema(["screen": prop("boolean", "Also measure the screen (locks the Mac). Default false.")])) { a in CLI.send("power_test", a) },
         Tool(name: "ajar_setup_prompt",
              description: "The recommended steps for setting Ajar up with the person. Use when asked to set up or tune Ajar.",

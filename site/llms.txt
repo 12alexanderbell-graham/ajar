@@ -21,7 +21,7 @@ macOS names start with `ajar_`; Windows and Linux use the same names without the
 - `ajar_settings` / `settings`: every setting with value, allowed values, description and safety note. Read before changing anything.
 - `ajar_set_setting` / `set_setting`: change one setting by key.
 - `ajar_power` / `power`: power use now and a list of suspects, each with the setting that fixes it (`setting`, `suggested_value`) and, on macOS, the measured saving.
-- `ajar_power_test` (macOS): with the lid closed, switches each saving off for 15 s and back on and measures the whole-Mac difference (~2.5 min). `screen: true` also measures turning the screen off, which locks the Mac; ask first.
+- `ajar_power_test` (macOS): with the lid closed, switches each saving off and on twice (8 s each) and measures the whole-Mac difference (~4 min); savings the Mac's own load made unclear are reported as unclear. `screen: true` also measures turning the screen off, which locks the Mac; ask first.
 - `ajar_set_mode` / `set_mode`: off, auto (When Busy), always (optionally for N minutes).
 - `ajar_set_preset` / `set_preset`: max_battery, balanced, full_speed.
 - `ajar_set_app_rule` / `set_app_rule`: one app → leave, slow, pause, default.

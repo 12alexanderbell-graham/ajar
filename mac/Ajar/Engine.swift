@@ -110,9 +110,11 @@ final class Engine {
     private(set) var background = BackgroundWork.Found()
     private var lidWatcher: LidWatcher?
     /// Watts each saving is worth, from `ajar power test` (step → watts saved).
-    private(set) var powerEffects: [String: Double] = (UserDefaults.standard.dictionary(forKey: "powerEffects") as? [String: Double]) ?? [:]
+    private(set) var powerEffects: [String: Double] = (UserDefaults.standard.dictionary(forKey: "powerEffects2") as? [String: Double]) ?? [:]
     private(set) var powerTestRunning = false
     private(set) var powerTestProgress: String?
+    /// Savings the last test couldn't pin down (the Mac's own load moved too much while measuring).
+    private(set) var powerUnclear = Set(UserDefaults.standard.stringArray(forKey: "powerUnclear") ?? [])
 
     struct Outlook {
         var percentSaved: Double     // 0…1, closed-with-Ajar vs. open
@@ -1161,7 +1163,7 @@ final class Engine {
             "apps_total_watts": r1(apps.reduce(0) { $0 + $1.watts }),
             "suspects": suspects,
             "power_test": powerTestRunning ? (powerTestProgress ?? "running") : (powerEffects.isEmpty ? "not run yet" : "done"),
-            "how_to_measure": "ajar power test (lid closed, takes about 2-3 minutes): switches each saving off for 15 s and back on and reports what each is worth. Add --screen to include the screen (that locks the Mac).",
+            "how_to_measure": "ajar power test (lid closed, takes about 4 minutes): switches each saving off and on twice and reports what each is worth (or unclear when the Mac's own load moved too much). Add --screen to include the screen (that locks the Mac).",
         ]
     }
 
@@ -1173,7 +1175,9 @@ final class Engine {
         guard PowerSensor.isMeasured else { return "This Mac doesn't report whole-system power, so savings can't be measured" }
         powerTestRunning = true
         var steps = ["apps", "simulators", "audio", "low_power"]
-        if DisplayPower.available && !config.lockOnClose { steps.append("screen_off") }
+        // Switching the display off locks Macs set to ask for the password immediately, so it's only measured
+        // there when the person already chose it.
+        if DisplayPower.available && !config.lockOnClose && (config.screenOffNoLock || LockSetting.gracePeriod() != 0) { steps.append("screen_off") }
         if includeScreen && !config.lockOnClose { steps.append("screen") }
         runPowerStep(steps[...])
         return nil
@@ -1215,11 +1219,16 @@ final class Engine {
         }
     }
 
+    /// Measures one saving as off, on, off, on in 8 s windows (each after 3 s to settle) and compares the pairs.
+    /// One A/B pair was too easy to fool: an agent's burst of work or apps catching up after a pause landed in
+    /// one window and showed savings bigger than the whole Mac draws. Now the smaller of the two differences
+    /// counts, and if the pairs disagree the result is reported as unclear instead of as a number.
     private func runPowerStep(_ steps: ArraySlice<String>) {
         guard let step = steps.first, lidClosed, holding else {
             powerTestRunning = false
             powerTestProgress = nil
-            UserDefaults.standard.set(powerEffects, forKey: "powerEffects")
+            UserDefaults.standard.set(powerEffects, forKey: "powerEffects2")
+            UserDefaults.standard.set(Array(powerUnclear), forKey: "powerUnclear")
             if lidClosed && holding { reapplyClosedState() } else if !lidClosed { restoreClosedState() }
             announce("Power test done", powerEffects.sorted { $0.value > $1.value }.map { "\($0.key) \(String(format: "%.1f", $0.value)) W" }.joined(separator: " · "))
             return
@@ -1227,27 +1236,38 @@ final class Engine {
         let wasOn = savingOn(step)
         // Nothing to measure: no simulators or audio holders right now.
         if (step == "simulators" && background.simulators.isEmpty && background.previews.isEmpty) || (step == "audio" && background.audio.isEmpty) {
+            powerEffects[step] = nil; powerUnclear.remove(step)
             return runPowerStep(steps.dropFirst())
         }
-        powerTestProgress = "Measuring \(step)…"
-        setSaving(step, true)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
-            self?.powerWindow(15) { withSaving in
-                guard let self else { return }
-                self.setSaving(step, false)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
-                    self?.powerWindow(15) { without in
-                        guard let self else { return }
-                        self.setSaving(step, wasOn)
-                        if let a = withSaving, let b = without {
-                            let saved = b - a
-                            self.powerEffects[step] = self.powerEffects[step].map { $0 * 0.5 + saved * 0.5 } ?? saved
-                        }
-                        self.runPowerStep(steps.dropFirst())
-                    }
-                }
+        var readings: [Double?] = []
+        let pattern = [false, true, false, true]   // saving off, on, off, on
+        func next(_ i: Int) {
+            guard i < pattern.count, lidClosed, holding else { return finish() }
+            powerTestProgress = "Measuring \(Self.stepName(step)) (\(i + 1) of 4)…"
+            setSaving(step, pattern[i])
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                self?.powerWindow(8) { w in readings.append(w); next(i + 1) }
             }
         }
+        func finish() {
+            setSaving(step, wasOn)
+            if readings.count == 4, let off1 = readings[0], let on1 = readings[1], let off2 = readings[2], let on2 = readings[3] {
+                let d1 = off1 - on1, d2 = off2 - on2
+                let total = max(off1, off2)
+                if abs(d1 - d2) > max(0.6, 0.5 * max(abs(d1), abs(d2))) {
+                    powerEffects[step] = nil; powerUnclear.insert(step)
+                } else {
+                    powerEffects[step] = min(max(0, min(d1, d2)), total); powerUnclear.remove(step)
+                }
+            }
+            runPowerStep(steps.dropFirst())
+        }
+        next(0)
+    }
+
+    static func stepName(_ step: String) -> String {
+        ["apps": "other apps", "simulators": "simulators", "audio": "background audio", "low_power": "Low Power Mode",
+         "screen_off": "screen off", "screen": "screen off (locks)"][step] ?? step
     }
 
     // MARK: Estimates
@@ -1361,6 +1381,7 @@ final class Engine {
         d["canMeasure"] = lidClosed && holding && !powerTestRunning && PowerSensor.isMeasured
         if powerTestRunning { d["powerTest"] = powerTestProgress ?? "running" }
         if !powerEffects.isEmpty { d["savings"] = powerEffects.mapValues { ($0 * 10).rounded() / 10 } }
+        if !powerUnclear.isEmpty { d["savingsUnclear"] = Array(powerUnclear) }
         d.merge(phoneFigures) { a, _ in a }
         if let u = onUntil { d["alwaysUntil"] = u.formatted(date: .omitted, time: .shortened) }
         if let b = battery {
