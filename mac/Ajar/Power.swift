@@ -26,7 +26,9 @@ enum PowerSensor {
             let load = (t["SystemLoad"] as? NSNumber)?.doubleValue ?? 0
             let acc = (t["AccumulatedSystemLoad"] as? NSNumber)?.int64Value
             let n = (t["SystemLoadAccumulatorCount"] as? NSNumber)?.int64Value
-            if load > 0 { return PowerSample(watts: load / 1000, accumulated: acc, count: n) }
+            // The running totals are what matters; the instant reading can be 0 for a moment (seen with the lid
+            // closed on the charger), which mustn't make the whole sensor look missing.
+            if load > 0 || (acc != nil && n != nil) { return PowerSample(watts: load > 0 ? load / 1000 : nil, accumulated: acc, count: n) }
         }
         // Fallback: battery discharge only (unknown on the charger).
         func value(_ k: String) -> Int? { (IORegistryEntryCreateCFProperty(s, k as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? NSNumber)?.intValue }
