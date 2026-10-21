@@ -1303,6 +1303,10 @@ final class Engine {
             } else {
                 powerEffects["total"] = max(0, min(d1, d2)); powerUnclear.remove("total")
             }
+            // Per-saving rows only from a breakdown run; older ones would sit next to this total as if current.
+            if detailed.isEmpty {
+                for k in ["apps", "simulators", "audio", "low_power", "screen_off", "screen"] { powerEffects[k] = nil; powerUnclear.remove(k) }
+            }
             runDetailStep(detailed[...], was: was, done: 4, of: 4 + detailed.count * 2)
         }
         next(0)
