@@ -612,18 +612,27 @@ function renderSavings(p) {
   const has = Object.keys(s).length > 0 || unclear.length > 0;
   box.hidden = !(has || p.powerTest || p.canMeasure);
   el.textContent = "";
-  if (p.powerTest) empty(el, "Measuring: " + p.powerTest + ". Agents keep running.");
-  else if (has) SAVING_NAMES.filter(([k]) => k in s || unclear.includes(k)).forEach(([k, name]) => {
+  const row = (name, value) => {
     const r = document.createElement("div"); r.className = "row";
     const a = document.createElement("span"); a.textContent = name;
-    const b = document.createElement("span"); b.className = "v"; b.textContent = unclear.includes(k) ? "unclear" : s[k] >= 0.05 ? "saves " + s[k].toFixed(1) + " W" : "≈0 W";
+    const b = document.createElement("span"); b.className = "v"; b.textContent = value;
     r.append(a, b); el.appendChild(r);
-  });
-  else empty(el, "With the lid shut, Ajar switches each saving off and on twice and measures the whole laptop. Best with the agents quiet.");
+  };
+  if (p.powerTest) empty(el, p.powerTest + ". Keep the lid shut; agents keep running.");
+  else if (has) {
+    if ("total" in s || unclear.includes("total")) {
+      row("All of Ajar's savings", unclear.includes("total") ? "unclear" : s.total >= 0.05 ? "saves " + s.total.toFixed(1) + " W" : "≈0 W");
+      if (s.closed_without && s.closed_with && !unclear.includes("total"))
+        row("Lid shut, without → with", s.closed_without.toFixed(1) + " → " + s.closed_with.toFixed(1) + " W");
+      if (unclear.includes("total")) empty(el, "The laptop's own load moved too much while measuring. Try again when the agents are quiet.");
+    }
+    SAVING_NAMES.filter(([k]) => k in s).forEach(([k, name]) => row(name, s[k] >= 0.05 ? "saves " + s[k].toFixed(1) + " W" : "≈0 W"));
+  }
+  else empty(el, "With the lid shut, Ajar switches its savings off and on twice and measures the whole laptop. Best with the agents quiet.");
   $("measure").hidden = !p.canMeasure;
   $("measure").textContent = (has ? "Measure again" : "Measure now") + " (about 4 min)";
   clearTimeout(measurePoll); measurePoll = null;
-  if (p.powerTest) measurePoll = setTimeout(() => send("panel"), 10000);
+  if (p.powerTest) measurePoll = setTimeout(() => send("panel"), 15000);
 }
 
 /** Actions that let a closed laptop sleep can't be undone from the phone (a sleeping laptop can't hear it). Two taps. */

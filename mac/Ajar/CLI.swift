@@ -71,10 +71,10 @@ enum CLI {
             return 0
         case "power":
             if rest.first == "test" {
-                let start = send("power_test", ["screen": rest.contains("--screen")])
+                let start = send("power_test", ["screen": rest.contains("--screen"), "detailed": rest.contains("--detailed")])
                 guard (start["ok"] as? Bool) != false else { return show(start) }
-                print("Measuring each saving for about \(start["about_seconds"] ?? 150) s (agents keep running)…")
-                let deadline = Date().addingTimeInterval(420)
+                print("Measuring for about \(((start["about_seconds"] as? Int) ?? 210) / 60 + 1) min, keep the lid shut (agents keep running)…")
+                let deadline = Date().addingTimeInterval(rest.contains("--detailed") ? 1500 : 420)
                 while Date() < deadline {
                     Thread.sleep(forTimeInterval: 5)
                     let r = send("power", [:])
@@ -263,7 +263,7 @@ enum CLI {
       ajar set <key> <value>            change any setting (ajar settings lists them all, with what each does)
       ajar settings [--json]            every setting, its value, allowed values and what it does
       ajar power [--json]               whole-Mac watts and what to switch off to save more
-      ajar power test [--screen]        lid closed: measure what each saving is worth on this Mac (~4 min)
+      ajar power test [--detailed]      lid closed: measure what Ajar saves on this Mac (~4 min; --detailed ~12 min)
       ajar connect [claude|codex|claude-app]   add Ajar's MCP server to your agents
       ajar prompt                       the prompt that has your agent set Ajar up with you
       ajar anyway off                   stop going below the battery limit (allowing it is done in Ajar)
@@ -288,6 +288,9 @@ enum CLI {
             print("\(active ? "•" : "✓") \(s["title"] ?? "")\(saved)")
             if active, let k = s["setting"], let v = s["suggested_value"] { print("    fix: ajar set \(k) \(v)\((s["tradeoff"] as? String).map { "  — \($0)" } ?? "")") }
         }
+        if let t = r["measured_total_saving_watts"] as? Double, let m = r["measured_closed_watts"] as? [String: Any] {
+            print(String(format: "Measured: Ajar's savings are worth %.1f W with the lid shut", t) + ((m["without_savings"] as? Double).flatMap { w in (m["with_savings"] as? Double).map { String(format: " (%.1f W → %.1f W)", w, $0) } } ?? ""))
+        } else if let t = r["measured_total_saving_watts"] as? String { print("Measured: " + t) }
         print("Power test: \(r["power_test"] ?? "")")
         return 0
     }
@@ -369,8 +372,8 @@ enum MCPServer {
              description: "Whole-Mac power right now (measured from the battery controller, also on the charger) and a list of what is using it with the setting that would cut each: screen kept on while closed, booted simulators and Xcode previews, apps holding the speakers, busy apps, Low Power Mode. Includes savings measured by ajar_power_test.",
              schema: schema([:])) { _ in CLI.send("power", [:], timeout: 10) },
         Tool(name: "ajar_power_test",
-             description: "With the lid closed: switch each saving off and on twice (8 s each) and measure the whole-Mac difference, so you know what each is worth on this Mac; results that the Mac's own load made unclear are listed as unclear. Takes about 4 minutes; agents keep running. Returns at once; call ajar_power afterwards (power_test: done). Pass screen: true to include turning the screen off, which locks the Mac: ask the person first.",
-             schema: schema(["screen": prop("boolean", "Also measure the screen (locks the Mac). Default false.")])) { a in CLI.send("power_test", a) },
+             description: "With the lid closed: switch all of Ajar's savings off, on, off, on and read the whole-Mac power over full 30 s updates of the battery controller, so you know what they're worth on this Mac (reported as unclear if the Mac's own load moved too much). About 4 minutes; agents keep running. detailed: true adds each saving on its own (about 12 minutes). Returns at once; call ajar_power afterwards (power_test: done). screen: true includes turning the screen off, which locks the Mac: ask the person first.",
+             schema: schema(["detailed": prop("boolean", "Also measure each saving on its own (about 12 minutes). Default false."), "screen": prop("boolean", "Also measure the screen (locks the Mac). Default false.")])) { a in CLI.send("power_test", a) },
         Tool(name: "ajar_setup_prompt",
              description: "The recommended steps for setting Ajar up with the person. Use when asked to set up or tune Ajar.",
              schema: schema([:])) { _ in ["ok": true, "prompt": AIConnect.setupPrompt] },

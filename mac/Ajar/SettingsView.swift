@@ -203,6 +203,11 @@ struct SettingsView: View {
                     Text(String(format: "%.1f W → %.1f W", o, c)).monospacedDigit().foregroundStyle(.secondary)
                 }
             }
+            if let t = engine.powerEffects["total"] {
+                LabeledContent("Savings, measured") {
+                    Text(String(format: "%.1f W", t)).monospacedDigit().foregroundStyle(.secondary)
+                }
+            }
         }
     }
 

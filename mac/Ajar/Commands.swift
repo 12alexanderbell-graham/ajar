@@ -187,8 +187,9 @@ final class CommandCenter {
             engine.sampleEnergyNow { [weak self] in guard let self else { return }; reply(self.engine.powerReport()) }
 
         case "power_test":
-            if let problem = engine.startPowerTest(includeScreen: bool("screen") ?? false) { return fail(problem) }
-            ok(["started": true, "about_seconds": (bool("screen") ?? false) ? 270 : 225,
+            let detailed = bool("detailed") ?? false
+            if let problem = engine.startPowerTest(includeScreen: bool("screen") ?? false, detailed: detailed) { return fail(problem) }
+            ok(["started": true, "about_seconds": detailed ? 720 : 210,
                 "next": "Call power again (ajar power) for results once power_test shows done."])
 
         case "schema":
