@@ -17,18 +17,19 @@
 <title>Ajar Remote</title>
 <style>
 /* Mirrors Ajar's Mac panel: system font, system blue, grouped rows, the same order and words. */
-:root{--bg:#f2f2f7;--card:#fff;--text:#1d1d1f;--sub:#6e6e73;--ter:#aeaeb2;--line:#e5e5ea;--accent:#007aff;--green:#34c759;--seg:#e3e3e8;--orange:#c45500;--red:#d70015;color-scheme:light}
-@media (prefers-color-scheme:dark){:root{--bg:#000;--card:#1c1c1e;--text:#f5f5f7;--sub:#98989d;--ter:#636366;--line:#2c2c2e;--accent:#0a84ff;--green:#30d158;--seg:#2c2c2e;--orange:#ff9f0a;--red:#ff453a;color-scheme:dark}}
+:root{--bg:#f2f2f7;--card:#fff;--text:#1d1d1f;--sub:#6e6e73;--ter:#aeaeb2;--line:#e5e5ea;--accent:#007aff;--green:#34c759;--seg:#e3e3e8;--orange:#c45500;--red:#d70015;--greenbg:rgba(52,199,89,.14);color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#000;--card:#1c1c1e;--text:#f5f5f7;--sub:#98989d;--ter:#636366;--line:#2c2c2e;--accent:#0a84ff;--green:#30d158;--seg:#2c2c2e;--orange:#ff9f0a;--red:#ff453a;--greenbg:rgba(48,209,88,.18);color-scheme:dark}}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html{-webkit-text-size-adjust:100%;overscroll-behavior:none}
 body{margin:0;background:var(--bg);color:var(--text);font:17px/1.35 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 main{max-width:500px;margin:0 auto;padding:max(12px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(28px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
 button{font:inherit;color:inherit;touch-action:manipulation;cursor:pointer}
-.top{display:flex;align-items:center;gap:18px;padding:8px 2px 2px}
-.tab{border:0;background:none;padding:0;font-size:28px;font-weight:700;letter-spacing:-.4px;color:var(--ter)}
-.tab.sel{color:var(--text)}
-.iconbtn{margin-left:auto;border:0;background:none;padding:6px;color:var(--sub);display:flex}
-.hostline{display:flex;align-items:center;gap:6px;color:var(--sub);font-size:13px;margin:2px 2px 10px}
+.top{display:flex;align-items:flex-start;gap:12px;padding:8px 2px 14px}
+.who{flex:1;min-width:0}
+.name{font-size:26px;font-weight:700;letter-spacing:-.4px;line-height:1.15;overflow-wrap:anywhere}
+.iconbtn{margin-left:auto;margin-top:-2px;border:0;background:none;padding:6px;color:var(--sub);display:flex;flex:none}
+.hostline{display:flex;align-items:center;gap:6px;color:var(--sub);font-size:13px;margin:5px 0 0}
+#settings .hostline{margin:-2px 2px 4px}
 .live{width:7px;height:7px;border-radius:50%;background:var(--ter);flex:none}
 .live.ok{background:var(--green)}
 .live.wait{background:var(--accent);animation:pulse 1s ease-in-out infinite alternate}
@@ -39,10 +40,19 @@ button{font:inherit;color:inherit;touch-action:manipulation;cursor:pointer}
 .seg{display:flex;background:var(--seg);border-radius:9px;padding:2px;gap:2px}
 .seg button{flex:1;border:0;background:transparent;font-size:15px;padding:7px 4px;border-radius:7px;transition:background .15s}
 .seg button.sel{background:var(--accent);color:#fff;font-weight:600}
-.outcome{display:flex;align-items:flex-start;gap:10px;margin-top:12px}
-.outcome svg{flex:none;margin-top:2px}
+.explain{font-size:15px;margin:10px 2px 0}
+.outcome{display:flex;align-items:flex-start;gap:14px}
+.outcome .link{display:block;margin-top:6px}
 .outcome .t{flex:1;min-width:0}
-.h{font-size:16px;font-weight:600}
+.sicon{flex:none;width:46px;height:46px;border-radius:13px;display:grid;place-items:center;background:var(--seg);color:var(--sub)}
+.sicon .i-laptop,.sicon.keeps .i-moon{display:none}
+.sicon.keeps .i-laptop{display:block}
+.sicon.keeps{background:var(--greenbg);color:var(--green)}
+.big{font-size:19px;font-weight:600;letter-spacing:-.2px;line-height:1.25}
+.outcome .sub{margin-top:2px}
+.battline{display:flex;align-items:center;gap:7px;color:var(--sub);font-size:14px;margin:-2px 16px 14px;font-variant-numeric:tabular-nums}
+.battline svg{flex:none}
+.lead{color:var(--sub);font-size:17px;margin:-4px 2px 18px}
 .sub{color:var(--sub);font-size:14px}
 .cap{color:var(--sub);font-size:13px;margin-top:6px;font-variant-numeric:tabular-nums}
 .link{border:0;background:none;padding:0;color:var(--accent);font-size:15px;white-space:nowrap}
@@ -51,11 +61,6 @@ button{font:inherit;color:inherit;touch-action:manipulation;cursor:pointer}
 .pills{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
 .pills button{border:0;background:var(--seg);border-radius:16px;padding:6px 12px;font-size:14px}
 .warn{color:var(--orange);font-size:14px;margin:10px 0 0}
-.rowhead{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
-.rowhead .k{font-size:15px;font-weight:600;color:var(--sub)}
-.rowhead .v{font-size:15px;color:var(--sub);font-variant-numeric:tabular-nums}
-.rowhead .v.strong{color:var(--text);font-weight:600}
-.figure{font-size:34px;font-weight:600;letter-spacing:-.5px;margin-top:6px;font-variant-numeric:tabular-nums}
 .row{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-top:1px solid var(--line);gap:12px;min-height:44px}
 .row:first-child{border-top:0;padding-top:0}
 .row:last-child{padding-bottom:0}
@@ -104,7 +109,8 @@ select.pick{-webkit-appearance:none;appearance:none;border:0;background:none;col
 <main>
   <!-- Shown until this phone has a pairing key. -->
   <section id="pair" hidden>
-    <h1>Pair with your laptop</h1>
+    <h1>Control Ajar from your phone</h1>
+    <p class="lead">See if your laptop is still working and change it from anywhere.</p>
     <div class="group">
       <ol>
         <li>On the laptop: Ajar menu › Settings › Phone, turn it on.</li>
@@ -126,13 +132,14 @@ select.pick{-webkit-appearance:none;appearance:none;border:0;background:none;col
 
   <div id="app" hidden>
     <header class="top">
-      <button class="tab sel" data-tab="now">Now</button>
-      <button class="tab" data-tab="apps">Apps</button>
+      <div class="who">
+        <div class="name" id="host">Laptop</div>
+        <div class="hostline"><span class="live" id="live"></span><span class="conn" id="conn">Connecting…</span></div>
+      </div>
       <button class="iconbtn" id="more" aria-label="Settings">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
       </button>
     </header>
-    <div class="hostline"><span class="live" id="live"></span><span id="host">Laptop</span><span>·</span><span id="conn">Connecting…</span></div>
     <div id="toast" class="toast" role="alert" hidden></div>
 
     <!-- Add to Home Screen tip: only in a browser tab, never inside the home-screen app. -->
@@ -142,64 +149,66 @@ select.pick{-webkit-appearance:none;appearance:none;border:0;background:none;col
       <div class="sub" id="tiptext"></div>
     </section>
 
-    <section id="tab-now">
-      <div class="group" aria-live="polite">
+    <!-- The main screen: the same three things, in the same words, as the panel on the laptop. -->
+    <section id="home">
+      <div class="group" id="modecard">
         <div class="seg" role="radiogroup" aria-label="Keep awake">
           <button data-mode="off" role="radio">Off</button>
           <button data-mode="auto" role="radio">When Busy</button>
           <button data-mode="on" role="radio">Always</button>
         </div>
-        <div class="outcome">
-          <svg id="lidicon" width="22" height="18" viewBox="0 0 22 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="4" y="2" width="14" height="10" rx="1.5"/><path d="M1.5 15.5h19"/></svg>
-          <div class="t"><div class="h" id="headline">…</div><div class="sub" id="detail"></div></div>
-          <button class="link" id="sleepnow">Sleep Now</button>
-        </div>
+        <p class="explain" id="modetext"></p>
         <div class="pills" id="timers" hidden>
           <button data-for="60">For 1 h</button>
           <button data-for="240">For 4 h</button>
           <button data-until="7">Until 7:00</button>
         </div>
+      </div>
+
+      <div class="group" id="statuscard" aria-live="polite">
+        <div class="outcome">
+          <div class="sicon" id="lidicon" aria-hidden="true">
+            <svg class="i-laptop" width="26" height="22" viewBox="0 0 26 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="18" height="12" rx="1.8"/><path d="M1.5 18.5h23"/></svg>
+            <svg class="i-moon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 14.6A8.5 8.5 0 0 1 9.4 3.5a8.5 8.5 0 1 0 11.1 11.1z"/></svg>
+          </div>
+          <div class="t"><div class="big" id="headline">…</div><div class="sub" id="detail"></div>
+            <button class="link" id="sleepnow">Sleep Now</button></div>
+        </div>
         <div id="warnings"></div>
       </div>
 
-      <div class="group" id="batt" hidden>
-        <div class="rowhead"><span class="k">Battery</span><span class="v" id="bstate"></span></div>
-        <div class="figure" id="figure"></div>
-        <div class="sub" id="figcap"></div>
-        <div class="cap" id="drawline"></div>
-      </div>
-
-      <div class="group" id="weekbox" hidden>
-        <div class="rowhead"><span class="k">Last 7 days</span><span class="v strong" id="weektitle"></span></div>
-        <div class="cap" id="weekline"></div>
-      </div>
-
-      <div id="savingsbox" hidden>
-        <div class="sec">What each saving is worth</div>
-        <div class="group" id="savings"></div>
-        <button class="btn" id="measure">Measure now (about 4 min)</button>
-      </div>
-    </section>
-
-    <section id="tab-apps" hidden>
-      <div class="sec">Keeps the laptop awake</div>
-      <div class="group" id="agents"></div>
-      <div class="sec">Also while these run</div>
-      <div class="group" id="watch"></div>
-      <div class="sec">When the lid is closed</div>
-      <div class="group">
-        <div class="seg" role="radiogroup" aria-label="When the lid is closed">
-          <button data-preset="max_battery" role="radio">Max Battery</button>
-          <button data-preset="balanced" role="radio">Balanced</button>
-          <button data-preset="full_speed" role="radio">Full Speed</button>
-        </div>
-        <div class="cap" id="presetdetail"></div>
+      <div class="battline" id="batt" hidden>
+        <svg width="25" height="12" viewBox="0 0 25 12" aria-hidden="true"><rect x=".75" y=".75" width="21.5" height="10.5" rx="3" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".5"/><rect id="battfill" x="2.5" y="2.5" width="18" height="7" rx="1.6" fill="currentColor"/><path d="M24 4.3v3.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".5"/></svg>
+        <span id="battext"></span>
       </div>
     </section>
 
     <section id="settings" hidden>
       <button class="back" id="settingsback"><svg width="12" height="20" viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2 2 10l8 8"/></svg>Back</button>
       <div class="title">Settings</div>
+      <div class="hostline"><span class="live"></span><span class="conn">Connecting…</span></div>
+
+      <div class="sec">Keeps it awake</div>
+      <div class="group" id="agents"></div>
+      <div class="sec">Also while these run</div>
+      <div class="group" id="watch"></div>
+
+      <div class="sec">With the lid closed</div>
+      <div class="group">
+        <div class="seg" role="radiogroup" aria-label="With the lid closed">
+          <button data-preset="max_battery" role="radio">Max Battery</button>
+          <button data-preset="balanced" role="radio">Balanced</button>
+          <button data-preset="full_speed" role="radio">Full Speed</button>
+        </div>
+        <div class="cap" id="presetdetail"></div>
+      </div>
+
+      <div id="savingsbox" hidden>
+        <div class="sec">Measure the savings</div>
+        <div class="group" id="savings"></div>
+        <button class="btn" id="measure">Measure now (about 4 min)</button>
+      </div>
+
       <div id="settingslist"><div class="group"><div class="empty">Loading…</div></div></div>
       <div class="sec">This phone</div>
       <div class="group list">
@@ -262,9 +271,11 @@ function keyBytes(k) {
   try { const raw = b64u.dec(k); return raw.length === 32 ? raw : null; } catch (_) { return null; }
 }
 
+/** The connection line shows under the laptop's name and on the Settings page. */
 function setConn(t) {
-  $("conn").textContent = t;
-  $("live").className = "live " + (t === "Connected" ? "ok" : /…$/.test(t) ? "wait" : "bad");
+  const cls = "live " + (t === "Connected" ? "ok" : /…$/.test(t) ? "wait" : "bad");
+  document.querySelectorAll(".conn").forEach(e => { e.textContent = t; });
+  document.querySelectorAll(".live").forEach(e => { e.className = cls; });
 }
 
 async function topic(label, raw) {
@@ -484,14 +495,14 @@ function empty(el, text) { const e = document.createElement("div"); e.className 
 // Settings page: every setting the laptop reports, grouped like Ajar's Settings on the Mac. Values and choices
 // come from the laptop (the same table its AI tools use); only the words live here.
 const SETTING_GROUPS = [
-  ["Lid Closed", ["screen", "preset", "low_power", "pause_simulators", "shut_down_simulators", "pause_background_audio"], "Dark: no password when you open the lid. Off, locks: saves more, but you type your password."],
+  ["Screen and power", ["screen", "low_power", "pause_simulators", "shut_down_simulators", "pause_background_audio"], "Dark: no password when you open the lid. Off, locks: saves more, but you type your password."],
   ["Sleep & Safety", ["sleep_when_done", "quiet_minutes", "battery_floor", "only_on_power", "heat_guard"], "Only the laptop itself can lower the battery limit or turn off the heat guard."],
   ["Keep Awake For", ["claude_app", "downloads"], "Claude Code, Codex, Gemini, Cursor and other agents are picked up on their own."],
   ["Notifications", ["notify_done", "done_chime", "ntfy_topic"], ""],
   ["On the Laptop", ["menubar", "appearance", "live_lid_icon", "notch_island", "show_in_dock", "hotkey"], ""],
 ];
 const SETTING_LABELS = {
-  screen: "Screen", preset: "Other apps", low_power: "Low Power Mode", pause_simulators: "Pause simulators and previews",
+  screen: "Screen", low_power: "Low Power Mode", pause_simulators: "Pause simulators and previews",
   shut_down_simulators: "Shut simulators down instead", pause_background_audio: "Pause apps holding the speakers",
   sleep_when_done: "Sleep when the work is done", quiet_minutes: "After nothing happens for", battery_floor: "Sleep at battery level",
   only_on_power: "Only stay awake when plugged in", heat_guard: "Heat guard", claude_app: "Claude app (Cowork, computer use)",
@@ -598,7 +609,7 @@ function renderSettings(list) {
 }
 
 function openSettings(on) {
-  ["tab-now", "tab-apps"].forEach(id => $(id).hidden = on || !document.querySelector(`[data-tab="${id.slice(4)}"]`).classList.contains("sel"));
+  $("home").hidden = on;
   document.querySelector("header.top").hidden = on; $("tip").hidden = on || standalone || !!store.get("ajar.tipHidden");
   $("settings").hidden = !on;
   window.scrollTo(0, 0);
@@ -610,6 +621,29 @@ function show(id, on) { $(id).hidden = !on; }
 function text(id, t) { $(id).textContent = t || ""; }
 
 const clock = at => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+// One plain sentence under the mode switch, in the Mac panel's words.
+const MODE_TEXT = { off: "Sleeps like normal when you close the lid.", auto: "Stays awake while your AI agents work, then sleeps.", on: "Stays awake until you turn it off." };
+function modeText(mode) {
+  let u = mode === "on" && state && state.mode === "on" ? state.alwaysUntil : null;
+  if (typeof u === "number") u = clock(u < 1e12 ? u * 1000 : u);   // a time stamp; laptops send the words as a rule
+  return u ? `Stays awake until ${u}.` : MODE_TEXT[mode] || "";
+}
+/** Shows a mode as picked: on a tap at once, and again whenever the laptop answers. */
+function showMode(mode) {
+  document.querySelectorAll("[data-mode]").forEach(b => { const sel = b.dataset.mode === mode; b.classList.toggle("sel", sel); b.setAttribute("aria-checked", sel); });
+  text("modetext", modeText(mode));
+  show("timers", mode === "on");   // same as the Mac: timers while it's set to Always
+}
+
+/** "95% · about 19 h with the lid closed": the laptop's own sentence, else built from its parts (older laptops send one line). */
+function batteryLine(p) {
+  if (p.batteryLine) return p.batteryLine;
+  const pct = p.batteryPercentText || p.batteryState;
+  if (p.figure) return (pct ? pct + " · about " : "About ") + p.figure + " with the lid closed";
+  return p.battery || "";
+}
+
 /** at: when the laptop sent this (now for a fresh reply, the saved time for the copy shown before the first one). */
 function render(p, at = Date.now()) {
   state = p; stateAt = at;
@@ -617,23 +651,18 @@ function render(p, at = Date.now()) {
   text("host", p.host || "Laptop");
   text("headline", p.headline);
   text("detail", p.detail);
-  $("lidicon").style.color = p.keeps ? "var(--green)" : "var(--sub)";
-  document.querySelectorAll("[data-mode]").forEach(b => { const sel = b.dataset.mode === p.mode; b.classList.toggle("sel", sel); b.setAttribute("aria-checked", sel); });
-  // Same as the Mac: Sleep Now while it's holding the Mac awake; timers while it's set to Always.
+  $("lidicon").classList.toggle("keeps", !!p.keeps);
+  showMode(p.mode);
+  // Same as the Mac: Sleep Now while it's holding the laptop awake (and not set to Always).
   show("sleepnow", p.holding && p.mode !== "on");
-  show("timers", p.mode === "on");
   const w = $("warnings"); w.textContent = "";
   (p.warnings || []).forEach(t => { const e = document.createElement("p"); e.className = "warn"; e.textContent = t; w.appendChild(e); });
 
-  // Battery, exactly as the Mac panel words it (older apps send one line instead).
-  show("batt", !!(p.figure || p.battery));
-  text("bstate", p.batteryState || (p.battery ? p.battery.split(" · ")[0] : ""));
-  text("figure", p.figure || "");
-  text("figcap", p.figureCaption || (p.figure ? "" : (p.battery || "").split(" · ").slice(1).join(" · ")));
-  text("drawline", p.drawLine || (typeof p.watts === "number" ? p.watts.toFixed(1) + " W now" : ""));
-  show("weekbox", !!p.weekTitle);
-  text("weektitle", p.weekTitle);
-  text("weekline", p.weekLine);
+  const bl = batteryLine(p);
+  show("batt", !!bl);
+  text("battext", bl);
+  const pct = /(\d{1,3})\s*%/.exec(bl);
+  $("battfill").setAttribute("width", pct ? Math.max(1.5, 18 * Math.min(100, +pct[1]) / 100).toFixed(1) : 18);
 
   document.querySelectorAll("[data-preset]").forEach(b => {
     const m = { max_battery: "longest", balanced: "balanced", full_speed: "speed" }[b.dataset.preset];
@@ -742,15 +771,9 @@ async function start() {
 
   const pick = (attr, b) => document.querySelectorAll(`[${attr}]`).forEach(x => x.classList.toggle("sel", x === b));   // answer the tap at once
   document.querySelectorAll("[data-mode]").forEach(b => {
-    if (b.dataset.mode === "off") confirmTap(b, "Tap again", () => { pick("data-mode", b); tap("mode", { mode: "off" }); });
-    else b.addEventListener("click", () => { pick("data-mode", b); tap("mode", { mode: b.dataset.mode }); });
+    if (b.dataset.mode === "off") confirmTap(b, "Tap again", () => { showMode("off"); tap("mode", { mode: "off" }); });
+    else b.addEventListener("click", () => { showMode(b.dataset.mode); tap("mode", { mode: b.dataset.mode }); });
   });
-  document.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => {
-    document.querySelectorAll("[data-tab]").forEach(x => x.classList.toggle("sel", x === b));
-    show("tab-now", b.dataset.tab === "now"); show("tab-apps", b.dataset.tab === "apps");
-    store.set("ajar.tab", b.dataset.tab);
-  }));
-  if (store.get("ajar.tab") === "apps") document.querySelector('[data-tab="apps"]').click();
   $("more").addEventListener("click", () => openSettings(true));
   $("settingsback").addEventListener("click", () => openSettings(false));
   // Keep it fresh while it's on screen without spending the relay's daily allowance: every tap's answer already

@@ -3,156 +3,225 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Ajar</title>
-<meta name="description" content="Close the lid. Your agents keep working.">
+<title>Ajar: close the lid, your AI keeps working</title>
+<meta name="description" content="Ajar keeps your laptop awake with the lid shut while Claude Code, Codex or any AI agent works, saves the battery while it's closed, and lets it sleep when the work is done. Free for Mac, Windows and Linux.">
+<meta property="og:title" content="Ajar: close the lid, your AI keeps working">
+<meta property="og:description" content="Keeps your laptop awake with the lid shut while your AI agents work, then lets it sleep. Free and open source.">
+<meta property="og:image" content="https://12alexanderbell-graham.github.io/ajar/panel-now.png">
 <link rel="icon" href="favicon.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <style>
-  /* One short centred column: icon, line, download, screenshot, three facts, phone section. */
   :root {
-    --bg: #ffffff;
-    --bg-2: #f5f5f7;
-    --fg: #1d1d1f;
-    --fg-2: #6e6e73;
-    --line: #e5e5ea;
-    --accent: #e8781d;
-    --accent-fg: #ffffff;
+    --bg: #ffffff; --bg-2: #f5f5f7; --fg: #1d1d1f; --fg-2: #6e6e73; --line: #e5e5ea;
+    --accent: #e8781d; --accent-fg: #ffffff; --green: #1a9e4a;
     --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) { --bg: #000000; --bg-2: #161617; --fg: #f5f5f7; --fg-2: #a1a1a6; --line: #2c2c2e; --accent: #f08a2c; --accent-fg: #1d1d1f; color-scheme: dark; }
+    :root:not([data-theme="light"]) { --bg: #000000; --bg-2: #161617; --fg: #f5f5f7; --fg-2: #a1a1a6; --line: #2c2c2e; --accent: #f08a2c; --accent-fg: #1d1d1f; --green: #30d158; color-scheme: dark; }
   }
-  :root[data-theme="dark"] { --bg: #000000; --bg-2: #161617; --fg: #f5f5f7; --fg-2: #a1a1a6; --line: #2c2c2e; --accent: #f08a2c; --accent-fg: #1d1d1f; color-scheme: dark; }
-
+  :root[data-theme="dark"] { --bg: #000000; --bg-2: #161617; --fg: #f5f5f7; --fg-2: #a1a1a6; --line: #2c2c2e; --accent: #f08a2c; --accent-fg: #1d1d1f; --green: #30d158; color-scheme: dark; }
   * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--fg);
-    font-family: var(--font); font-size: 17px; line-height: 1.47; letter-spacing: -0.01em;
-    -webkit-font-smoothing: antialiased;
-  }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font); font-size: 17px; line-height: 1.47; letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   a { color: var(--accent); }
-  .wrap {
-    max-width: 720px; margin: 0 auto;
-    padding-left: max(22px, env(safe-area-inset-left, 0px));
-    padding-right: max(22px, env(safe-area-inset-right, 0px));
-  }
-  header { text-align: center; padding-block: 88px 0; }
-  .icon { width: 112px; height: 112px; display: block; margin: 0 auto 28px; }
-  h1 { font-size: clamp(40px, 7vw, 60px); line-height: 1.05; letter-spacing: -0.035em; font-weight: 700; margin: 0; text-wrap: balance; }
-  .lede { font-size: 21px; line-height: 1.4; color: var(--fg-2); max-width: 30em; margin: 16px auto 0; text-wrap: balance; }
-  .btn {
-    display: inline-block; margin-top: 32px; text-decoration: none;
-    background: var(--accent); color: var(--accent-fg);
-    font-size: 17px; font-weight: 500; padding: 12px 26px; border-radius: 980px;
-  }
+  .wrap { max-width: 980px; margin: 0 auto; padding-left: max(22px, env(safe-area-inset-left, 0px)); padding-right: max(22px, env(safe-area-inset-right, 0px)); }
+  .narrow { max-width: 720px; margin-left: auto; margin-right: auto; }
+  section { margin-top: 112px; }
+
+  /* Hero */
+  header { text-align: center; padding-top: 80px; }
+  .icon { width: 96px; height: 96px; display: block; margin: 0 auto 26px; }
+  h1 { font-size: clamp(42px, 7.4vw, 72px); line-height: 1.03; letter-spacing: -0.04em; font-weight: 700; margin: 0; text-wrap: balance; }
+  .lede { font-size: clamp(19px, 2.4vw, 23px); line-height: 1.4; color: var(--fg-2); max-width: 32em; margin: 18px auto 0; text-wrap: balance; }
+  .btn { display: inline-block; margin-top: 34px; text-decoration: none; background: var(--accent); color: var(--accent-fg); font-size: 18px; font-weight: 600; padding: 14px 30px; border-radius: 980px; }
   .btn:hover { filter: brightness(1.05); }
-  .btn:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-  .meta { font-size: 13px; color: var(--fg-2); margin: 14px 0 0; }
+  .btn:focus-visible, a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .meta { font-size: 14px; color: var(--fg-2); margin: 14px 0 0; }
   .meta a { color: inherit; }
-  .meta code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--bg-2); padding: 2px 6px; border-radius: 6px; color: var(--fg); }
-  .first { font-size: 13px; color: var(--fg-2); margin: 4px auto 0; max-width: 34em; }
-  .shot { margin: 64px auto 0; max-width: 320px; }
-  .shot img { display: block; width: 100%; height: auto; border-radius: 12px; box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 12px 32px rgba(0,0,0,.12); }
-  .facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px; margin-top: 72px; }
-  .facts div { min-width: 0; }
-  h2 { font-size: 17px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.015em; }
-  .facts p { margin: 0; font-size: 15px; color: var(--fg-2); }
+  code { font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--bg-2); padding: 2px 7px; border-radius: 6px; color: var(--fg); }
+  .first { font-size: 13px; color: var(--fg-2); margin: 6px auto 0; max-width: 36em; }
+  .shot { margin: 60px auto 0; max-width: 400px; }
+  .shot img { display: block; width: 100%; height: auto; border-radius: 14px; box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 18px 48px rgba(0,0,0,.14); }
+  .shot figcaption { font-size: 13px; color: var(--fg-2); margin-top: 14px; text-align: center; }
 
-  .phone { margin-top: 96px; background: var(--bg-2); border-radius: 22px; padding: 40px; display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 40px; align-items: center; }
-  .phone img { display: block; width: 100%; height: auto; border-radius: 28px; box-shadow: 0 0 0 1px rgba(0,0,0,.08), 0 12px 32px rgba(0,0,0,.14); }
-  .phone h2.big { font-size: 28px; line-height: 1.15; letter-spacing: -0.025em; font-weight: 700; margin: 0 0 8px; }
-  .phone p { margin: 0 0 16px; color: var(--fg-2); font-size: 15px; }
-  .phone ol { margin: 0; padding-left: 20px; font-size: 15px; }
-  .phone li { margin: 6px 0; }
-  .phone .small { font-size: 13px; margin: 16px 0 0; }
+  h2 { font-size: clamp(30px, 4.4vw, 44px); line-height: 1.1; letter-spacing: -0.03em; font-weight: 700; margin: 0 0 14px; text-wrap: balance; }
+  .sub { font-size: 19px; color: var(--fg-2); margin: 0; max-width: 34em; text-wrap: pretty; }
+  .center { text-align: center; }
+  .center .sub { margin: 0 auto; }
 
-  .ai { margin-top: 32px; background: var(--bg-2); border-radius: 22px; padding: 40px; }
-  .ai h2.big { font-size: 28px; line-height: 1.15; letter-spacing: -0.025em; font-weight: 700; margin: 0 0 8px; }
-  .ai p { margin: 0 0 16px; color: var(--fg-2); font-size: 15px; }
-  .ai .small { font-size: 13px; margin: 16px 0 0; }
-  .ai code { font: 14px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--fg); }
-  .prompt { position: relative; }
-  .prompt pre { margin: 0; white-space: pre-wrap; font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--bg); color: var(--fg);
-    border: 1px solid var(--line); border-radius: 14px; padding: 50px 18px 18px; max-height: 260px; overflow: auto; }
-  .copy { position: absolute; top: 10px; right: 10px; border: 0; border-radius: 980px; padding: 6px 14px; font: 500 13px var(--font);
-    background: var(--accent); color: var(--accent-fg); cursor: pointer; }
+  /* Problem */
+  .problem { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 36px; }
+  .card { background: var(--bg-2); border-radius: 20px; padding: 28px; }
+  .card h3 { font-size: 19px; margin: 0 0 6px; letter-spacing: -0.015em; }
+  .card p { margin: 0; color: var(--fg-2); font-size: 16px; }
+  .bad h3::before { content: "✕ "; color: #d70015; }
+
+  /* Steps */
+  .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 36px; counter-reset: s; }
+  .step { background: var(--bg-2); border-radius: 20px; padding: 28px; }
+  .step::before { counter-increment: s; content: counter(s); display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: var(--accent-fg); font-weight: 700; font-size: 16px; margin-bottom: 14px; }
+  .step h3 { font-size: 19px; margin: 0 0 6px; letter-spacing: -0.015em; }
+  .step p { margin: 0; color: var(--fg-2); font-size: 16px; }
+
+  /* Proof */
+  .proof { text-align: center; background: var(--bg-2); border-radius: 28px; padding: 64px 28px; }
+  .big { font-size: clamp(56px, 11vw, 112px); font-weight: 700; letter-spacing: -0.05em; line-height: 1; margin: 6px 0 14px; font-variant-numeric: tabular-nums; }
+  .big .arrow { color: var(--fg-2); font-weight: 500; }
+  .big .low { color: var(--green); }
+  .proof .sub { margin: 0 auto; font-size: 17px; }
+  .proof .fine { font-size: 13px; color: var(--fg-2); margin: 18px auto 0; max-width: 40em; }
+
+  /* Features */
+  .features { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 36px; }
+  .feature { border: 1px solid var(--line); border-radius: 20px; padding: 28px; }
+  .feature h3 { font-size: 19px; margin: 0 0 6px; letter-spacing: -0.015em; }
+  .feature p { margin: 0; color: var(--fg-2); font-size: 16px; }
+
+  /* Phone + AI */
+  .split { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 48px; align-items: center; }
+  .split img { display: block; width: 100%; height: auto; border-radius: 34px; box-shadow: 0 0 0 1px rgba(0,0,0,.08), 0 18px 48px rgba(0,0,0,.16); }
+  .split ol { margin: 18px 0 0; padding-left: 22px; color: var(--fg-2); font-size: 16px; }
+  .split li { margin: 6px 0; }
+  .split li b { color: var(--fg); font-weight: 600; }
+  .small { font-size: 14px; color: var(--fg-2); margin: 16px 0 0; }
+  .prompt { position: relative; margin-top: 22px; }
+  .prompt pre { margin: 0; white-space: pre-wrap; font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--bg-2); color: var(--fg); border-radius: 16px; padding: 52px 20px 20px; max-height: 240px; overflow: auto; }
+  .copy { position: absolute; top: 12px; right: 12px; border: 0; border-radius: 980px; padding: 7px 16px; font: 600 13px var(--font); background: var(--accent); color: var(--accent-fg); cursor: pointer; }
+
+  /* FAQ */
+  details { border-top: 1px solid var(--line); padding: 18px 0; }
+  details:last-of-type { border-bottom: 1px solid var(--line); }
+  summary { cursor: pointer; font-size: 18px; font-weight: 600; letter-spacing: -0.015em; list-style: none; display: flex; justify-content: space-between; gap: 16px; }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: "+"; color: var(--fg-2); font-weight: 400; font-size: 22px; line-height: 1; }
+  details[open] summary::after { content: "–"; }
+  details p { margin: 10px 0 0; color: var(--fg-2); font-size: 16px; }
+
+  .final { text-align: center; }
+  footer { margin-top: 96px; border-top: 1px solid var(--line); padding-block: 24px 40px; font-size: 12px; color: var(--fg-2); text-align: center; }
   footer a { color: inherit; }
-  footer { margin-top: 72px; border-top: 1px solid var(--line); padding-block: 24px 40px; font-size: 12px; color: var(--fg-2); text-align: center; }
 
-  @media (max-width: 640px) {
-    .ai { padding: 28px 22px; }
-    header { padding-block: 56px 0; }
-    .facts { grid-template-columns: minmax(0, 1fr); gap: 24px; margin-top: 56px; }
-    .phone { grid-template-columns: minmax(0, 1fr); padding: 28px 22px; gap: 28px; margin-top: 64px; }
-    .phone img { max-width: 220px; margin: 0 auto; }
+  @media (max-width: 760px) {
+    header { padding-top: 52px; }
+    section { margin-top: 80px; }
+    .problem, .steps, .features { grid-template-columns: minmax(0, 1fr); }
+    .split { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+    .split img { max-width: 240px; margin: 0 auto; }
+    .proof { padding: 48px 22px; border-radius: 22px; }
+    .card, .step, .feature { padding: 22px; }
   }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <img class="icon" src="icon.png" alt="Ajar app icon" width="112" height="112">
-    <h1>Close the lid. Keep working.</h1>
-    <p class="lede">Ajar keeps your laptop awake with the lid shut while Claude Code, Codex and other agents run, then lets it sleep when they're done.</p>
+    <img class="icon" src="icon.png" alt="Ajar app icon" width="96" height="96">
+    <h1>Close the lid.<br>Your AI keeps working.</h1>
+    <p class="lede">Ajar keeps your laptop awake with the lid shut while Claude Code, Codex or any AI agent works, uses a fraction of the battery while it's closed, and lets it sleep the moment the work is done.</p>
     <a class="btn" id="dl" href="downloads/Ajar-1.0.0-mac.zip">Download for Mac</a>
-    <p class="meta">Free · <a href="downloads/Ajar-1.0.0-mac.zip">Mac</a> (macOS 14+) · <a href="downloads/Ajar-1.0.0-windows-x86_64.zip">Windows</a> (10 and 11) · <a href="downloads/ajar-1.0.0-linux-x86_64.tar.gz">Linux</a> (x86-64)</p>
-    <p class="meta">Or: <code>brew install --cask 12alexanderbell-graham/ajar/ajar</code> · <a href="https://github.com/12alexanderbell-graham/ajar">Open source on GitHub</a></p>
-    <p class="first" id="first">First open: macOS asks before running apps from outside the App Store. Go to System Settings › Privacy &amp; Security and click Open Anyway.</p>
-
-    <div class="shot">
-      <img src="panel-now.png" alt="Ajar's menu bar panel showing 'Close the lid: keeps working'" width="640" height="596">
-    </div>
+    <p class="meta">Free and open source · <a href="downloads/Ajar-1.0.0-mac.zip">Mac</a> (macOS 14+) · <a href="downloads/Ajar-1.0.0-windows-x86_64.zip">Windows</a> 10 and 11 · <a href="downloads/ajar-1.0.0-linux-x86_64.tar.gz">Linux</a></p>
+    <p class="meta">Homebrew: <code>brew install --cask 12alexanderbell-graham/ajar/ajar</code></p>
+    <p class="first" id="first">First open: macOS may ask before running an app from outside the App Store. Open System Settings › Privacy &amp; Security and click Open Anyway.</p>
+    <figure class="shot">
+      <img src="panel-now.png" alt="Ajar's menu: When Busy is selected, it says 'Close the lid: it keeps working, Claude app is working', and the battery line reads 95%, about 3 hours 42 minutes with the lid closed" width="640" height="470">
+      <figcaption>That's the whole app: one choice, and a sentence telling you what closing the lid will do.</figcaption>
+    </figure>
   </header>
 
-  <div class="facts">
-    <div>
-      <h2>Only while work is happening</h2>
-      <p>Awake while an agent is working, or while apps you pick are running, like an Xcode build. Sleeps a few minutes after.</p>
-    </div>
-    <div>
-      <h2>Cuts the power that's wasted</h2>
-      <p>With the lid shut it pauses what nobody's using (other apps, idle simulators, silent audio) and can switch the screen fully off. Real measured watts; everything comes back when you open the lid.</p>
-    </div>
-    <div>
-      <h2>Stops before it hurts</h2>
-      <p>Sleeps at your battery limit whatever else is going on, and if it gets too hot with the lid shut.</p>
-    </div>
-  </div>
-
-  <section class="phone" aria-labelledby="phone-h">
-    <img src="phone.png" alt="Ajar's phone page: status, keep-awake mode, agents and apps" width="390" height="844">
-    <div>
-      <h2 class="big" id="phone-h">Check on it from your phone</h2>
-      <p>See if it's still working, switch modes, or let it sleep, from anywhere. End-to-end encrypted.</p>
-      <ol>
-        <li>On the laptop: Ajar › Settings › Phone Control › Show QR Code.</li>
-        <li>Scan it with your phone's camera.</li>
-        <li>iPhone: tap Share, then <b>Add to Home Screen</b>.<br>Android: tap ⋮, then <b>Add to Home screen</b>.</li>
-      </ol>
-      <p class="small">It then opens from your Home Screen like an app. Already paired? <a href="remote/">Open the phone page</a>.</p>
+  <section class="narrow" aria-labelledby="why-h">
+    <h2 id="why-h">Your agent shouldn't stop because you closed your laptop.</h2>
+    <p class="sub">Long agent runs take minutes or hours. Until now you had two bad options.</p>
+    <div class="problem">
+      <div class="card bad">
+        <h3>Close the lid</h3>
+        <p>The Mac goes to sleep and the run stops halfway. You come back to nothing done.</p>
+      </div>
+      <div class="card bad">
+        <h3>Leave it open</h3>
+        <p>It drains the battery, runs hot, and your screen is on show to anyone walking past.</p>
+      </div>
     </div>
   </section>
 
-  <section class="ai" aria-labelledby="ai-h">
-    <h2 class="big" id="ai-h">Let your AI set it up</h2>
-    <p>Ajar connects to Claude Code, Codex and the Claude app in one click (or <code>ajar connect</code>). Then paste this and your agent tunes it with you: what stays on, what pauses, and what each saving is worth on your laptop.</p>
+  <section aria-labelledby="how-h">
+    <div class="center"><h2 id="how-h">How it works</h2><p class="sub">Set up once in under a minute. After that you don't think about it.</p></div>
+    <div class="steps">
+      <div class="step"><h3>Install and allow it</h3><p>macOS asks for your password once, so Ajar can switch sleep off and back on. Nothing else to configure.</p></div>
+      <div class="step"><h3>Start your agent</h3><p>Ajar spots Claude Code, Codex, Gemini CLI, Cursor Agent and others on its own. The menu tells you closing the lid is now safe.</p></div>
+      <div class="step"><h3>Close the lid and go</h3><p>It keeps working in your bag, uses a fraction of the power, and sleeps a few minutes after the agent stops.</p></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="proof-h">
+    <div class="proof">
+      <h2 id="proof-h">It doesn't just stay awake. It saves the battery while it does.</h2>
+      <div class="big" aria-label="18.3 watts down to 3.1 watts">18.3 W <span class="arrow">→</span> <span class="low">3.1 W</span></div>
+      <p class="sub">With the lid shut, Ajar pauses what nobody's using (other apps, idle simulators, silent audio), dims the screen to nothing and turns on Low Power Mode. Everything comes back the moment you open the lid.</p>
+      <p class="fine">Measured by Ajar's own power test on an M5 Max MacBook Pro with the lid closed and iOS simulators open: whole-laptop power with Ajar's savings off, then on, twice. Your numbers depend on what's running; Ajar measures them on your laptop too.</p>
+    </div>
+  </section>
+
+  <section aria-labelledby="feat-h">
+    <div class="center"><h2 id="feat-h">Built to be left alone</h2></div>
+    <div class="features">
+      <div class="feature"><h3>Only when it's needed</h3><p>In When Busy mode it stays awake while an agent works and lets the laptop sleep a few minutes after it stops. Or pick Always for a download, a render, a long build.</p></div>
+      <div class="feature"><h3>No lock screen</h3><p>Open the lid and you're straight back where you were. No password, no waiting for the Mac to wake up.</p></div>
+      <div class="feature"><h3>Safe in a bag</h3><p>It always sleeps at your battery limit, and if the laptop gets too hot with the lid shut. Those two can only be loosened by you, never by an agent.</p></div>
+      <div class="feature"><h3>Puts everything back</h3><p>Every change is undone when you open the lid. A small watchdog undoes them too if Ajar ever quits unexpectedly.</p></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="phone-h">
+    <div class="split">
+      <img src="phone.png" alt="Ajar on a phone: the same simple screen, showing the laptop is still working" width="390" height="844">
+      <div>
+        <h2 id="phone-h">Check on it from your phone</h2>
+        <p class="sub">Is it still working? How much battery is left? Let it sleep from the train. Works from anywhere, encrypted end to end, and nothing to install from an app store.</p>
+        <ol>
+          <li>On the laptop: <b>Ajar › Settings › Phone</b>, turn it on.</li>
+          <li>Scan the QR code with your phone.</li>
+          <li>Tap Share › <b>Add to Home Screen</b> and it opens like an app.</li>
+        </ol>
+        <p class="small">Already paired? <a href="remote/">Open the phone page</a>.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="narrow" aria-labelledby="ai-h">
+    <h2 id="ai-h">Your AI can run it too</h2>
+    <p class="sub">Connect Claude Code, Codex or the Claude app in one click (Settings › AI Agents, or <code>ajar connect</code>). Agents keep the laptop awake for long jobs themselves. Paste this and your agent sets Ajar up with you:</p>
     <div class="prompt">
       <pre id="prompt">Ajar is installed on this laptop. It keeps the machine awake with the lid closed while you work, and cuts power use while the lid is shut. You can control all of it through the ajar MCP tools (or the ajar command). Set it up for me:
-
 1. Read Ajar's settings and power report to see every setting and what is using power right now.
-2. Ask me, in one short message: which apps must keep running at full speed with the lid shut (music, calls, a local model, Docker...), whether it should stay awake only while agents work or always, and whether I'm OK with a lock screen when I open the lid in exchange for the screen turning fully off.
+2. Ask me, in one short message: which apps must keep running at full speed with the lid shut (music, calls, a local model, Docker...), and whether it should stay awake only while agents work or always.
 3. Apply the strongest savings that don't touch what I named: preset max_battery, pausing simulators and background audio, low power, and per-app rules.
-4. If my lid is closed, run Ajar's power test and tell me what each saving is worth in watts.
+4. If my lid is closed, run Ajar's power test and tell me what the savings are worth in watts.
 5. From now on, keep the laptop awake through Ajar before long work and release it when done.
-
 Never turn off the heat guard or lower the battery limit; Ajar won't let you, and that's on purpose.</pre>
       <button class="copy" id="copy" type="button">Copy</button>
     </div>
-    <p class="small">For agents: <a href="llms.txt">llms.txt</a> describes every command, tool and setting.</p>
+    <p class="small">For agents: <a href="llms.txt">llms.txt</a> lists every command, tool and setting.</p>
   </section>
 
-  <footer>© 2026 Ajar · MIT · <a href="https://github.com/12alexanderbell-graham/ajar">GitHub</a> · <a href="llms.txt">llms.txt</a></footer>
+  <section class="narrow" aria-labelledby="faq-h">
+    <h2 id="faq-h">Questions</h2>
+    <details><summary>Is it safe to keep a laptop running in a bag?</summary><p>Ajar watches the temperature. If the laptop gets hot with the lid shut it pauses everything it can, and if it stays hot for five minutes (or gets critical) it puts the laptop to sleep. It also always sleeps at your battery limit, 15% unless you change it.</p></details>
+    <details><summary>Do I have to type my password when I open the lid?</summary><p>No. Ajar keeps the screen dark instead of letting it sleep, so you're straight back in. If you'd rather have the lock screen, turn the screen fully off in Settings.</p></details>
+    <details><summary>Won't it drain my battery?</summary><p>Much less than leaving the lid open. With the lid shut Ajar pauses what you're not using and switches on Low Power Mode, and it lets the laptop sleep a few minutes after your agent stops. The menu shows how long the battery will last with the lid closed.</p></details>
+    <details><summary>What does it change on my Mac?</summary><p>Only what it needs while the lid is shut: sleep, Low Power Mode, screen brightness, and pausing or slowing apps you're not using. All of it is put back when you open the lid, and Settings › About › Remove Ajar takes everything out.</p></details>
+    <details><summary>Which agents does it know about?</summary><p>Claude Code, Codex, Gemini CLI, Cursor Agent, Copilot CLI, Amp, Aider, OpenCode, Ollama and the Claude app, found automatically. You can add any app or command-line tool (an Xcode build, ffmpeg, Blender) in Settings › Apps.</p></details>
+    <details><summary>Does it cost anything?</summary><p>No. Ajar is free and open source under the MIT license. <a href="https://github.com/12alexanderbell-graham/ajar">The code is on GitHub.</a></p></details>
+    <details><summary>Windows and Linux?</summary><p>Yes, with the same When Busy / Always modes, battery limit, heat guard and phone control. Windows 10 and 11, and Linux desktops with systemd (GNOME, KDE and others).</p></details>
+  </section>
+
+  <section class="final" aria-labelledby="final-h">
+    <h2 id="final-h">Close the lid. Your AI keeps working.</h2>
+    <a class="btn" id="dl2" href="downloads/Ajar-1.0.0-mac.zip">Download for Mac</a>
+    <p class="meta">Free · Mac, Windows and Linux · <a href="https://github.com/12alexanderbell-graham/ajar">GitHub</a></p>
+  </section>
+
+  <footer>© 2026 Ajar · MIT license · <a href="https://github.com/12alexanderbell-graham/ajar">GitHub</a> · <a href="llms.txt">llms.txt</a></footer>
 </div>
 <script>
   document.getElementById("copy").addEventListener("click", function () {
@@ -161,15 +230,18 @@ Never turn off the heat guard or lower the battery limit; Ajar won't let you, an
       function () { var r = document.createRange(); r.selectNodeContents(document.getElementById("prompt")); var sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); b.textContent = "Press ⌘C"; });
     setTimeout(function () { b.textContent = "Copy"; }, 2500);
   });
-  // Point the big button at this visitor's system. The links under it stay for everyone.
+  // Point the download buttons at this visitor's system. The links under the first one stay for everyone.
   (function () {
-    var ua = navigator.userAgent, dl = document.getElementById("dl"), first = document.getElementById("first");
+    var ua = navigator.userAgent, first = document.getElementById("first"), btns = [document.getElementById("dl"), document.getElementById("dl2")];
+    function set(label, href) { btns.forEach(function (b) { b.textContent = label; b.href = href; }); }
     if (/Windows/.test(ua)) {
-      dl.textContent = "Download for Windows"; dl.href = "downloads/Ajar-1.0.0-windows-x86_64.zip";
+      set("Download for Windows", "downloads/Ajar-1.0.0-windows-x86_64.zip");
       first.textContent = "First open: Windows may show “Windows protected your PC”. Click More info, then Run anyway.";
     } else if (/Linux/.test(ua) && !/Android/.test(ua)) {
-      dl.textContent = "Download for Linux"; dl.href = "downloads/ajar-1.0.0-linux-x86_64.tar.gz";
+      set("Download for Linux", "downloads/ajar-1.0.0-linux-x86_64.tar.gz");
       first.textContent = "Unpack it and run ./install.sh. Works with GNOME, KDE and other systemd desktops.";
+    } else if (/iPhone|iPad|Android/.test(ua)) {
+      first.textContent = "Ajar runs on your laptop. Open this page there to download it, then control it from this phone.";
     }
   })();
 </script>
