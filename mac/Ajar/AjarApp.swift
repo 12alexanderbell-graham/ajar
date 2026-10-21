@@ -72,7 +72,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applyAppearanceSettings()
         observeSettings()
 
-        if !engine.setupReady || !UserDefaults.standard.bool(forKey: "launchedBefore") {
+        // First run, setup missing, or the three-step welcome not finished yet: open the window once.
+        if !engine.setupReady || !UserDefaults.standard.bool(forKey: "launchedBefore") || !UserDefaults.standard.bool(forKey: "onboardingDone") {
             UserDefaults.standard.set(true, forKey: "launchedBefore")
             ui.showMainWindow()
         }

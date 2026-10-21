@@ -1,35 +1,57 @@
 import SwiftUI
 
-/// The regular window: a welcome + setup flow the first time, then the same controls as the menu bar panel.
-/// Always exactly 460 × 720 so its size never depends on live-updating content.
+/// The regular window. First run: three short steps (allow it, pick when it stays awake, optional extras).
+/// After that, the same screen as the menu bar panel. Always exactly 460 × 720 so its size never depends on
+/// live-updating content.
 struct MainWindowView: View {
     @Bindable var engine: Engine
     var actions: PanelActions
-    @State private var showConnect = !UserDefaults.standard.bool(forKey: "aiCardDismissed")
+    @AppStorage("onboardingDone") private var onboardingDone = false
+    @State private var step = 2
 
     var body: some View {
         Group {
-            if engine.setupReady && UIState.shared.windowSettings {
+            if !engine.setupReady {
+                Welcome(engine: engine)
+            } else if !onboardingDone {
+                if step == 2 { ChooseMode(engine: engine) { step = 3 } }
+                else { Extras { onboardingDone = true } }
+            } else if UIState.shared.windowSettings {
                 SettingsPage(engine: engine, back: { UIState.shared.windowSettings = false }, quit: actions.quit)
                     .padding(.top, 20)
-            } else if engine.setupReady {
+            } else {
                 ScrollView {
-                    if showConnect {
-                        ConnectCard { showConnect = false; UserDefaults.standard.set(true, forKey: "aiCardDismissed") }
-                            .padding(.horizontal, 20).padding(.top, 20)
-                    }
                     PanelView(engine: engine, actions: actions)
                         .frame(maxWidth: .infinity)
-                        .padding(.top, showConnect ? 8 : 28)
+                        .padding(.top, 28)
                         .padding(.bottom, 12)
                 }
                 .scrollIndicators(.never)
-            } else {
-                Welcome(engine: engine)
             }
         }
         .frame(width: 460, height: 720)
         .background(.regularMaterial)
+    }
+}
+
+/// Step dots and a title, shared by the three first-run screens.
+private struct StepHeader: View {
+    let step: Int
+    let title: String
+    let subtitle: String
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 6) {
+                ForEach(1...3, id: \.self) { i in
+                    Capsule().fill(i == step ? Color.accentColor : Color.primary.opacity(0.15)).frame(width: i == step ? 18 : 6, height: 6)
+                }
+            }
+            .padding(.bottom, 10)
+            Text(title).font(.system(size: 24, weight: .bold)).multilineTextAlignment(.center)
+            Text(subtitle).font(.system(size: 14)).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 36)
     }
 }
 
@@ -39,23 +61,19 @@ private struct Welcome: View {
 
     var body: some View {
         VStack(spacing: 18) {
-            Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 96, height: 96)
-                .padding(.top, 44)
-            VStack(spacing: 6) {
-                Text("Welcome to Ajar").font(.system(size: 26, weight: .bold))
-                Text("Close the lid. Your work keeps going.").font(.system(size: 14)).foregroundStyle(.secondary)
-            }
+            Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 88, height: 88)
+                .padding(.top, 36)
+            StepHeader(step: 1, title: "Close the lid. Your work keeps going.",
+                       subtitle: "Ajar keeps your Mac awake with the lid shut while your AI agents work.")
             VStack(alignment: .leading, spacing: 14) {
-                Feature(symbol: "sparkles", color: .blue, title: "Stays awake only when it matters",
-                        text: "When Claude Code, Codex, a download or an app you pick is working. Otherwise your Mac sleeps like normal.")
-                Feature(symbol: "leaf.fill", color: .green, title: "Saves battery while it's closed",
-                        text: "Turns on Low Power Mode and slows or pauses the apps you're not using, then puts everything back.")
+                Feature(symbol: "laptopcomputer", color: .green, title: "Shut it and walk away",
+                        text: "Your agent keeps going in your bag.")
+                Feature(symbol: "leaf.fill", color: .orange, title: "Uses a fraction of the battery",
+                        text: "18 W down to 3 W on our test Mac.")
                 Feature(symbol: "moon.zzz.fill", color: .indigo, title: "Sleeps when the work is done",
-                        text: "No more hot, dead laptop in your bag. Battery and heat limits always win.")
-                Feature(symbol: "terminal.fill", color: .gray, title: "Your AI can drive it",
-                        text: "Connect Claude Code, Codex or the Claude app in one click, then paste the setup prompt: your agent tunes Ajar with you.")
+                        text: "Or when the battery runs low.")
             }
-            .padding(.horizontal, 36)
+            .padding(.horizontal, 40)
             .padding(.top, 4)
             Spacer(minLength: 4)
             VStack(spacing: 8) {
@@ -69,18 +87,117 @@ private struct Welcome: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.extraLarge)
                 .disabled(working)
-                Text("macOS asks for your password once. Ajar gets permission to change only sleep and Low Power Mode, adds a small watchdog that undoes everything if Ajar quits unexpectedly, and installs the ajar command for Claude. Settings → Remove Helper takes it all out.")
+                Text("macOS will ask for your password once.")
                     .font(.system(size: 11)).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }
-            .padding(.horizontal, 36)
+            .padding(.horizontal, 40)
             .padding(.bottom, 30)
         }
     }
 }
 
+/// Step 2: the one choice that matters.
+private struct ChooseMode: View {
+    @Bindable var engine: Engine
+    var next: () -> Void
+
+    var body: some View {
+        VStack(spacing: 22) {
+            StepHeader(step: 2, title: "When should it stay awake?", subtitle: "You can change it later.")
+                .padding(.top, 56)
+            VStack(spacing: 10) {
+                option(.auto, title: "When Busy", badge: "Recommended",
+                       text: "While an agent is working. Sleeps after it stops.")
+                option(.on, title: "Always", badge: nil,
+                       text: "Until you turn it off.")
+            }
+            .padding(.horizontal, 36)
+            Spacer()
+            Button { next() } label: { Text("Continue").font(.system(size: 14, weight: .semibold)).frame(maxWidth: .infinity) }
+                .buttonStyle(.borderedProminent).controlSize(.extraLarge)
+                .padding(.horizontal, 40).padding(.bottom, 30)
+        }
+        .onAppear { if engine.mode == .off { engine.mode = .auto } }
+    }
+
+    private func option(_ m: Mode, title: String, badge: String?, text: String) -> some View {
+        let selected = engine.mode == m
+        return Button {
+            if m == .on { engine.stayAwake(for: nil) } else { engine.mode = m }
+        } label: {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 20)).foregroundStyle(selected ? Color.accentColor : Color.secondary)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(title).font(.system(size: 15, weight: .semibold))
+                        if let badge {
+                            Text(badge).font(.system(size: 11, weight: .medium)).foregroundStyle(Color.accentColor)
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(Capsule().fill(Color.accentColor.opacity(0.12)))
+                        }
+                    }
+                    Text(text).font(.system(size: 13)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .controlBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(selected ? Color.accentColor : Color.primary.opacity(0.08), lineWidth: selected ? 2 : 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Step 3: things that help but aren't needed.
+private struct Extras: View {
+    var done: () -> Void
+    @State private var showPairing = false
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 18) {
+                StepHeader(step: 3, title: "Optional extras", subtitle: "Optional. Also in Settings.")
+                    .padding(.top, 40)
+                ConnectCard()
+                    .padding(.horizontal, 28)
+                phoneCard
+                    .padding(.horizontal, 28)
+                VStack(spacing: 6) {
+                    Button { done() } label: { Text("Done").font(.system(size: 14, weight: .semibold)).frame(maxWidth: .infinity) }
+                        .buttonStyle(.borderedProminent).controlSize(.extraLarge)
+                    Text("Start an agent and close the lid.")
+                        .font(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                }
+                .padding(.horizontal, 40).padding(.bottom, 30).padding(.top, 6)
+            }
+        }
+        .scrollIndicators(.never)
+    }
+
+    private var phoneCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Check on it from your phone").font(.system(size: 14, weight: .semibold))
+            Text("See if it's still working from anywhere.")
+                .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if let remote = AjarShared.remote {
+                if showPairing && remote.enabled {
+                    PairingView(settings: remote.settings) { showPairing = false }.frame(maxWidth: .infinity)
+                } else {
+                    Button { remote.enable(); showPairing = true } label: { Text(remote.enabled ? "Show QR Code" : "Set Up Phone").frame(maxWidth: .infinity) }
+                        .controlSize(.large)
+                }
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .controlBackgroundColor)))
+    }
+}
+
 /// Shown once after setup: connect the agents found on this Mac, and the prompt that has one set Ajar up.
 private struct ConnectCard: View {
-    var dismiss: () -> Void
     @State private var note: String?
     /// (installed, connected) for Claude Code, Codex, the Claude app; read off the main thread.
     @State private var state = [(false, false), (false, false), (false, false)]
@@ -98,12 +215,8 @@ private struct ConnectCard: View {
     var body: some View {
         let server = AIConnect.serverCommand
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Connect your AI").font(.system(size: 14, weight: .semibold))
-                Spacer()
-                Button("Done", action: dismiss).buttonStyle(.borderless).font(.system(size: 12))
-            }
-            Text("So Claude or Codex can keep the Mac awake while they work and tune Ajar's savings with you.")
+            Text("Connect your AI").font(.system(size: 14, weight: .semibold))
+            Text("Lets Claude or Codex keep the Mac awake.")
                 .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             row("Claude Code", state[0]) { AIConnect.connectClaudeCode(server: server) }
             row("Codex", state[1]) { AIConnect.connectCodex(server: server) }
@@ -113,7 +226,7 @@ private struct ConnectCard: View {
                 NSPasteboard.general.setString(AIConnect.setupPrompt, forType: .string)
                 note = "Prompt copied. Paste it into Claude or Codex."
             } label: { Text("Copy Setup Prompt").frame(maxWidth: .infinity) }
-            .buttonStyle(.borderedProminent).controlSize(.large)
+            .controlSize(.large)
             if let note { Text(note).font(.system(size: 11)).foregroundStyle(.secondary) }
         }
         .padding(16)
@@ -155,4 +268,16 @@ private struct Feature: View {
             }
         }
     }
+}
+
+#Preview("Step 2") {
+    ChooseMode(engine: .preview()) {}.frame(width: 460, height: 720).background(.regularMaterial)
+}
+
+#Preview("Step 3") {
+    Extras {}.frame(width: 460, height: 720).background(.regularMaterial)
+}
+
+#Preview("Step 1") {
+    Welcome(engine: .preview()).frame(width: 460, height: 720).background(.regularMaterial)
 }

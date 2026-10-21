@@ -1098,6 +1098,8 @@ impl<P: Platform> Engine<P> {
             "headline": head,
             "detail": detail,
             "battery": self.battery_line_rounded(5.0),
+            "modeLine": self.mode_line(),
+            "batteryLine": self.battery_summary(),
             "lidClosed": self.lid_closed,
             "mode": self.cfg.mode,
             "alwaysUntil": self.on_until().map(crate::format::clock),
@@ -1186,7 +1188,7 @@ impl<P: Platform> Engine<P> {
 
     /// The one line that answers "what happens if I close the lid right now?".
     pub fn outcome(&self) -> (bool, String, String) {
-        let keeps = if self.has_lid { "Close the lid: keeps working" } else { "Stays awake" };
+        let keeps = if self.has_lid { "Close the lid: it keeps working" } else { "Stays awake" };
         let sleeps = if self.has_lid { "Close the lid: it sleeps" } else { "Sleeps normally" };
         if let Some(e) = &self.setup_error {
             return (false, sleeps.into(), e.clone());
@@ -1199,10 +1201,36 @@ impl<P: Platform> Engine<P> {
         }
         let detail = match self.cfg.mode {
             Mode::Off => "Ajar is off".to_string(),
-            Mode::Auto => "Nothing is working right now".to_string(),
+            Mode::Auto => "No agent is working right now".to_string(),
             Mode::On => "Starting…".to_string(),
         };
         (false, sleeps.into(), detail)
+    }
+
+    /// What the selected mode does, in one sentence (menu and phone, worded as on the Mac).
+    pub fn mode_line(&self) -> String {
+        match self.cfg.mode {
+            Mode::Off if self.has_lid => "Sleeps like normal when you close the lid.".into(),
+            Mode::Off => "Sleeps like normal.".into(),
+            Mode::Auto => "Stays awake while your AI agents work, then sleeps.".into(),
+            Mode::On => match self.on_until() {
+                Some(u) => format!("Stays awake until {}.", crate::format::clock(u)),
+                None => "Stays awake until you turn it off.".into(),
+            },
+        }
+    }
+
+    /// One plain line about the battery (menu and phone, worded as on the Mac): "64% · about 6 h 05 min with
+    /// the lid closed". Hours are rounded to 5 minutes so the menu doesn't flicker; just the percent when there's
+    /// no estimate (or no lid).
+    pub fn battery_summary(&self) -> Option<String> {
+        let b = self.battery.as_ref()?;
+        let hours = if self.has_lid { self.hours_left(self.closed_watts()).map(|h| (h * 12.0).round() / 12.0).filter(|h| *h > 0.0) } else { None };
+        Some(match hours {
+            Some(h) => format!("{}% · about {} with the lid closed", b.percent, crate::format::hm(h)),
+            None if b.charging => format!("{}% · charging", b.percent),
+            None => format!("{}%", b.percent),
+        })
     }
 
     pub fn battery_line(&self) -> Option<String> {

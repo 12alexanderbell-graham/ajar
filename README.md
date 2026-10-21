@@ -6,32 +6,30 @@
 
 **Close the lid. Your AI keeps working.**
 
-Ajar keeps your laptop awake with the lid shut while Claude Code, Codex or any AI agent works, uses a fraction of the battery while it's closed, and lets it sleep the moment the work is done. Free, for macOS 14+, Windows 10/11 and Linux (systemd).
+Ajar keeps your laptop awake with the lid shut while your AI agents work, then lets it sleep. Free, for macOS 14+, Windows 10/11 and Linux (systemd).
 
-Measured on an M5 Max with the lid shut and iOS simulators open: **18.3 W with Ajar's savings off, 3.1 W with them on.**
+With the lid shut it pauses apps you aren't using and turns on Low Power Mode. On an M5 Max with iOS simulators open: **18.3 W down to 3.1 W.**
 
 ## Install
 
 - **Mac:** `brew install --cask 12alexanderbell-graham/ajar/ajar`, or download from https://12alexanderbell-graham.github.io/ajar/
 - **Windows / Linux:** download from the same page (Linux: unpack, run `./install.sh`).
-- **Hook up your agent:** `ajar connect`, then paste the output of `ajar prompt` into Claude Code or Codex.
+- **Connect your agent:** `ajar connect`, then paste the output of `ajar prompt` into Claude Code or Codex.
 
 <p align="center"><img src="docs/menu.png" width="320" alt="Ajar's menu: When Busy, 'Close the lid: it keeps working', battery line"> &nbsp; <img src="docs/phone.png" width="220" alt="Ajar's phone page"></p>
 
-The whole app is one choice (**Off**, **When Busy** or **Always**) and a sentence telling you what closing the lid will do right now. Everything else is in Settings.
-
 ## What it does
 
-- **Only while work is happening.** Awake while an agent (or an app you pick, like an Xcode build or ffmpeg) is working; sleeps a few minutes after it stops. Or Always, or Always for an hour.
-- **Cuts wasted power with the lid shut.** Pauses or slows other apps, freezes booted simulators and Xcode previews, pauses background processes holding the speakers open, turns on Low Power Mode, and can switch the screen fully off. Everything comes back when you open the lid.
-- **Real watts.** Reads whole-machine power from the battery controller (works on the charger too), and `ajar power test` measures what each saving is worth on your machine.
-- **Your agent drives it.** MCP server and CLI: agents hold the machine awake while they work, read what's using power, and change any setting. `ajar connect` adds it to Claude Code and Codex; `ajar prompt` prints a setup prompt.
-- **Phone remote.** A small end-to-end encrypted web page (via ntfy.sh) to check on it and switch modes from anywhere.
-- **Stops before it hurts.** Sleeps at your battery limit, and when it's hot with the lid shut: at once if critical, after 5 minutes if serious. Agents and scripts can make these stricter, never looser.
+- **Off, When Busy or Always.** When Busy keeps it awake while an agent works and sleeps a few minutes after.
+- **Saves power with the lid shut.** Pauses other apps, simulators and silent audio, turns on Low Power Mode. Opening the lid puts it all back.
+- **Measures it.** `ajar power test` reads whole-laptop power from the battery controller.
+- **Agents can use it.** MCP server and CLI, so agents keep the laptop awake for long jobs.
+- **Phone page.** Check on it from anywhere, end-to-end encrypted over ntfy.sh.
+- **Battery and heat limits.** Sleeps at your battery limit or if it gets too hot. Agents can't loosen these.
 
 ## Is it safe to give it sudo?
 
-The only privileged thing Ajar does is run `pmset` (macOS) with a sudoers rule limited to the exact commands it needs: `disablesleep 0/1`, Low Power Mode on/off and `sleepnow`. Read it in [`mac/Ajar/System.swift`](mac/Ajar/System.swift) (`Setup`). Every change Ajar makes is written to a journal on disk before it's made, and a watchdog puts everything back if Ajar dies: sleep, Low Power Mode, brightness, the screen, paused and slowed apps. `ajar rescue` does the same by hand. Windows uses power requests and the lid setting of your power plan; Linux uses a logind inhibitor that the kernel drops if Ajar dies.
+On the Mac it only runs `pmset`, through a sudoers rule limited to `disablesleep 0/1`, Low Power Mode on/off and `sleepnow` (see `Setup` in [`mac/Ajar/System.swift`](mac/Ajar/System.swift)). Every change is logged to disk first, and a watchdog undoes them if Ajar quits. `ajar rescue` does the same by hand. Windows uses power requests and your power plan's lid setting; Linux uses a logind inhibitor.
 
 ## Repository
 

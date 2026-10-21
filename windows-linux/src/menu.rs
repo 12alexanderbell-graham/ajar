@@ -42,8 +42,13 @@ pub struct AgentRow {
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiState {
     pub keeps: bool,
+    /// Ajar is holding the laptop awake right now (offers Sleep Now).
+    pub holding: bool,
     pub headline: String,
     pub detail: String,
+    /// What the selected mode does, in one sentence.
+    pub mode_line: String,
+    /// "64% · about 6 h 05 min with the lid closed".
     pub battery: Option<String>,
     pub warning: Option<String>,
     pub tray: TrayState,
@@ -114,9 +119,11 @@ impl UiState {
             .collect();
         UiState {
             keeps,
+            holding: e.holding,
             headline,
             detail: detail.trim_end_matches([' ', '·']).to_string(),
-            battery: e.battery_line_rounded(5.0),
+            mode_line: e.mode_line(),
+            battery: e.battery_summary(),
             warning: [&e.hold_warning, &e.watchdog_warning, &e.lid_warning].into_iter().flatten().next().cloned(),
             tray,
             agents,
@@ -169,10 +176,38 @@ fn wrap(s: &str, width: usize) -> Vec<String> {
     lines
 }
 
+/// One plain screen, the same as the Mac's: what closing the lid does and why, the three modes with a sentence
+/// saying what the chosen one means, one battery line, then everything else tucked into two submenus.
 pub fn build(s: &UiState) -> Vec<Node> {
-    let mut m = vec![info("head", &s.headline), info("detail", &s.detail)];
+    let mut m = vec![info("head", &s.headline), info("detail", &s.detail), Node::Sep];
+
+    m.extend([
+        check("mode:auto", Mode::Auto.label(), s.mode == Mode::Auto),
+        check("mode:on", Mode::On.label(), s.mode == Mode::On),
+        check("mode:off", Mode::Off.label(), s.mode == Mode::Off),
+        info("modeline", &s.mode_line),
+        sub(
+            "always",
+            "Always for…",
+            vec![
+                text("for:60", "For 1 hour"),
+                text("for:180", "For 3 hours"),
+                Node::Sep,
+                text("until:7", "Until 07:00"),
+                text("until:8", "Until 08:00"),
+                text("until:9", "Until 09:00"),
+            ],
+        ),
+    ]);
+
     if let Some(b) = &s.battery {
-        m.push(info("battery", format!("Battery {b}")));
+        m.push(info("battery", b.clone()));
+    }
+    if s.holding {
+        m.push(text("sleepnow", "Sleep Now"));
+    }
+    if s.snoozed {
+        m.push(info("snoozed", "Sleeping when the lid closes, until it opens again"));
     }
     if let Some(w) = &s.warning {
         for (i, line) in wrap(w, 58).into_iter().enumerate() {
@@ -184,7 +219,17 @@ pub fn build(s: &UiState) -> Vec<Node> {
         m.push(text("retry", "Try again"));
     }
     m.push(Node::Sep);
+    m.push(sub("apps", "Apps and Agents", apps_menu(s)));
+    m.push(sub("settings", "Settings", settings_menu(s)));
+    m.push(Node::Sep);
+    m.push(text("quit", "Quit Ajar"));
+    dedupe_ids(&mut m);
+    m
+}
 
+/// Agents, holds, other apps that keep it awake, what happens to apps with the lid closed, and when to sleep.
+fn apps_menu(s: &UiState) -> Vec<Node> {
+    let mut m = vec![];
     if s.agents.is_empty() {
         m.push(info("noagents", "No agents running"));
     }
@@ -218,28 +263,7 @@ pub fn build(s: &UiState) -> Vec<Node> {
     if !s.holds.is_empty() {
         m.push(text("release", if s.holds.len() == 1 { "End this hold" } else { "End all holds" }));
     }
-    if s.snoozed {
-        m.push(info("snoozed", "Sleeping when the lid closes, until it opens again"));
-    }
-    m.push(text("sleepnow", "Let It Sleep Now"));
     m.push(Node::Sep);
-
-    let mut keep = vec![];
-    if let (Mode::On, Some(u)) = (s.mode, s.on_until) {
-        keep.push(info("ontimer", format!("Awake until {}", crate::format::clock(u))));
-    }
-    keep.extend([
-        check("mode:auto", "When an agent is working", s.mode == Mode::Auto),
-        check("mode:on", "Always", s.mode == Mode::On),
-        check("mode:off", "Off", s.mode == Mode::Off),
-        Node::Sep,
-        text("for:60", "Always, for 1 hour"),
-        text("for:180", "Always, for 3 hours"),
-        text("until:7", "Always, until 07:00"),
-        text("until:8", "Always, until 08:00"),
-        text("until:9", "Always, until 09:00"),
-    ]);
-    m.push(sub("keep", format!("Keep Awake: {}", s.mode.label()), keep));
 
     let mut while_items: Vec<Node> = vec![info("while:help", "Stays awake while any of these is busy")];
     if s.watch.is_empty() {
@@ -264,6 +288,22 @@ pub fn build(s: &UiState) -> Vec<Node> {
         ],
     ));
 
+    let quiets = [2u32, 5, 10, 30];
+    let mut quiet_items: Vec<Node> = quiets
+        .iter()
+        .map(|q| check(&format!("quiet:{q}"), format!("{q} min after work stops"), s.sleep_when_done && s.quiet == *q))
+        .collect();
+    if s.sleep_when_done && !quiets.contains(&s.quiet) {
+        quiet_items.insert(0, check(&format!("quiet:{}", s.quiet), format!("{} min after work stops", s.quiet), true));
+    }
+    quiet_items.push(check("quiet:never", "Not while an agent is open", !s.sleep_when_done));
+    let quiet_label = if s.sleep_when_done { format!("Sleep: {} min after work stops", s.quiet) } else { "Sleep: when agents close".to_string() };
+    m.push(sub("quiet", quiet_label, quiet_items));
+    m
+}
+
+/// Battery limit, preferences, phone control and alerts, files, and recent sessions.
+fn settings_menu(s: &UiState) -> Vec<Node> {
     let floors = [0u32, 10, 15, 20, 30, 50];
     let mut floor_items: Vec<Node> = floors
         .iter()
@@ -277,24 +317,10 @@ pub fn build(s: &UiState) -> Vec<Node> {
         floor_items.push(text("override", "Keep going below the limit this time"));
     }
     let floor_label = if s.floor == 0 { "Battery Limit: none".to_string() } else { format!("Battery Limit: {}%", s.floor) };
-    m.push(sub("floor", floor_label, floor_items));
+    let mut settings = vec![sub("floor", floor_label, floor_items), Node::Sep];
 
-    let quiets = [2u32, 5, 10, 30];
-    let mut quiet_items: Vec<Node> = quiets
-        .iter()
-        .map(|q| check(&format!("quiet:{q}"), format!("{q} min after work stops"), s.sleep_when_done && s.quiet == *q))
-        .collect();
-    if s.sleep_when_done && !quiets.contains(&s.quiet) {
-        quiet_items.insert(0, check(&format!("quiet:{}", s.quiet), format!("{} min after work stops", s.quiet), true));
-    }
-    quiet_items.push(check("quiet:never", "Not while an agent is open", !s.sleep_when_done));
-    let quiet_label = if s.sleep_when_done { format!("Sleep: {} min after work stops", s.quiet) } else { "Sleep: when agents close".to_string() };
-    m.push(sub("quiet", quiet_label, quiet_items));
-
-    let mut settings = vec![
-        check("notify", "Notify when an agent goes idle", s.notify_done),
-        check("onlyac", "Only stay awake on the charger", s.only_on_power),
-    ];
+    settings.push(check("notify", "Notify when an agent goes idle", s.notify_done));
+    settings.push(check("onlyac", "Only stay awake on the charger", s.only_on_power));
     if s.heat_available {
         settings.push(check("heat", "Heat guard: sleep if it gets too hot", s.heat_guard));
     }
@@ -317,17 +343,13 @@ pub fn build(s: &UiState) -> Vec<Node> {
     } else {
         settings.push(text("phone:on", "Phone control…"));
     }
+    settings.push(Node::Sep);
     settings.push(text("editconfig", "Edit settings file…"));
     settings.push(text("openfolder", "Open Ajar folder"));
-    m.push(sub("settings", "Settings", settings));
-
     if !s.recent.is_empty() {
-        m.push(sub("recent", "Recent", s.recent.iter().enumerate().map(|(i, r)| info(&format!("recent:{i}"), r)).collect()));
+        settings.push(sub("recent", "Recent", s.recent.iter().enumerate().map(|(i, r)| info(&format!("recent:{i}"), r)).collect()));
     }
-    m.push(Node::Sep);
-    m.push(text("quit", "Quit Ajar"));
-    dedupe_ids(&mut m);
-    m
+    settings
 }
 
 /// Two items may legitimately trigger the same action (the settings file link appears twice); give later
@@ -461,9 +483,11 @@ mod tests {
     fn state() -> UiState {
         UiState {
             keeps: true,
-            headline: "Close the lid: keeps working".into(),
-            detail: "Claude Code is working · ≈6 h 05 min on battery".into(),
-            battery: Some("64% · 6 h 05 min left with the lid closed".into()),
+            holding: true,
+            headline: "Close the lid: it keeps working".into(),
+            detail: "Claude Code is working".into(),
+            mode_line: "Stays awake while your AI agents work, then sleeps.".into(),
+            battery: Some("64% · about 6 h 05 min with the lid closed".into()),
             warning: None,
             tray: TrayState::Awake,
             agents: vec![AgentRow { id: "claude-code".into(), name: "Claude Code".into(), working: true, idle_minutes: Some(0), project: Some("ajar".into()), keeps_awake: true }],
@@ -552,11 +576,14 @@ mod tests {
     fn odd_floor_from_the_settings_file_is_still_shown_ticked() {
         let mut s = state();
         s.floor = 25;
-        let m = build(&s);
-        let floor = m.iter().find_map(|n| match n {
-            Node::Sub { id, children, .. } if id == "floor" => Some(children.clone()),
-            _ => None,
-        });
+        fn find(nodes: &[Node], want: &str) -> Option<Vec<Node>> {
+            nodes.iter().find_map(|n| match n {
+                Node::Sub { id, children, .. } if id == want => Some(children.clone()),
+                Node::Sub { children, .. } => find(children, want),
+                _ => None,
+            })
+        }
+        let floor = find(&build(&s), "floor");
         assert!(floor.unwrap().iter().any(|n| matches!(n, Node::Check { id, checked: true, .. } if id == "floor:25")));
     }
 

@@ -59,21 +59,34 @@ extension Engine {
     /// The question people actually have: what happens if I close the lid right now?
     var lidOutcome: (keeps: Bool, headline: String, detail: String) {
         // Desktop Macs (mini, Studio, iMac, Pro) have no lid: same logic, worded for idle sleep instead.
-        let keeps = Registry.hasLid ? "Close the lid: keeps working" : "Stays awake"
+        let keeps = Registry.hasLid ? "Close the lid: it keeps working" : "Stays awake"
         let sleeps = Registry.hasLid ? "Close the lid: it sleeps" : "Sleeps normally"
-        guard setupReady else { return (false, sleeps, "Ajar needs its one-time setup") }
+        guard setupReady else { return (false, sleeps, "Ajar needs a one-time setup") }
         if let b = blockedReason { return (false, sleeps, b) }
-        if holding {
-            var parts: [String] = [holdReason ?? "Staying awake"]
-            if onBattery, let h = closedHours { parts.append("≈\(PanelFormat.hm(h)) on battery") }
-            if Registry.hasLid { parts.append(config.lockOnClose ? "locks" : "no lock screen") }
-            return (true, keeps, parts.joined(separator: " · "))
-        }
+        if holding { return (true, keeps, holdReason ?? "Staying awake") }
         switch config.mode {
         case .off: return (false, sleeps, "Ajar is off")
-        case .auto: return (false, sleeps, "Nothing is working right now. Starts on its own when an agent does")
+        case .auto: return (false, sleeps, "No agent is working right now")
         case .on: return (false, sleeps, "Starting…")
         }
+    }
+
+    /// What the selected mode does, in one sentence (under the mode switch, Mac and phone).
+    var modeLine: String {
+        switch config.mode {
+        case .off: return Registry.hasLid ? "Sleeps like normal when you close the lid." : "Sleeps like normal."
+        case .auto: return "Stays awake while your AI agents work, then sleeps."
+        case .on: return onUntil.map { "Stays awake until \($0.formatted(date: .omitted, time: .shortened))." } ?? "Stays awake until you turn it off."
+        }
+    }
+
+    /// One line about the battery: "95% · about 19 h with the lid closed".
+    var batteryLine: String? {
+        guard let b = battery else { return nil }
+        var parts = ["\(b.percent)%"]
+        if let h = closedHours, Registry.hasLid { parts.append("about \(PanelFormat.hm(h)) with the lid closed") }
+        else if b.charging { parts.append("charging") }
+        return parts.joined(separator: " · ")
     }
 
     /// The last lid-closed session, for half an hour after the lid opened.
@@ -99,7 +112,8 @@ extension Engine {
 
     /// The Now tab's figures as text, so the phone page shows exactly what the Mac panel shows.
     var phoneFigures: [String: Any] {
-        var d: [String: Any] = [:]
+        var d: [String: Any] = ["modeLine": modeLine]
+        if let l = batteryLine { d["batteryLine"] = l }
         if let b = battery {
             d["batteryState"] = b.charging ? "\(b.percent)% · charging"
                 : (onBattery ? (drawNow.map { "\(b.percent)% · \(PanelFormat.pct(percentPerHour($0))) an hour now" } ?? "\(b.percent)%") : "\(b.percent)% · plugged in")

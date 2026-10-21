@@ -1,26 +1,20 @@
 import AppKit
 import SwiftUI
 
-/// The menu bar panel, flat like the system Battery and Wi-Fi menus.
-/// Geometry: one 16 pt leading edge, 8 pt rhythm (8 inside a group, 16 between groups),
-/// system text styles only, dividers instead of cards. Every number carries its unit and what it's compared to.
-///  • Now: mode, what's happening, battery numbers, this week.
-///  • Apps: what keeps the Mac awake, what closing the lid does, per-app rules.
+/// The menu bar panel: one plain screen anyone can read at a glance.
+///  • what Ajar does now (Off / When Busy / Always, with one sentence saying what that means)
+///  • what closing the lid will do right now, and why
+///  • one battery line
+/// Everything else (apps, rules, numbers, history) lives in Settings.
 struct PanelView: View {
-    enum Tab: String { case now, rules }
-
     @Bindable var engine: Engine
     var actions = PanelActions(openSettings: {}, quit: { NSApp.terminate(nil) })
-    @AppStorage("panelTab") private var tab: Tab = .now
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             if engine.setupReady {
                 header
-                switch tab {
-                case .now: NowTab(engine: engine, openRules: { tab = .rules })
-                case .rules: RulesTab(engine: engine)
-                }
+                NowTab(engine: engine)
             } else {
                 SetupView(engine: engine)
             }
@@ -30,15 +24,8 @@ struct PanelView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 16) {
-            ForEach([Tab.now, Tab.rules], id: \.self) { t in
-                Button { tab = t } label: {
-                    Text(t == .now ? "Now" : "Apps")
-                        .font(.headline)
-                        .foregroundStyle(tab == t ? .primary : .tertiary)
-                }
-                .buttonStyle(.plain)
-            }
+        HStack {
+            Text("Ajar").font(.headline)
             Spacer()
             Button { actions.openSettings() } label: {
                 Image(systemName: "gearshape").font(.system(size: 14)).foregroundStyle(.secondary)
@@ -55,17 +42,20 @@ struct PanelView: View {
 
 private struct NowTab: View {
     @Bindable var engine: Engine
-    var openRules: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 6) {
                 EqualSegments(items: Mode.allCases.map { ($0, $0.label) },
                               selection: Binding(get: { engine.mode }, set: { m in
                                   if m == .on { engine.stayAwake(for: nil) } else { engine.mode = m }
                               }))
-                outcome
+                Text(engine.modeLine).font(.subheadline).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+
+            Divider()
+            outcome
 
             if let w = engine.warning {
                 Text(w).font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
@@ -73,43 +63,54 @@ private struct NowTab: View {
             if !engine.unrestored.isEmpty {
                 notice("Couldn't put back \(engine.unrestored.joined(separator: ", ")) yet. Ajar keeps trying.", button: "Try Again") { engine.retryRestore() }
             }
-
+            if engine.blockedByFloor {
+                notice("Battery is under \(engine.batteryFloor)%, so it sleeps when you close the lid.", button: "Keep Awake Anyway") { engine.overrideFloor() }
+            } else if engine.floorOverride {
+                notice("Going below \(engine.batteryFloor)% until you plug in.", button: "Undo") { engine.overrideFloor(false) }
+            }
             if let r = engine.recentReceipt, dismissedReceipt != r.closedAt { receipt(r) }
 
-            Divider()
-            battery
-
-            if let w = engine.weekSummary {
+            if let line = engine.batteryLine {
                 Divider()
-                week(w)
+                HStack(spacing: 8) {
+                    Image(systemName: batteryIcon).font(.system(size: 13)).foregroundStyle(.secondary).frame(width: 22)
+                    Text(line).font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
+                }
+                .help("How long the battery would last with the lid closed, down to \(engine.batteryFloor == 0 ? "0%" : "your \(engine.batteryFloor)% limit"), with what's running now.")
             }
         }
+    }
+
+    private var batteryIcon: String {
+        guard let b = engine.battery else { return "battery.100" }
+        if b.charging { return "battery.100.bolt" }
+        switch b.percent { case ..<13: return "battery.0"; case ..<38: return "battery.25"; case ..<63: return "battery.50"; case ..<88: return "battery.75"; default: return "battery.100" }
     }
 
     /// Which receipt was dismissed (by its session), so the next session's receipt still shows.
     @AppStorage("dismissedReceipt") private var dismissedReceiptAt: Double = 0
     private var dismissedReceipt: Date? { dismissedReceiptAt > 0 ? Date(timeIntervalSince1970: dismissedReceiptAt) : nil }
 
-    /// "Close the lid: keeps working" with the reason and what it'll cost, so nobody has to work it out.
+    /// "Close the lid: it keeps working" and why, big enough to be the first thing anyone reads.
     private var outcome: some View {
         let o = engine.lidOutcome
-        return HStack(alignment: .top, spacing: 8) {
-            Image(systemName: o.keeps ? "laptopcomputer" : "moon.zzz")
-                .font(.system(size: 13, weight: .medium))
+        return HStack(alignment: .top, spacing: 10) {
+            Image(systemName: o.keeps ? "laptopcomputer" : "moon.zzz.fill")
+                .font(.system(size: 18, weight: .medium))
                 .foregroundStyle(o.keeps ? Color.green : Color.secondary)
-                .frame(width: 18, height: 18)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(o.headline).font(.subheadline.weight(.semibold))
-                Text(o.detail).font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                .frame(width: 26, height: 22)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(o.headline).font(.headline)
+                Text(o.detail).font(.subheadline).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if engine.mode == .on { durationMenu.padding(.top, 2) }
+                else if engine.holding {
+                    Button("Sleep Now") { engine.sleepNow() }
+                        .buttonStyle(.link).font(.subheadline).padding(.top, 2)
+                        .help("Let it sleep now. Agents can't keep it awake again until you open the lid.")
+                }
             }
-            Spacer(minLength: 4)
-            if engine.mode == .on { durationMenu }
-            else if engine.holding {
-                Button("Sleep Now") { engine.sleepNow() }
-                    .buttonStyle(.link).font(.subheadline)
-                    .help("Let it sleep now. Agents can't keep it awake again until you open the lid.")
-            }
+            Spacer(minLength: 0)
         }
     }
 
@@ -140,9 +141,10 @@ private struct NowTab: View {
             Divider()
             Button("Until I Turn It Off") { engine.stayAwake(for: nil) }
         } label: {
-            Text(engine.alwaysLeft == nil ? "Set Timer" : "Change")
+            Text(engine.alwaysLeft == nil ? "Set a timer" : "Change timer").font(.subheadline).foregroundStyle(Color.accentColor)
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .fixedSize()
         .help("How long to stay awake")
     }
@@ -154,55 +156,6 @@ private struct NowTab: View {
         return today > Date() ? today : cal.date(byAdding: .day, value: 1, to: today) ?? today
     }
 
-    @ViewBuilder private var battery: some View {
-        if engine.blockedByFloor {
-            notice("Battery at \(engine.battery?.percent ?? 0)%, below your \(engine.batteryFloor)% limit. Sleeps when closed.",
-                   button: "Keep Going") { engine.overrideFloor() }
-        } else if engine.floorOverride {
-            notice("Going below \(engine.batteryFloor)% until you plug in.", button: "Undo") { engine.overrideFloor(false) }
-        }
-
-        if let b = engine.battery {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text("Battery").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-                    Spacer()
-                    Text(batteryState(b)).font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
-                }
-                if !engine.onBattery {
-                    // On a charger that keeps up, it runs forever; the battery figure is what you'd get unplugged.
-                    Figure(value: engine.closedHours.map { PanelFormat.hm($0) } ?? "No limit",
-                           caption: engine.closedHours == nil ? "on the charger" : "on battery with the lid closed (charger in now)")
-                        .help("Running on the charger, so there's no limit now. The figure is how long the battery would last with the lid closed if you unplugged.")
-                    Text(drawLine).font(.caption).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
-                } else if let closed = engine.closedHours {
-                    let open = engine.openHours
-                    HStack(alignment: .firstTextBaseline, spacing: 16) {
-                        Figure(value: PanelFormat.hm(closed), caption: "left with lid closed")
-                        if let open, closed > open {
-                            Figure(value: "+" + PanelFormat.hm(closed - open),
-                                   caption: "vs. \(PanelFormat.hm(open)) lid open", tint: .green)
-                        }
-                    }
-                    .help("Down to \(engine.batteryFloor == 0 ? "0%" : "your \(engine.batteryFloor)% limit"), from \(b.percent)%. Closed is estimated from what's running now and measured while the lid is shut.")
-                    Text(drawLine).font(.caption).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
-                }
-            }
-        }
-    }
-
-    private func batteryState(_ b: BatteryReading) -> String {
-        if b.charging { return "\(b.percent)% · charging" }
-        if engine.onBattery, let d = engine.drawNow { return "\(b.percent)% · \(PanelFormat.pct(engine.percentPerHour(d))) an hour now" }
-        return b.onAC ? "\(b.percent)% · plugged in" : "\(b.percent)%"
-    }
-
-    private var drawLine: String {
-        var s = "Uses ≈\(PanelFormat.w(engine.closedEstimate)) closed"
-        if let o = engine.openWatts { s += " · \(PanelFormat.w(o)) open" }
-        return s
-    }
-
     private func notice(_ text: String, button: String, action: @escaping () -> Void) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(text).font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -211,34 +164,6 @@ private struct NowTab: View {
         }
     }
 
-    private func week(_ w: Engine.WeekSummary) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Last 7 days").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-                Spacer()
-                Text("\(PanelFormat.hm(w.closedHours)) working, lid closed")
-                    .font(.subheadline.weight(.semibold)).monospacedDigit()
-            }
-            Text("\(w.sessions) session\(w.sessions == 1 ? "" : "s")" + (w.whSaved >= 10 ? " · ≈\(String(format: "%.0f", w.whSaved)) Wh saved" : "") + (w.percentSaved >= 5 ? " · ≈\(String(format: "%.1f", w.percentSaved / 100)) full charges" : ""))
-                .font(.caption).foregroundStyle(.secondary).monospacedDigit()
-        }
-        .help("Estimated, not metered: power macOS attributes to apps before and while Ajar slowed them (net, including any that used more), plus confirmed sleeps after the work stopped, valued at the power drawn just before.")
-    }
-}
-
-/// A big number with a plain-language caption underneath.
-private struct Figure: View {
-    let value: String
-    let caption: String
-    var tint: Color = .primary
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(value).font(.title2.weight(.semibold)).monospacedDigit().foregroundStyle(tint)
-                .contentTransition(.numericText()).animation(.snappy, value: value)
-            Text(caption).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
 }
 
 enum PanelFormat {
@@ -255,9 +180,9 @@ enum PanelFormat {
     }
 }
 
-// MARK: - Rules
+// MARK: - Apps (shown in Settings › Keep Awake For)
 
-private struct RulesTab: View {
+struct AppsView: View {
     @Bindable var engine: Engine
     @State private var showAll = false
 
@@ -284,7 +209,7 @@ private struct RulesTab: View {
                 (s.kind != AgentKind.claudeApp || engine.countClaudeApp) && (!s.kind.isRequest || engine.isWorking(s))
             }
             if rows.isEmpty && engine.watchedApps.isEmpty && engine.holds.isEmpty {
-                Text("Claude, Codex, Gemini, Cursor and other agents are picked up on their own. Add any app with +.")
+                Text("Agents are found on their own. Add any app with +.")
                     .font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             ForEach(engine.holds) { h in
@@ -458,11 +383,15 @@ private struct SetupView: View {
 }
 
 #Preview("Now") {
-    UserDefaults.standard.set("now", forKey: "panelTab")
-    return PanelView(engine: .preview()).background(.regularMaterial)
+    PanelView(engine: .preview()).background(.regularMaterial)
 }
 
 #Preview("Apps") {
-    UserDefaults.standard.set("rules", forKey: "panelTab")
-    return PanelView(engine: .preview()).background(.regularMaterial)
+    ScrollView { AppsView(engine: .preview()).padding(16) }.frame(width: 320, height: 640).background(.regularMaterial)
+}
+
+#Preview("Now, When Busy") {
+    let e = Engine.preview()
+    e.mode = .auto   // preview engines never save
+    return PanelView(engine: e).background(.regularMaterial)
 }

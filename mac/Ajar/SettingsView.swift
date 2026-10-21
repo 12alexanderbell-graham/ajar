@@ -40,13 +40,13 @@ enum SettingsTopic: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .lid: "Lid Closed"; case .sleep: "Sleep & Safety"; case .awake: "Keep Awake For"; case .alerts: "Notifications"
+        case .lid: "Lid Closed"; case .sleep: "Sleep & Safety"; case .awake: "Apps"; case .alerts: "Notifications"
         case .phone: "Phone"; case .ai: "AI Agents"; case .general: "General"; case .about: "About"
         }
     }
     var symbol: String {
         switch self {
-        case .lid: "laptopcomputer"; case .sleep: "moon.zzz.fill"; case .awake: "sparkles"; case .alerts: "bell.badge.fill"
+        case .lid: "laptopcomputer"; case .sleep: "moon.zzz.fill"; case .awake: "square.grid.2x2.fill"; case .alerts: "bell.badge.fill"
         case .phone: "iphone"; case .ai: "terminal.fill"; case .general: "gearshape.fill"; case .about: "info"
         }
     }
@@ -87,12 +87,32 @@ struct SettingsView: View {
     }
 
     var body: some View {
+        if page == .awake {
+            // What keeps the Mac awake and what happens to each app: lists with live numbers, not a form.
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Toggle("Claude app (Cowork, computer use) keeps it awake", isOn: $engine.countClaudeApp)
+                    Toggle("Downloads, exports and builds keep it awake", isOn: $engine.countRequests)
+                        .help("Any app that asks macOS to stay awake")
+                    Divider()
+                    AppsView(engine: engine)
+                }
+                .font(.subheadline)
+                .padding(16)
+            }
+            .scrollIndicators(.never)
+        } else {
+            form
+        }
+    }
+
+    private var form: some View {
         Form {
             switch page {
             case nil: home
             case .lid: lidPage
             case .sleep: sleepPage
-            case .awake: awakePage
+            case .awake: EmptyView()   // shown as a list above, not in the form
             case .alerts: alertsPage
             case .phone: PhoneControlSection(engine: engine)
             case .ai: aiPage
@@ -123,7 +143,7 @@ struct SettingsView: View {
         Section {
             if Registry.hasLid { topicRow(.lid, screenName + " · " + engine.preset.label) }
             topicRow(.sleep, sleepSummary)
-            topicRow(.awake, (["Agents"] + (engine.countClaudeApp ? ["Claude app"] : []) + (engine.countRequests ? ["downloads"] : [])).joined(separator: ", "))
+            topicRow(.awake, "What keeps it awake, what pauses")
         }
         Section {
             topicRow(.alerts, alertsSummary)
@@ -180,14 +200,14 @@ struct SettingsView: View {
                 Text("Off, locks").tag(2)
             }
             if engine.config.screenOffNoLock, lockGrace == 0 {
-                Text("Your Mac asks for the password as soon as its display turns off (System Settings › Lock Screen), so this will most likely lock it. Ajar then goes back to Dark by itself.")
+                Text("Your Mac locks as soon as its screen turns off, so this will probably lock it.")
                     .font(.caption).foregroundStyle(.orange)
             }
             if engine.config.lockOnClose {
                 LabeledContent("Your Mac locks") { Text(LockSetting.describe(lockGrace)).foregroundStyle(.secondary) }
             }
         } footer: {
-            Text("Dark: no password when you open the lid. Off, locks: saves more, but you type your password. Off, no lock: in between; on some Macs macOS locks anyway.")
+            Text("Dark means no password when you open the lid.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         Section {
@@ -211,7 +231,7 @@ struct SettingsView: View {
         } header: {
             Text("Saving Power")
         } footer: {
-            Text("Music, calls and anything your agents use keep running, and everything comes back when you open the lid. To see what each saving is worth on this Mac, shut the lid and tap Measure on the phone page.")
+            Text("Music, calls and your agents keep running.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         Section {
@@ -253,7 +273,7 @@ struct SettingsView: View {
                     .labelsHidden()
             }
             if engine.batteryFloor == 0 {
-                Text("Ajar keeps going until the battery is empty, and the Mac switches off abruptly at 0%.")
+                Text("It keeps going until the battery runs out.")
                     .font(.caption).foregroundStyle(.orange)
             }
             Toggle("Only stay awake when plugged in", isOn: $engine.onlyOnPower)
@@ -261,54 +281,8 @@ struct SettingsView: View {
         } header: {
             Text("Safety")
         } footer: {
-            Text("Heat guard pauses everything it can when the Mac gets hot with the lid shut, and sleeps it if it stays hot for 5 minutes or gets critical. Only you can loosen these; AI agents and the phone can't.")
+            Text("Heat guard puts the Mac to sleep if it gets too hot with the lid shut.")
                 .font(.caption).foregroundStyle(.secondary)
-        }
-    }
-
-    // MARK: Keep Awake For
-
-    @ViewBuilder private var awakePage: some View {
-        Section {
-            Toggle("Claude app (Cowork, computer use)", isOn: $engine.countClaudeApp)
-            Toggle("Downloads, exports and builds", isOn: $engine.countRequests)
-                .help("Any app that asks macOS to stay awake")
-        } footer: {
-            Text("Claude Code, Codex, Gemini, Cursor and other agents are picked up on their own.")
-                .font(.caption).foregroundStyle(.secondary)
-        }
-        Section("Also While These Run") {
-            ForEach(engine.watchedApps) { app in
-                HStack {
-                    Image(nsImage: NSWorkspace.shared.icon(forFile: app.id)).resizable().frame(width: 16, height: 16)
-                    Text(app.name)
-                    Spacer()
-                    Button("Remove") { engine.removeWatched(app) }
-                }
-            }
-            ForEach(engine.config.customAgents, id: \.self) { a in
-                HStack {
-                    Image(systemName: "terminal")
-                    Text(a.name)
-                    Spacer()
-                    Button("Remove") { engine.update { $0.customAgents.removeAll { $0 == a } } }
-                }
-            }
-            Menu("Add App…") {
-                ForEach(engine.addableApps.prefix(25)) { app in Button(app.name) { engine.addWatched(app) } }
-            }
-        }
-        if !engine.appRules.isEmpty {
-            Section {
-                ForEach(engine.appRules.keys.sorted(), id: \.self) { id in
-                    Picker(Self.appName(id), selection: Binding(get: { engine.appRules[id] ?? .leave }, set: { engine.setRule($0, for: id) })) {
-                        ForEach(AppRule.allCases, id: \.self) { Text($0.menuTitle).tag($0) }
-                    }
-                }
-                Button("Reset All Rules") { engine.appRules = [:] }
-            } header: {
-                Text("App Rules While Closed")
-            }
         }
     }
 
@@ -330,7 +304,7 @@ struct SettingsView: View {
                 }
             }
         } footer: {
-            Text("Sent when a busy agent has been quiet for 2 minutes. It says \"went idle\": Ajar can't tell finished from stuck. The chime plays even with the lid shut.")
+            Text("When an agent has been quiet for 2 minutes.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         Section {
@@ -354,7 +328,7 @@ struct SettingsView: View {
         } header: {
             Text("On Your Phone")
         } footer: {
-            Text("Install the free ntfy app and subscribe to the same topic. Keep the random name: anyone who knows it can read the alerts.")
+            Text("Get the free ntfy app and subscribe to this topic.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -368,7 +342,7 @@ struct SettingsView: View {
             connectRow("Codex", connected[1]) { AIConnect.connectCodex(server: server) }
             connectRow("Claude app", connected[2]) { AIConnect.connectClaudeApp(server: server) }
         } footer: {
-            Text("Connected agents can keep the Mac awake while they work, see what's using power and change settings. They can't loosen the safety settings.")
+            Text("Lets your agent keep the Mac awake and change settings.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         Section {
@@ -452,7 +426,7 @@ struct SettingsView: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text("Shortcuts")
-                Text("In the Shortcuts app: Keep Mac Awake, Let Mac Sleep, Get Ajar Status.").font(.caption).foregroundStyle(.secondary)
+                Text("Keep Mac Awake, Let Mac Sleep, Get Ajar Status").font(.caption).foregroundStyle(.secondary)
             }
         }
         if !engine.stats.sessions.isEmpty {
@@ -476,7 +450,7 @@ struct SettingsView: View {
             }
             if let note { Text(note).font(.caption).foregroundStyle(.secondary) }
         } footer: {
-            Text("Puts back everything Ajar changed first, then removes its sleep permission, watchdog and the ajar command.")
+            Text("Puts everything back and removes Ajar's helper.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
