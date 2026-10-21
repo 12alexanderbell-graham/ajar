@@ -127,6 +127,14 @@ check "hand edit can't turn off the heat guard" "$BIN/ajar config --json | grep 
 check "hand edit can't lower the battery limit" "$BIN/ajar config --json | grep -q '\"batteryFloor\": 15'"
 check "the harmless part of the edit applied" "$BIN/ajar config --json | grep -q '\"preset\": \"speed\"'"
 
+echo "7b. Waking up and approvals"
+check "check-in interval can be set" "$BIN/ajar check-in 30 >/dev/null && $BIN/ajar config --json | grep -q '\"checkInMinutes\": 30'"
+check "a bad check-in interval is refused" "! $BIN/ajar check-in 7 >/dev/null"
+check "wake-at sets a scheduled wake" "$BIN/ajar wake-at 07:00 >/dev/null && $BIN/ajar config --json | grep -q '\"wakeAt\": [0-9]'"
+check "wake-at off clears it" "$BIN/ajar wake-at off >/dev/null && $BIN/ajar config --json | grep -q '\"wakeAt\": null'"
+check "approve everything can't be turned on from the CLI" "! $BIN/ajar set auto_approve on >/dev/null 2>&1 && [ ! -e \"$XDG_CONFIG_HOME/ajar/auto-approve.json\" ]"
+$BIN/ajar check-in 0 >/dev/null
+
 echo "8. MCP"
 OUT=$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"stay_awake","arguments":{"reason":"MCP test"}}}' '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"status"}}' | $BIN/ajar mcp)
 check "MCP initialize answers" "echo \"\$OUT\" | grep -q protocolVersion"

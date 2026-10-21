@@ -12,7 +12,7 @@ With the lid shut it pauses apps you aren't using and turns on Low Power Mode. O
 
 ## Install
 
-- **Mac:** `brew install --cask 12alexanderbell-graham/ajar/ajar`, or download from https://12alexanderbell-graham.github.io/ajar/
+- **Mac:** `brew install --cask 12alexanderbell-graham/ajar/ajar`, or download from https://ajar.tools
 - **Windows / Linux:** download from the same page (Linux: unpack, run `./install.sh`).
 - **Connect your agent:** `ajar connect`, then paste the output of `ajar prompt` into Claude Code or Codex.
 
@@ -35,7 +35,7 @@ On the Mac it only runs `pmset`, through a sudoers rule limited to `disablesleep
 
 ## Repository
 
-- [`mac/`](mac/): the macOS app (Swift, SwiftUI). Open `mac/Ajar.xcodeproj`, or run `mac/install.sh`.
+- [`mac/`](mac/): the macOS app (Swift, SwiftUI). Open `mac/Ajar.xcodeproj`, or run `mac/install.sh`. Signed and notarized release: `mac/release.sh TEAMID`.
 - [`windows-linux/`](windows-linux/): the Windows and Linux app (Rust). `cargo build --release`; tests: `cargo test`, `sh tests/e2e-linux.sh`.
 - [`site/`](site/): the website and the phone page (`site/remote/`).
 - For agents: [`site/llms.txt`](site/llms.txt) lists every command, MCP tool and setting.

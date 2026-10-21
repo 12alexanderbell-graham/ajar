@@ -118,7 +118,7 @@ enum Watchdog {
         if StateFiles.exists(StateFiles.hold) || Registry.sleepDisabled { out.append(Registry.sleepDisabled ? "sleep is switched off (pmset disablesleep 1)" : "hold marker present") }
         if StateFiles.exists(StateFiles.modeRestore) { out.append("Low Power Mode changed") }
         if TimeMachine.paused { out.append("Time Machine automatic backups paused") }
-        if AutoApprove.isOn { out.append("Approve everything is on: Claude Code and Codex run without asking (turn off in Settings › AI)") }
+        if AutoApprove.isOn { out.append("Approve everything is on: Claude Code and Codex run without asking (turn off in Settings › AI Agents)") }
         if StateFiles.exists(Brightness.restoreFile) { out.append("screen dimmed to zero") }
         if StateFiles.exists(DisplayPower.marker) { out.append("built-in screen switched off") }
         return out
