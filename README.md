@@ -4,9 +4,11 @@
 
 [![CI](https://github.com/12alexanderbell-graham/ajar/actions/workflows/ci.yml/badge.svg)](https://github.com/12alexanderbell-graham/ajar/actions/workflows/ci.yml)
 
-Close the lid. Your agents keep working.
+**Close the lid. Your AI keeps working.**
 
-Ajar keeps a laptop awake with the lid closed while Claude Code, Codex and other agents work, cuts the power that's wasted while it's shut, and lets it sleep when the work stops. macOS 14+, Windows 10/11, Linux (systemd).
+Ajar keeps your laptop awake with the lid shut while Claude Code, Codex or any AI agent works, uses a fraction of the battery while it's closed, and lets it sleep the moment the work is done. Free, for macOS 14+, Windows 10/11 and Linux (systemd).
+
+Measured on an M5 Max with the lid shut and iOS simulators open: **18.3 W with Ajar's savings off, 3.1 W with them on.**
 
 ## Install
 
@@ -14,7 +16,9 @@ Ajar keeps a laptop awake with the lid closed while Claude Code, Codex and other
 - **Windows / Linux:** download from the same page (Linux: unpack, run `./install.sh`).
 - **Hook up your agent:** `ajar connect`, then paste the output of `ajar prompt` into Claude Code or Codex.
 
-<p align="center"><img src="docs/menu.png" width="320" alt="Ajar's menu bar panel"> &nbsp; <img src="docs/phone.png" width="220" alt="Ajar's phone remote"></p>
+<p align="center"><img src="docs/menu.png" width="320" alt="Ajar's menu: When Busy, 'Close the lid: it keeps working', battery line"> &nbsp; <img src="docs/phone.png" width="220" alt="Ajar's phone page"></p>
+
+The whole app is one choice (**Off**, **When Busy** or **Always**) and a sentence telling you what closing the lid will do right now. Everything else is in Settings.
 
 ## What it does
 
