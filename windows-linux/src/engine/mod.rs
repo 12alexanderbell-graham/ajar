@@ -1005,6 +1005,11 @@ impl<P: Platform> Engine<P> {
             "preset": self.cfg.preset,
             "snoozed": self.snoozed,
             "holds": self.holds.iter().map(|h| h.reason.clone()).collect::<Vec<_>>(),
+            // The phone lists these and can end each one.
+            "holdList": self.holds.iter().map(|h| json!({
+                "id": h.id, "reason": h.reason.chars().take(60).collect::<String>(),
+                "until": h.until.map(crate::format::clock),
+            })).collect::<Vec<_>>(),
             "agents": self.watcher.sessions.iter().map(|s| json!({
                 "id": s.kind.id, "name": s.kind.name, "working": s.working(now),
                 "keeps": !self.cfg.track_only.contains(&s.kind.id), "instances": s.instances,

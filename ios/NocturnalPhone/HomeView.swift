@@ -182,10 +182,10 @@ struct HomeView: View {
     }
 
     private var bottom: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 10) {
             ReadoutSlot(words: (hovering?.word) ?? computer.stopWords)
-                .frame(height: 44)
-            HStack(spacing: Theme.gap) {
+                .frame(height: 30)
+            HStack(alignment: .center, spacing: 14) {
                 KeepAwakeBand(stop: computer.held == .off ? .off : computer.stop, hovering: $hovering) { s in
                     if s == .off, computer.panel?.lidClosed == true, computer.panel?.mode != "off" {
                         computer.hold(.off)     // with the lid shut, Off sleeps it: Undo for a few seconds
@@ -200,22 +200,28 @@ struct HomeView: View {
         .rise(5)
     }
 
-    /// Sleep now while it's awake (with an Undo), wake it for an hour while it's asleep.
+    /// One circle, one place, three jobs: Sleep Now while it's awake, Undo while a sleep is counting down, Wake It
+    /// while it's asleep. The symbol morphs; the circle never moves.
     private var mainCircle: some View {
         let asleep = computer.noAnswer
+        let held = computer.held != nil
+        let symbol = held ? "arrow.uturn.backward" : asleep ? "sun.max.fill" : "moon.zzz.fill"
         return Button {
-            if asleep { Task { await computer.wake() } } else { computer.hold(.sleep) }
+            if held { withAnimation(Theme.chrome) { computer.undoHeld() } }
+            else if asleep { Task { await computer.wake() } }
+            else { computer.hold(.sleep) }
         } label: {
-            Image(systemName: asleep ? "sun.max.fill" : "moon.zzz.fill")
+            Image(systemName: symbol)
                 .font(.system(size: 20, weight: .semibold))
-                .contentTransition(.symbolEffect(.replace))
+                .contentTransition(.symbolEffect(.replace.magic(fallback: .downUp)))
                 .frame(width: Theme.band, height: Theme.band)
                 .contentShape(.circle)
         }
         .buttonStyle(Press())
         .glassEffect(.clear.interactive(), in: .circle)
-        .accessibilityLabel(asleep ? "Wake it for an hour" : "Sleep now")
-        .accessibilityIdentifier("main")
+        .animation(Theme.chrome, value: symbol)
+        .accessibilityLabel(held ? "Undo" : asleep ? "Wake it for an hour" : "Sleep now")
+        .accessibilityIdentifier(held ? "undo" : "main")
     }
 
     private var notice: Notice? {
@@ -288,42 +294,26 @@ private struct NoticeSlot: View {
     }
 }
 
-/// What the band is set to, or the Undo after Sleep or Off. Same place, same height.
+/// What the band is set to, or the countdown after Sleep or Off. One line of text that changes in place: the words
+/// morph and the seconds roll, nothing slides in or out.
 private struct ReadoutSlot: View {
     @Environment(Computer.self) private var computer
     let words: String
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.25)) { context in
-            ZStack {
-                if let held = computer.held, let until = computer.heldUntil {
-                    let left = max(0, Int(until.timeIntervalSince(context.date).rounded(.up)))
-                    HStack(spacing: 12) {
-                        Text(held == .sleep ? "Sleeps in \(left) s" : "Off, it sleeps in \(left) s")
-                            .font(.headline)
-                            .monospacedDigit()
-                            .contentTransition(.numericText(countsDown: true))
-                            .animation(Theme.quick, value: left)
-                        Button("Undo") { withAnimation(Theme.chrome) { computer.undoHeld() } }
-                            .font(.headline)
-                            .padding(.horizontal, 18)
-                            .frame(height: 44)
-                            .glassEffect(.clear.interactive(), in: .capsule)
-                            .buttonStyle(Press())
-                            .accessibilityIdentifier("undo")
-                    }
-                    .transition(.offset(y: 16).combined(with: .scale(scale: 0.94)))
-                } else {
-                    Text(words)
-                        .font(.headline)
-                        .contentTransition(.interpolate)
-                        .animation(Theme.quick, value: words)
-                        .transition(.offset(y: -16).combined(with: .scale(scale: 0.94)))
-                        .accessibilityIdentifier("readout")
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .animation(Theme.chrome, value: computer.held)
+            let text: String = {
+                guard let held = computer.held, let until = computer.heldUntil else { return words }
+                let left = max(1, Int(until.timeIntervalSince(context.date).rounded(.up)))
+                return held == .sleep ? "Sleeps in \(left) s" : "Off · sleeps in \(left) s"
+            }()
+            Text(text)
+                .font(.headline)
+                .monospacedDigit()
+                .contentTransition(.numericText(countsDown: true))
+                .animation(Theme.smooth, value: text)
+                .frame(maxWidth: .infinity)
+                .accessibilityIdentifier("readout")
         }
         .sensoryFeedback(.warning, trigger: computer.held) { _, new in new != nil }
     }

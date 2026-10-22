@@ -33,6 +33,46 @@ nonisolated struct Panel: Codable, Equatable, Sendable {
     /// The daily wake ("7:00"), and whether the computer still needs its one-time setup for wakes.
     var wakeAt: String?
     var wakeNeedsSetup = false
+    /// How long a daily wake keeps it awake, in minutes.
+    var wakeFor: Int?
+    /// The Mac's Apps tab: what holds it awake (each can be ended), busy apps with their lid-shut rule, and the last
+    /// few lid-shut sessions.
+    var holdList: [HoldItem] = []
+    var apps: [AppItem] = []
+    var sessions: [SessionItem] = []
+
+    struct HoldItem: Codable, Equatable, Sendable, Identifiable {
+        var id: String
+        var reason: String
+        var until: String?
+    }
+
+    struct AppItem: Codable, Equatable, Sendable, Identifiable {
+        var id: String          // bundle id
+        var name: String
+        var w: Double
+        var rule: String        // leave, slow, pause (what applies now)
+        var custom = false      // set for this app, not the preset's default
+
+        init(id: String, name: String, w: Double, rule: String, custom: Bool = false) {
+            (self.id, self.name, self.w, self.rule, self.custom) = (id, name, w, rule, custom)
+        }
+
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            id = try c.decode(String.self, forKey: .id)
+            name = try c.decodeIfPresent(String.self, forKey: .name) ?? id
+            w = try c.decodeIfPresent(Double.self, forKey: .w) ?? 0
+            rule = try c.decodeIfPresent(String.self, forKey: .rule) ?? "leave"
+            custom = try c.decodeIfPresent(Bool.self, forKey: .custom) ?? false
+        }
+    }
+
+    struct SessionItem: Codable, Equatable, Sendable, Identifiable {
+        var when: String
+        var line: String
+        var id: String { when + line }
+    }
 
     struct Agent: Codable, Equatable, Sendable, Identifiable {
         var id: String
@@ -41,6 +81,8 @@ nonisolated struct Panel: Codable, Equatable, Sendable {
         var keeps = true
         var instances = 1
         var state: String?
+        /// Minutes until it lets the computer sleep, once it has gone quiet.
+        var sleepsIn: Int?
 
         /// "working", "waiting", "finished" or "idle"; older computers only say whether it's working.
         var status: String { state ?? (working ? "working" : "idle") }
@@ -57,6 +99,7 @@ nonisolated struct Panel: Codable, Equatable, Sendable {
             keeps = try c.decodeIfPresent(Bool.self, forKey: .keeps) ?? true
             instances = try c.decodeIfPresent(Int.self, forKey: .instances) ?? 1
             state = try c.decodeIfPresent(String.self, forKey: .state)
+            sleepsIn = try c.decodeIfPresent(Int.self, forKey: .sleepsIn)
         }
     }
 
@@ -122,6 +165,10 @@ nonisolated struct Panel: Codable, Equatable, Sendable {
         weekLine = o(.weekLine)
         wakeAt = o(.wakeAt)
         wakeNeedsSetup = v(.wakeNeedsSetup, false)
+        wakeFor = o(.wakeFor)
+        holdList = v(.holdList, [])
+        apps = v(.apps, [])
+        sessions = v(.sessions, [])
     }
 
     /// The numbers: sent as numbers by current versions, read from the sentence older ones sent.
@@ -170,6 +217,7 @@ nonisolated struct Setting: Equatable, Sendable, Identifiable {
         case let b as Bool where type == "bool": value = .bool(b)
         case let n as NSNumber where type == "int": value = .int(n.intValue)
         case let s as String: value = .text(s)
+        case let n as NSNumber: value = .text(n.stringValue)   // an enum of numbers (check-in minutes) arrives as a number
         default: return nil
         }
     }

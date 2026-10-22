@@ -92,6 +92,7 @@ extension Engine {
             "agents": sessions.filter { !$0.kind.isRequest }.map { s in
                 var a: [String: Any] = ["id": s.kind.id, "name": s.kind.name, "working": isWorking(s), "keeps": !config.trackOnly.contains(s.kind.id), "instances": s.instances]
                 if let st = s.state { a["state"] = st.rawValue }
+                if let left = sleepsIn(s) { a["sleepsIn"] = Int((left / 60).rounded(.up)) }
                 return a
             },
             "watch": watchCandidates.map { ["id": $0.app.id, "name": $0.app.name, "on": $0.on] as [String: Any] },
@@ -110,6 +111,22 @@ extension Engine {
         d["checkIn"] = config.checkInMinutes
         if AutoApprove.isOn { d["autoApprove"] = true }
         if let w = config.wakeAt { d["wakeAt"] = Date(timeIntervalSince1970: w).formatted(date: .omitted, time: .shortened) }
+        d["wakeFor"] = config.wakeForMinutes
+        // The phone shows the Mac's Apps tab too: holds it can end, and busy apps with their lid-shut rule.
+        d["holdList"] = holds.map { h -> [String: Any] in
+            var x: [String: Any] = ["id": h.id, "reason": String(h.reason.prefix(60))]
+            if let u = h.until { x["until"] = u.formatted(date: .omitted, time: .shortened) }
+            return x
+        }
+        d["apps"] = userApps.filter { $0.watts >= 0.05 && !isProtected($0) }.prefix(8).compactMap { a -> [String: Any]? in
+            guard let bid = a.bundleID else { return nil }
+            return ["id": bid, "name": a.name, "w": (a.watts * 10).rounded() / 10, "rule": rule(for: bid).rawValue,
+                    "custom": config.appRules[bid] != nil]
+        }
+        d["sessions"] = stats.sessions.suffix(5).reversed().map { s -> [String: Any] in
+            ["when": Date.RelativeFormatStyle(presentation: .named, capitalizationContext: .beginningOfSentence).format(s.date)
+                + (s.agent.map { " · \($0)" } ?? ""), "line": SettingsView.sessionLine(s)]
+        }
         if !wakeReady { d["wakeNeedsSetup"] = true }
         if let b = battery {
             // The phone's three numbers, as numbers: it formats and animates them itself.

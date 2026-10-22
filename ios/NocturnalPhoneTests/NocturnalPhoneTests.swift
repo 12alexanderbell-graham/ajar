@@ -57,5 +57,22 @@ struct ProtocolTests {
         #expect(d.handle("mode", ["mode": "off"]).panel?.keeps == false)
         #expect(d.handle("set", ["key": "battery_floor", "value": 5]).ok == false)
         #expect(d.handle("schema", [:]).settings?.contains { $0.key == "heat_guard" } == true)
+        #expect(d.handle("rule", ["app": "com.google.Chrome", "rule": "pause"]).panel?.apps.first?.rule == "pause")
+        #expect(d.handle("release", ["id": "h1"]).panel?.holdList.isEmpty == true)
+    }
+
+    @Test func readsEverySettingKind() {
+        // The Mac sends the check-in interval as an enum of numbers; it must still show.
+        let s = Setting(["key": "check_in_minutes", "type": "enum", "value": NSNumber(value: 15), "allowed": ["0", "15", "30", "60"]])
+        #expect(s?.text == "15")
+        #expect(Setting(["key": "menubar", "type": "enum", "value": "battery", "allowed": ["none", "battery"]])?.text == "battery")
+        #expect(Setting(["key": "quiet_minutes", "type": "int", "value": NSNumber(value: 5)])?.int == 5)
+    }
+
+    @Test func decodesTheAppsTab() throws {
+        let j = #"{"apps":[{"id":"com.a","name":"A","w":1.5,"rule":"slow","custom":true}],"holdList":[{"id":"x","reason":"Export"}],"sessions":[{"when":"Today","line":"2 h closed"}],"agents":[{"id":"c","name":"C","sleepsIn":4}],"wakeFor":30}"#
+        let p = try JSONDecoder().decode(Panel.self, from: Data(j.utf8))
+        #expect(p.apps.first?.custom == true && p.holdList.count == 1 && p.sessions.count == 1)
+        #expect(p.agents.first?.sleepsIn == 4 && p.wakeFor == 30)
     }
 }

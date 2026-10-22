@@ -22,6 +22,14 @@ final class DemoComputer {
         p.weekLine = "4 sessions · ≈38 Wh saved"
         p.savings = ["total": 7.9, "low_power": 1.2, "apps": 2.4, "simulators": 3.6, "audio": 0.7]
         p.canMeasure = true
+        p.wakeFor = 60
+        p.holdList = [.init(id: "h1", reason: "Exporting a video (Final Cut Pro)", until: nil)]
+        p.apps = [.init(id: "com.google.Chrome", name: "Google Chrome", w: 2.4, rule: "slow"),
+                  .init(id: "com.tinyspeck.slackmacgap", name: "Slack", w: 0.9, rule: "pause", custom: true),
+                  .init(id: "com.spotify.client", name: "Spotify", w: 0.6, rule: "leave")]
+        p.sessions = [.init(when: "Last night · Claude Code", line: "6 h 10 min closed · used 21%"),
+                      .init(when: "Yesterday · Codex", line: "1 h 5 min closed · used 6% · then slept"),
+                      .init(when: "Monday · Claude Code", line: "3 h closed · used 11%")]
         return p
     }()
 
@@ -30,10 +38,14 @@ final class DemoComputer {
         "screen_off": false, "lock_on_close": false,
         "sleep_when_done": true, "quiet_minutes": 5, "battery_floor": 10, "only_on_power": false, "heat_guard": true,
         "claude_app": true, "downloads": true, "notify_done": true, "done_chime": false,
-        "check_in_minutes": "15",
+        "check_in_minutes": "15", "pause_time_machine": true, "slow_builds": false,
+        "menubar": "battery", "appearance": "system", "live_lid_icon": true, "notch_island": true, "show_in_dock": false, "hotkey": true,
     ]
-    private static let kinds: [String: String] = ["battery_floor": "int", "quiet_minutes": "int", "check_in_minutes": "enum"]
-    private static let allowed: [String: [String]] = ["check_in_minutes": ["0", "15", "30", "60"]]
+    private static let kinds: [String: String] = ["battery_floor": "int", "quiet_minutes": "int", "check_in_minutes": "enum",
+                                                  "menubar": "enum", "appearance": "enum"]
+    private static let allowed: [String: [String]] = ["check_in_minutes": ["0", "15", "30", "60"],
+                                                      "menubar": ["none", "battery", "watts", "timeLeft", "timer"],
+                                                      "appearance": ["system", "light", "dark"]]
 
     func handle(_ cmd: String, _ args: [String: Any]) -> Relay.Reply {
         switch cmd {
@@ -47,7 +59,12 @@ final class DemoComputer {
         case "track":
             if let i = panel.agents.firstIndex(where: { $0.id == args["agent"] as? String }) { panel.agents[i].keeps = args["keeps"] as? Bool ?? true }
         case "watch":
-            if let i = panel.watch.firstIndex(where: { $0.id == args["app"] as? String }) { panel.watch[i].on = !(args["remove"] as? Bool ?? false) }
+            let id = args["app"] as? String
+            if let i = panel.watch.firstIndex(where: { $0.id == id }) {
+                panel.watch[i].on = !(args["remove"] as? Bool ?? false)
+            } else if let id, let app = panel.apps.first(where: { $0.id == id }) {
+                panel.watch.append(.init(id: id, name: app.name, on: true))
+            }
         case "sleep_now":
             panel.mode = panel.mode == "on" ? "auto" : panel.mode
             panel.alwaysUntil = nil
@@ -59,6 +76,17 @@ final class DemoComputer {
         case "wake_at":
             let t = args["time"] as? String ?? "off"
             panel.wakeAt = t == "off" ? nil : t
+            if let m = args["minutes"] as? Int { panel.wakeFor = m }
+        case "release":
+            panel.holdList.removeAll { $0.id == args["id"] as? String }
+            if panel.holdList.isEmpty, panel.mode == "auto", !(panel.agents.contains { $0.status == "working" }) { panel.holding = false }
+            updateOutcome()
+        case "rule":
+            if let i = panel.apps.firstIndex(where: { $0.id == args["app"] as? String }) {
+                let r = args["rule"] as? String ?? "default"
+                panel.apps[i].custom = r != "default"
+                panel.apps[i].rule = r == "default" ? (panel.preset == "longest" ? "pause" : panel.preset == "speed" ? "leave" : "slow") : r
+            }
         case "power_test":
             panel.canMeasure = false
             panel.powerTest = "Measuring: step 1 of 4"

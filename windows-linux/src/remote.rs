@@ -41,6 +41,7 @@ pub const ALLOWED: &[&str] = &[
     "power_test",
     "wake",
     "wake_at",
+    "release",
 ];
 const MAX_AGE: u64 = 300;
 

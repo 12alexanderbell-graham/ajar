@@ -301,8 +301,13 @@ final class Computer {
     // MARK: Wakes
 
     /// The daily wake: "07:00" (24-hour, the computer's clock) or nil to turn it off.
-    func setWakeAt(_ time: String?) async {
-        await change("wake_at", ["time": time ?? "off"]) { $0.wakeAt = time }
+    func setWakeAt(_ time: String?, minutes: Int? = nil) async {
+        var args: [String: Any] = ["time": time ?? "off"]
+        if let minutes { args["minutes"] = minutes }
+        await change("wake_at", args) { p in
+            p.wakeAt = time
+            if let minutes { p.wakeFor = minutes }
+        }
     }
 
     private func draw(_ p: Panel) {

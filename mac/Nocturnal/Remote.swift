@@ -73,7 +73,8 @@ struct RemoteSettings: Codable, Equatable {
 }
 
 enum RemoteCrypto {
-    static let allowed: Set<String> = ["panel", "mode", "preset", "watch", "track", "sleep_now", "set", "power", "power_test", "schema", "wake", "wake_at"]
+    static let allowed: Set<String> = ["panel", "mode", "preset", "watch", "track", "sleep_now", "set", "power", "power_test", "schema", "wake", "wake_at",
+                                       "rule", "release"]
     /// Commands still worth running when they arrive late: a "wake" sent while the Mac slept waits at the relay
     /// until the next check-in. Everything else is dropped after 5 minutes (the phone stopped waiting).
     static func maxAge(_ cmd: String) -> TimeInterval { cmd == "wake" ? WakePlan.wakeMaxAge : 300 }
@@ -102,7 +103,8 @@ enum RemoteCrypto {
             p["holds"] = nil
         }
         // Still too big (many watched apps, long warnings): cut until it fits, least important first.
-        for cut in ["savings", "savingsUnclear", "weekLine", "drawLine", "figureCaption"] where size() > maxReply { p[cut] = nil }
+        for cut in ["sessions", "apps", "batteryLine", "battery", "batteryState", "modeLine", "figure", "figureCaption", "savings", "savingsUnclear", "weekLine", "drawLine"]
+            where size() > maxReply { p[cut] = nil }
         while size() > maxReply, var w = p["watch"] as? [[String: Any]], !w.isEmpty { w.removeLast(); p["watch"] = w }
         if size() > maxReply, let w = p["warnings"] as? [String] { p["warnings"] = w.map { String($0.prefix(120)) } }
         r["panel"] = p

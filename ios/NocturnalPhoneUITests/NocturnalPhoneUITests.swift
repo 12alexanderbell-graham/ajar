@@ -19,16 +19,14 @@ final class NocturnalPhoneUITests: XCTestCase {
         shot(app, "01-home")
 
         // The band: tap the 2 hour stop.
-        let band = app.descendants(matching: .any)["band"].firstMatch
+        let band = app.sliders["band"]
         XCTAssertTrue(band.exists, app.debugDescription)
         tapStop(band, 3)
         XCTAssertTrue(wait(app.staticTexts["readout"], contains: "Until"), app.staticTexts["readout"].label)
         shot(app, "02-two-hours")
 
-        // Drag the lens to Always.
-        let from = band.coordinate(withNormalizedOffset: CGVector(dx: 3.5 / 7, dy: 0.5))
-        let to = band.coordinate(withNormalizedOffset: CGVector(dx: 6.5 / 7, dy: 0.5))
-        from.press(forDuration: 0.1, thenDragTo: to)
+        // Drag the thumb to Always.
+        tapStop(band, 6)
         XCTAssertTrue(wait(app.staticTexts["readout"], contains: "Always"), app.staticTexts["readout"].label)
         shot(app, "03-always")
 
@@ -73,6 +71,7 @@ final class NocturnalPhoneUITests: XCTestCase {
         sleep(1)
         shot(app, "10-settings-bottom")
         XCTAssertTrue(app.buttons["forget"].exists)
+        XCTAssertTrue(app.staticTexts["Busy apps"].exists || app.staticTexts["On the computer"].exists, app.debugDescription)
         app.buttons["settings"].tap()
         sleep(1)
         XCTAssertFalse(app.staticTexts["Keeps it awake"].isHittable)
@@ -123,7 +122,7 @@ final class NocturnalPhoneUITests: XCTestCase {
     // MARK: Helpers
 
     @MainActor private func tapStop(_ band: XCUIElement, _ i: Int) {
-        band.coordinate(withNormalizedOffset: CGVector(dx: (Double(i) + 0.5) / 7, dy: 0.5)).tap()
+        band.adjust(toNormalizedSliderPosition: CGFloat(i) / 6)
     }
 
     @MainActor private func wait(_ e: XCUIElement, contains text: String, timeout: TimeInterval = 3) -> Bool {
