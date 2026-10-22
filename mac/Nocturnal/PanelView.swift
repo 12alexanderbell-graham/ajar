@@ -1,9 +1,7 @@
 import AppKit
 import SwiftUI
 
-// Shared building blocks for the panel and window (the panel itself is in MenuPanel.swift).
-
-
+// Shared building blocks for the panel and Settings (the panel itself is in MenuPanel.swift).
 
 /// A real NSSegmentedControl with equal-width segments that fills the row, so every segmented control
 /// in the panel shares the same edges (SwiftUI's segmented Picker sizes to its labels on macOS).

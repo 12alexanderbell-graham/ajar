@@ -7,13 +7,13 @@
 	objects = {
 
 /* Begin PBXFileReference section */
-		06CA811F308568C50055313E /* Ajar.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ajar.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		06CA811F308568C50055313E /* Nocturnal.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Nocturnal.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		06CA8121308568C50055313E /* Ajar */ = {
+		06CA8121308568C50055313E /* Nocturnal */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Ajar;
+			path = Nocturnal;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -30,7 +30,7 @@
 		06CA8116308568C50055313E = {
 			isa = PBXGroup;
 			children = (
-				06CA8121308568C50055313E /* Ajar */,
+				06CA8121308568C50055313E /* Nocturnal */,
 				06CA8120308568C50055313E /* Products */,
 			);
 			sourceTree = "<group>";
@@ -38,7 +38,7 @@
 		06CA8120308568C50055313E /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				06CA811F308568C50055313E /* Ajar.app */,
+				06CA811F308568C50055313E /* Nocturnal.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -46,9 +46,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		06CA811E308568C50055313E /* Ajar */ = {
+		06CA811E308568C50055313E /* Nocturnal */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 06CA812A308568C60055313E /* Build configuration list for PBXNativeTarget "Ajar" */;
+			buildConfigurationList = 06CA812A308568C60055313E /* Build configuration list for PBXNativeTarget "Nocturnal" */;
 			buildPhases = (
 				06CA811B308568C50055313E /* Sources */,
 				06CA811C308568C50055313E /* Frameworks */,
@@ -57,11 +57,11 @@
 			buildRules = (
 			);
 			fileSystemSynchronizedGroups = (
-				06CA8121308568C50055313E /* Ajar */,
+				06CA8121308568C50055313E /* Nocturnal */,
 			);
-			name = Ajar;
-			productName = Ajar;
-			productReference = 06CA811F308568C50055313E /* Ajar.app */;
+			name = Nocturnal;
+			productName = Nocturnal;
+			productReference = 06CA811F308568C50055313E /* Nocturnal.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -79,7 +79,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 06CA811A308568C50055313E /* Build configuration list for PBXProject "Ajar" */;
+			buildConfigurationList = 06CA811A308568C50055313E /* Build configuration list for PBXProject "Nocturnal" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -93,7 +93,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				06CA811E308568C50055313E /* Ajar */,
+				06CA811E308568C50055313E /* Nocturnal */,
 			);
 		};
 /* End PBXProject section */
@@ -115,7 +115,7 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
-		06CA8128308568C60055313E /* Debug configuration for PBXProject "Ajar" */ = {
+		06CA8128308568C60055313E /* Debug configuration for PBXProject "Nocturnal" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -178,7 +178,7 @@
 			};
 			name = Debug;
 		};
-		06CA8129308568C60055313E /* Release configuration for PBXProject "Ajar" */ = {
+		06CA8129308568C60055313E /* Release configuration for PBXProject "Nocturnal" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -233,7 +233,7 @@
 			};
 			name = Release;
 		};
-		06CA812B308568C60055313E /* Debug configuration for PBXNativeTarget "Ajar" */ = {
+		06CA812B308568C60055313E /* Debug configuration for PBXNativeTarget "Nocturnal" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -267,7 +267,7 @@
 			};
 			name = Debug;
 		};
-		06CA812C308568C60055313E /* Release configuration for PBXNativeTarget "Ajar" */ = {
+		06CA812C308568C60055313E /* Release configuration for PBXNativeTarget "Nocturnal" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -304,19 +304,19 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		06CA811A308568C50055313E /* Build configuration list for PBXProject "Ajar" */ = {
+		06CA811A308568C50055313E /* Build configuration list for PBXProject "Nocturnal" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				06CA8128308568C60055313E /* Debug configuration for PBXProject "Ajar" */,
-				06CA8129308568C60055313E /* Release configuration for PBXProject "Ajar" */,
+				06CA8128308568C60055313E /* Debug configuration for PBXProject "Nocturnal" */,
+				06CA8129308568C60055313E /* Release configuration for PBXProject "Nocturnal" */,
 			);
 			defaultConfigurationName = Release;
 		};
-		06CA812A308568C60055313E /* Build configuration list for PBXNativeTarget "Ajar" */ = {
+		06CA812A308568C60055313E /* Build configuration list for PBXNativeTarget "Nocturnal" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				06CA812B308568C60055313E /* Debug configuration for PBXNativeTarget "Ajar" */,
-				06CA812C308568C60055313E /* Release configuration for PBXNativeTarget "Ajar" */,
+				06CA812B308568C60055313E /* Debug configuration for PBXNativeTarget "Nocturnal" */,
+				06CA812C308568C60055313E /* Release configuration for PBXNativeTarget "Nocturnal" */,
 			);
 			defaultConfigurationName = Release;
 		};

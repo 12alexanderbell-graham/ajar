@@ -293,8 +293,9 @@ enum CLI {
       nocturnal rescue                       put back everything Nocturnal changed, even if the app is stuck
       nocturnal energy                       apps using the most power right now
       nocturnal config                       settings (also editable at the printed path)
-      nocturnal open [window]                show the panel or the window
+      nocturnal open                         drop the panel down from the menu bar
       nocturnal mcp                          run as an MCP server for Claude
+      nocturnal event claude-code            used by Claude Code's hooks (reads the hook's JSON on stdin)
 
     Connect your agents: nocturnal connect     Then paste: nocturnal prompt
     """

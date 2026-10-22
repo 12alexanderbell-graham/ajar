@@ -11,7 +11,7 @@ exec > install.log 2>&1
 set -e
 echo "start $(date)"
 DD="${TMPDIR:-/tmp}/nocturnal-release"
-/usr/bin/xcodebuild -project Ajar.xcodeproj -scheme Ajar -configuration Release -destination 'generic/platform=macOS' \
+/usr/bin/xcodebuild -project Nocturnal.xcodeproj -scheme Nocturnal -configuration Release -destination 'generic/platform=macOS' \
   -derivedDataPath "$DD" ONLY_ACTIVE_ARCH=NO ARCHS="arm64 x86_64" CODE_SIGN_IDENTITY=- build | tail -3
 NEW="$DD/Build/Products/Release/Nocturnal.app"
 [ -x "$NEW/Contents/MacOS/Nocturnal" ] || { echo "build produced no app"; exit 1; }

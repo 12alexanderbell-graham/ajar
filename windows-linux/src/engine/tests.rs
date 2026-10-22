@@ -691,7 +691,11 @@ fn commands_validate_their_input() {
         h.until.unwrap() <= crate::now() + 7 * 24 * 3600 + 1,
         "capped at 7 days"
     );
-    assert_eq!(e.handle("release", &json!({}))["ok"], false, "release needs an id or all");
+    assert_eq!(
+        e.handle("release", &json!({}))["ok"],
+        false,
+        "release needs an id or all"
+    );
     assert_eq!(e.handle("release", &json!({ "all": true }))["released"], 1);
     assert_eq!(
         e.handle("set", &json!({ "key": "ntfy_topic", "value": "mytopic" }))["ok"],
@@ -1282,24 +1286,69 @@ fn a_stale_phone_wake_is_skipped_with_the_lid_open() {
 fn hook_states_drive_the_hold() {
     let mut e = engine("hooks", Mock::laptop());
     let now = crate::now();
-    let procs = vec![proc(4242, 1, "claude", 99), proc(4300, 4242, "nocturnal", 100)];
+    let procs = vec![
+        proc(4242, 1, "claude", 99),
+        proc(4300, 4242, "nocturnal", 100),
+    ];
     // The hook process exists only while the hook runs; the samples see just the agent.
     let running = vec![proc(4242, 1, "claude", 99)];
-    let ev = |name: &str, extra: &str| format!(r#"{{"session_id":"t1","hook_event_name":"{name}"{extra}}}"#);
-    crate::events::record(&e.root, "claude-code", &ev("UserPromptSubmit", ""), now, &procs, 4300);
+    let ev = |name: &str, extra: &str| {
+        format!(r#"{{"session_id":"t1","hook_event_name":"{name}"{extra}}}"#)
+    };
+    crate::events::record(
+        &e.root,
+        "claude-code",
+        &ev("UserPromptSubmit", ""),
+        now,
+        &procs,
+        4300,
+    );
     e.tick(now, Some(running.clone()));
     e.tick(now + 2, Some(running.clone()));
     assert!(e.holding, "a quiet working turn holds");
-    assert_eq!(e.work_reason(now + 2).as_deref(), Some("Claude Code is working"));
+    assert_eq!(
+        e.work_reason(now + 2).as_deref(),
+        Some("Claude Code is working")
+    );
     e.platform.lid = true;
-    crate::events::record(&e.root, "claude-code", &ev("Notification", r#","notification_type":"permission_prompt""#), now + 600, &procs, 4300);
+    crate::events::record(
+        &e.root,
+        "claude-code",
+        &ev(
+            "Notification",
+            r#","notification_type":"permission_prompt""#,
+        ),
+        now + 600,
+        &procs,
+        4300,
+    );
     e.tick(now + 602, Some(running.clone()));
     assert!(e.holding);
-    assert_eq!(e.work_reason(now + 602).as_deref(), Some("Claude Code is waiting for you"));
-    assert!(e.outbox.iter().any(|a| a.title == "Claude Code is waiting for you"), "pushed while the lid is shut");
-    crate::events::record(&e.root, "claude-code", &ev("Stop", ""), now + 700, &procs, 4300);
+    assert_eq!(
+        e.work_reason(now + 602).as_deref(),
+        Some("Claude Code is waiting for you")
+    );
+    assert!(
+        e.outbox
+            .iter()
+            .any(|a| a.title == "Claude Code is waiting for you"),
+        "pushed while the lid is shut"
+    );
+    crate::events::record(
+        &e.root,
+        "claude-code",
+        &ev("Stop", ""),
+        now + 700,
+        &procs,
+        4300,
+    );
     e.tick(now + 725, Some(running.clone()));
-    assert!(e.work_reason(now + 725).is_some_and(|r| r.starts_with("Claude Code finished · sleeps in")), "{:?}", e.work_reason(now + 725));
+    assert!(
+        e.work_reason(now + 725)
+            .is_some_and(|r| r.starts_with("Claude Code finished · sleeps in")),
+        "{:?}",
+        e.work_reason(now + 725)
+    );
     e.tick(now + 700 + 5 * 60 + 2, Some(running.clone()));
     assert!(!e.holding, "the quiet time after the turn ended has passed");
 }

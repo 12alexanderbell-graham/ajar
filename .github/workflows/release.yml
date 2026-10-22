@@ -30,7 +30,7 @@ jobs:
       - run: sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
       - working-directory: mac
         run: |
-          xcodebuild -project Ajar.xcodeproj -scheme Ajar -configuration Release -destination 'generic/platform=macOS' \
+          xcodebuild -project Nocturnal.xcodeproj -scheme Nocturnal -configuration Release -destination 'generic/platform=macOS' \
             -derivedDataPath build ONLY_ACTIVE_ARCH=NO ARCHS="arm64 x86_64" CODE_SIGN_IDENTITY=- build
           ditto -c -k --sequesterRsrc --keepParent build/Build/Products/Release/Nocturnal.app "Nocturnal-${GITHUB_REF_NAME#v}-mac.zip"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

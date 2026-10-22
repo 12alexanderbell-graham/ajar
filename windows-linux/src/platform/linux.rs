@@ -338,7 +338,11 @@ impl Platform for Linux {
 
     fn sleep_now(&mut self) {
         // Do what the person's own lid setting says (hibernate, hybrid sleep...), falling back to plain suspend.
-        let key = if self.on_ac() { "HandleLidSwitchExternalPower" } else { "HandleLidSwitch" };
+        let key = if self.on_ac() {
+            "HandleLidSwitchExternalPower"
+        } else {
+            "HandleLidSwitch"
+        };
         let method = match self
             .logind_property(key)
             .and_then(|v| String::try_from(v).ok())
@@ -350,7 +354,9 @@ impl Platform for Linux {
             _ => "Suspend",
         };
         if let Some(sys) = self.system.as_ref() {
-            let call = |m: &str| sys.call_method(Some(LOGIND), LOGIND_PATH, Some(LOGIND_IFACE), m, &(false,));
+            let call = |m: &str| {
+                sys.call_method(Some(LOGIND), LOGIND_PATH, Some(LOGIND_IFACE), m, &(false,))
+            };
             if call(method).is_err() && method != "Suspend" {
                 let _ = call("Suspend");
             }
@@ -940,7 +946,8 @@ mod tests {
     use super::*;
 
     fn tree(name: &str, files: &[(&str, &str)]) -> PathBuf {
-        let root = std::env::temp_dir().join(format!("nocturnal-linux-{name}-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("nocturnal-linux-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         for (path, contents) in files {
             let p = root.join(path);

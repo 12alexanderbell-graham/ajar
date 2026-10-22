@@ -83,7 +83,12 @@ pub fn record(root: &Path, agent: &str, input: &str, now: u64, procs: &[Proc], m
     let Ok(Value::Object(obj)) = serde_json::from_str::<Value>(input) else {
         return;
     };
-    let session = clean(obj.get("session_id").and_then(Value::as_str).unwrap_or("unknown"), 64);
+    let session = clean(
+        obj.get("session_id")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown"),
+        64,
+    );
     if session.is_empty() {
         return;
     }
@@ -91,7 +96,10 @@ pub fn record(root: &Path, agent: &str, input: &str, now: u64, procs: &[Proc], m
     let previous: Option<AgentEvent> = std::fs::read_to_string(&path)
         .ok()
         .and_then(|t| serde_json::from_str(&t).ok());
-    let event = obj.get("hook_event_name").and_then(Value::as_str).unwrap_or("");
+    let event = obj
+        .get("hook_event_name")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     let mut at = now;
     let mut detail = None;
     let state = match event {
@@ -119,12 +127,21 @@ pub fn record(root: &Path, agent: &str, input: &str, now: u64, procs: &[Proc], m
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .to_lowercase();
-            if matches!(kind, "permission_prompt" | "elicitation_dialog" | "agent_needs_input")
-                || (kind.is_empty() && (message.contains("permission") || message.contains("approve")))
+            if matches!(
+                kind,
+                "permission_prompt" | "elicitation_dialog" | "agent_needs_input"
+            ) || (kind.is_empty()
+                && (message.contains("permission") || message.contains("approve")))
             {
-                detail = Some(if kind.is_empty() { "permission_prompt".to_string() } else { kind.to_string() });
+                detail = Some(if kind.is_empty() {
+                    "permission_prompt".to_string()
+                } else {
+                    kind.to_string()
+                });
                 AgentState::Waiting
-            } else if kind == "idle_prompt" || (kind.is_empty() && message.contains("waiting for your input")) {
+            } else if kind == "idle_prompt"
+                || (kind.is_empty() && message.contains("waiting for your input"))
+            {
                 // Sent about a minute after the turn ended. Keep the real end time if we have it.
                 at = match &previous {
                     Some(p) if p.state == AgentState::Finished => p.at,
@@ -205,7 +222,12 @@ pub fn load(root: &Path, now: u64, procs: &[Proc]) -> Vec<AgentEvent> {
 
 /// What the agent of this kind is doing, combining its sessions: working beats waiting beats finished.
 /// `last_active` is the CPU-based guess, used to spot a stuck "working" and a question answered since.
-pub fn state_of(kind: &str, events: &[AgentEvent], last_active: u64, now: u64) -> Option<(AgentState, u64)> {
+pub fn state_of(
+    kind: &str,
+    events: &[AgentEvent],
+    last_active: u64,
+    now: u64,
+) -> Option<(AgentState, u64)> {
     let mut best: Option<(AgentState, u64)> = None;
     for e in events.iter().filter(|e| e.agent == kind) {
         let mut s = e.state;
@@ -229,7 +251,13 @@ pub fn state_of(kind: &str, events: &[AgentEvent], last_active: u64, now: u64) -
 
 // MARK: Claude Code hooks
 
-pub const HOOK_EVENTS: &[&str] = &["SessionStart", "UserPromptSubmit", "Notification", "Stop", "SessionEnd"];
+pub const HOOK_EVENTS: &[&str] = &[
+    "SessionStart",
+    "UserPromptSubmit",
+    "Notification",
+    "Stop",
+    "SessionEnd",
+];
 pub const MARKER: &str = "event claude-code";
 
 /// The hook handler for this install. On macOS and Linux a guarded shell command that does nothing if Nocturnal
@@ -249,7 +277,12 @@ pub fn is_ours(handler: &Value) -> bool {
     let args = handler
         .get("args")
         .and_then(Value::as_array)
-        .map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(" "))
+        .map(|a| {
+            a.iter()
+                .filter_map(Value::as_str)
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
         .unwrap_or_default();
     let all = format!("{cmd} {args}");
     all.contains(MARKER) && all.to_lowercase().contains("nocturnal")
@@ -270,7 +303,11 @@ pub fn without_hooks(settings: &Map<String, Value>) -> (Map<String, Value>, bool
         };
         let mut kept = vec![];
         for mut g in groups {
-            let handlers = g.get("hooks").and_then(Value::as_array).cloned().unwrap_or_default();
+            let handlers = g
+                .get("hooks")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
             let rest: Vec<Value> = handlers.iter().filter(|h| !is_ours(h)).cloned().collect();
             if rest.len() != handlers.len() {
                 changed = true;
@@ -298,9 +335,17 @@ pub fn without_hooks(settings: &Map<String, Value>) -> (Map<String, Value>, bool
 /// The settings with Nocturnal's hooks added (any older copy replaced).
 pub fn with_hooks(settings: &Map<String, Value>, exe: &str) -> Map<String, Value> {
     let (mut c, _) = without_hooks(settings);
-    let mut hooks = c.get("hooks").and_then(Value::as_object).cloned().unwrap_or_default();
+    let mut hooks = c
+        .get("hooks")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
     for ev in HOOK_EVENTS {
-        let mut groups = hooks.get(*ev).and_then(Value::as_array).cloned().unwrap_or_default();
+        let mut groups = hooks
+            .get(*ev)
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
         groups.push(json!({ "hooks": [hook_handler(exe)] }));
         hooks.insert(ev.to_string(), Value::Array(groups));
     }
@@ -320,9 +365,12 @@ pub fn hooks_installed(settings: &Map<String, Value>, exe: &str) -> bool {
             .and_then(Value::as_array)
             .is_some_and(|groups| {
                 groups.iter().any(|g| {
-                    g.get("hooks")
-                        .and_then(Value::as_array)
-                        .is_some_and(|hs| hs.iter().any(|h| h.get("command") == want.get("command") && h.get("args") == want.get("args")))
+                    g.get("hooks").and_then(Value::as_array).is_some_and(|hs| {
+                        hs.iter().any(|h| {
+                            h.get("command") == want.get("command")
+                                && h.get("args") == want.get("args")
+                        })
+                    })
                 })
             })
     })
@@ -333,7 +381,8 @@ mod tests {
     use super::*;
 
     fn tmp(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("nocturnal-events-{name}-{}", std::process::id()));
+        let d =
+            std::env::temp_dir().join(format!("nocturnal-events-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
@@ -356,26 +405,90 @@ mod tests {
     fn lifecycle_of_a_turn() {
         let root = tmp("life");
         // claude (100) → sh (200) → nocturnal (300)
-        let procs = vec![p(100, 1, "claude"), p(200, 100, "sh"), p(300, 200, "nocturnal")];
-        let ev = |name: &str, extra: &str| format!(r#"{{"session_id":"abc-1","hook_event_name":"{name}"{extra}}}"#);
-        record(&root, "claude-code", &ev("SessionStart", r#","source":"startup""#), 1000, &procs, 300);
+        let procs = vec![
+            p(100, 1, "claude"),
+            p(200, 100, "sh"),
+            p(300, 200, "nocturnal"),
+        ];
+        let ev = |name: &str, extra: &str| {
+            format!(r#"{{"session_id":"abc-1","hook_event_name":"{name}"{extra}}}"#)
+        };
+        record(
+            &root,
+            "claude-code",
+            &ev("SessionStart", r#","source":"startup""#),
+            1000,
+            &procs,
+            300,
+        );
         let l = load(&root, 1000, &procs);
         assert_eq!(l.len(), 1);
         assert_eq!(l[0].state, AgentState::Idle);
         assert_eq!(l[0].pid, Some(100), "the agent above the hook's shell");
-        record(&root, "claude-code", &ev("UserPromptSubmit", ""), 1010, &procs, 300);
-        assert_eq!(state_of("claude-code", &load(&root, 1010, &procs), 0, 1010), Some((AgentState::Working, 1010)));
+        record(
+            &root,
+            "claude-code",
+            &ev("UserPromptSubmit", ""),
+            1010,
+            &procs,
+            300,
+        );
+        assert_eq!(
+            state_of("claude-code", &load(&root, 1010, &procs), 0, 1010),
+            Some((AgentState::Working, 1010))
+        );
         // Compaction mid-turn changes nothing.
-        record(&root, "claude-code", &ev("SessionStart", r#","source":"compact""#), 1500, &procs, 300);
+        record(
+            &root,
+            "claude-code",
+            &ev("SessionStart", r#","source":"compact""#),
+            1500,
+            &procs,
+            300,
+        );
         assert_eq!(load(&root, 1500, &procs)[0].state, AgentState::Working);
-        record(&root, "claude-code", &ev("Notification", r#","notification_type":"permission_prompt""#), 2000, &procs, 300);
-        assert_eq!(state_of("claude-code", &load(&root, 2000, &procs), 1990, 2010), Some((AgentState::Waiting, 2000)));
+        record(
+            &root,
+            "claude-code",
+            &ev(
+                "Notification",
+                r#","notification_type":"permission_prompt""#,
+            ),
+            2000,
+            &procs,
+            300,
+        );
+        assert_eq!(
+            state_of("claude-code", &load(&root, 2000, &procs), 1990, 2010),
+            Some((AgentState::Waiting, 2000))
+        );
         // CPU activity after the question: it was answered.
-        assert_eq!(state_of("claude-code", &load(&root, 2000, &procs), 2100, 2100).map(|s| s.0), Some(AgentState::Working));
+        assert_eq!(
+            state_of("claude-code", &load(&root, 2000, &procs), 2100, 2100).map(|s| s.0),
+            Some(AgentState::Working)
+        );
         record(&root, "claude-code", &ev("Stop", ""), 3000, &procs, 300);
-        record(&root, "claude-code", &ev("Notification", r#","notification_type":"idle_prompt""#), 3060, &procs, 300);
-        assert_eq!(state_of("claude-code", &load(&root, 3060, &procs), 0, 3060), Some((AgentState::Finished, 3000)), "idle_prompt keeps the real end time");
-        record(&root, "claude-code", &ev("SessionEnd", ""), 3100, &procs, 300);
+        record(
+            &root,
+            "claude-code",
+            &ev("Notification", r#","notification_type":"idle_prompt""#),
+            3060,
+            &procs,
+            300,
+        );
+        assert_eq!(
+            state_of("claude-code", &load(&root, 3060, &procs), 0, 3060),
+            Some((AgentState::Finished, 3000)),
+            "idle_prompt keeps the real end time"
+        );
+        record(
+            &root,
+            "claude-code",
+            &ev("SessionEnd", ""),
+            3100,
+            &procs,
+            300,
+        );
         assert!(load(&root, 3100, &procs).is_empty());
     }
 
@@ -383,15 +496,39 @@ mod tests {
     fn stuck_and_dead_sessions_are_ignored() {
         let root = tmp("stuck");
         let procs = vec![p(100, 1, "claude"), p(300, 100, "nocturnal")];
-        record(&root, "claude-code", r#"{"session_id":"s","hook_event_name":"UserPromptSubmit"}"#, 1000, &procs, 300);
+        record(
+            &root,
+            "claude-code",
+            r#"{"session_id":"s","hook_event_name":"UserPromptSubmit"}"#,
+            1000,
+            &procs,
+            300,
+        );
         let l = load(&root, 1000, &procs);
-        assert_eq!(state_of("claude-code", &l, 1000, 1000 + STUCK_AFTER - 1).map(|s| s.0), Some(AgentState::Working));
-        assert_eq!(state_of("claude-code", &l, 1000, 1000 + STUCK_AFTER + 1), None, "interrupted: unknown");
+        assert_eq!(
+            state_of("claude-code", &l, 1000, 1000 + STUCK_AFTER - 1).map(|s| s.0),
+            Some(AgentState::Working)
+        );
+        assert_eq!(
+            state_of("claude-code", &l, 1000, 1000 + STUCK_AFTER + 1),
+            None,
+            "interrupted: unknown"
+        );
         // The agent process is gone (or the pid was reused): the session is dropped.
-        let other = vec![Proc { start: 1, ..p(100, 1, "claude") }];
+        let other = vec![Proc {
+            start: 1,
+            ..p(100, 1, "claude")
+        }];
         assert!(load(&root, 1100, &other).is_empty());
         // Bad input and odd agent names do nothing.
-        record(&root, "../x", r#"{"session_id":"s","hook_event_name":"Stop"}"#, 1, &procs, 300);
+        record(
+            &root,
+            "../x",
+            r#"{"session_id":"s","hook_event_name":"Stop"}"#,
+            1,
+            &procs,
+            300,
+        );
         record(&root, "claude-code", "not json", 1, &procs, 300);
         assert!(std::fs::read_dir(dir(&root)).unwrap().next().is_none());
     }
@@ -407,9 +544,17 @@ mod tests {
         let with = with_hooks(&s, "/usr/local/bin/nocturnal");
         assert!(hooks_installed(&with, "/usr/local/bin/nocturnal"));
         assert!(!hooks_installed(&with, "/elsewhere/nocturnal"));
-        assert_eq!(with["hooks"]["Stop"].as_array().unwrap().len(), 2, "their own Stop hook kept");
+        assert_eq!(
+            with["hooks"]["Stop"].as_array().unwrap().len(),
+            2,
+            "their own Stop hook kept"
+        );
         let again = with_hooks(&with, "/usr/local/bin/nocturnal");
-        assert_eq!(again["hooks"]["Stop"].as_array().unwrap().len(), 2, "no duplicates");
+        assert_eq!(
+            again["hooks"]["Stop"].as_array().unwrap().len(),
+            2,
+            "no duplicates"
+        );
         let (back, changed) = without_hooks(&again);
         assert!(changed);
         assert_eq!(Value::Object(back), Value::Object(s));

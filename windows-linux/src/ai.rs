@@ -103,10 +103,13 @@ fn home() -> PathBuf {
 fn server() -> (String, Vec<String>) {
     let exe = std::env::current_exe().ok();
     // The MCP server lives in the `nocturnal` command next to the tray app.
-    let cli = exe
-        .as_ref()
-        .and_then(|p| p.parent())
-        .map(|d| d.join(if cfg!(windows) { "nocturnal.exe" } else { "nocturnal" }));
+    let cli = exe.as_ref().and_then(|p| p.parent()).map(|d| {
+        d.join(if cfg!(windows) {
+            "nocturnal.exe"
+        } else {
+            "nocturnal"
+        })
+    });
     let path = cli
         .filter(|p| p.exists())
         .or(exe)
@@ -126,8 +129,16 @@ pub fn codex_config() -> PathBuf {
 /// The `nocturnal` command (never the tray app: run with a hook's arguments, that would start a second tray).
 fn cli_exe() -> Option<String> {
     let me = std::env::current_exe().ok()?;
-    let name = if cfg!(windows) { "nocturnal.exe" } else { "nocturnal" };
-    let p = if me.file_name().and_then(|n| n.to_str()) == Some(name) { me } else { me.parent()?.join(name) };
+    let name = if cfg!(windows) {
+        "nocturnal.exe"
+    } else {
+        "nocturnal"
+    };
+    let p = if me.file_name().and_then(|n| n.to_str()) == Some(name) {
+        me
+    } else {
+        me.parent()?.join(name)
+    };
     p.exists().then(|| p.display().to_string())
 }
 
@@ -159,21 +170,36 @@ pub fn claude_code_hooks_installed() -> bool {
 
 /// Adds Nocturnal's lifecycle hooks to Claude Code's settings (a copy of the file is kept next to it first).
 fn install_hooks(path: &Path, exe: &str) -> Result<(), String> {
-    let p = crate::approve::Paths { journal: PathBuf::new(), claude: path.to_path_buf(), codex: PathBuf::new() };
+    let p = crate::approve::Paths {
+        journal: PathBuf::new(),
+        claude: path.to_path_buf(),
+        codex: PathBuf::new(),
+    };
     let (c, raw) = crate::approve::read_claude(&p)?;
     if let Some(r) = &raw {
-        std::fs::write(path.with_extension("json.nocturnal-backup"), r).map_err(|e| e.to_string())?;
+        std::fs::write(path.with_extension("json.nocturnal-backup"), r)
+            .map_err(|e| e.to_string())?;
     }
     let out = crate::events::with_hooks(&c, exe);
-    crate::approve::write(path, &serde_json::to_string_pretty(&Value::Object(out)).unwrap_or_default())
+    crate::approve::write(
+        path,
+        &serde_json::to_string_pretty(&Value::Object(out)).unwrap_or_default(),
+    )
 }
 
 fn remove_hooks(path: &Path) {
-    let p = crate::approve::Paths { journal: PathBuf::new(), claude: path.to_path_buf(), codex: PathBuf::new() };
+    let p = crate::approve::Paths {
+        journal: PathBuf::new(),
+        claude: path.to_path_buf(),
+        codex: PathBuf::new(),
+    };
     if let Ok((c, Some(_))) = crate::approve::read_claude(&p) {
         let (out, changed) = crate::events::without_hooks(&c);
         if changed {
-            let _ = crate::approve::write(path, &serde_json::to_string_pretty(&Value::Object(out)).unwrap_or_default());
+            let _ = crate::approve::write(
+                path,
+                &serde_json::to_string_pretty(&Value::Object(out)).unwrap_or_default(),
+            );
         }
     }
 }
@@ -197,7 +223,8 @@ fn connect_claude_code_at(path: &Path) -> Result<String, String> {
         ));
     }
     if path.exists() {
-        std::fs::copy(&path, path.with_extension("json.nocturnal-backup")).map_err(|e| e.to_string())?;
+        std::fs::copy(&path, path.with_extension("json.nocturnal-backup"))
+            .map_err(|e| e.to_string())?;
     }
     let (cmd, args) = server();
     if !root["mcpServers"].is_object() {
@@ -219,7 +246,12 @@ fn connect_codex_at(path: &Path) -> Result<String, String> {
     let existing = match std::fs::read_to_string(path) {
         Ok(t) => t,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(_) => return Err(format!("Couldn't read {}, so I left it alone", path.display())),
+        Err(_) => {
+            return Err(format!(
+                "Couldn't read {}, so I left it alone",
+                path.display()
+            ))
+        }
     };
     if existing.contains("[mcp_servers.nocturnal]") {
         return Ok("Codex already has Nocturnal.".into());
@@ -253,23 +285,38 @@ fn write_atomic(path: &Path, data: &[u8]) -> Result<(), String> {
 pub fn disconnect_all() {
     remove_hooks(&claude_settings());
     let cc = claude_code_config();
-    if let Some(mut root) = std::fs::read(&cc).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok()) {
+    if let Some(mut root) = std::fs::read(&cc)
+        .ok()
+        .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+    {
         if let Some(servers) = root.get_mut("mcpServers").and_then(Value::as_object_mut) {
             if servers.remove("nocturnal").is_some() {
                 let _ = std::fs::copy(&cc, cc.with_extension("json.nocturnal-backup"));
-                let _ = write_atomic(&cc, serde_json::to_string_pretty(&root).unwrap_or_default().as_bytes());
+                let _ = write_atomic(
+                    &cc,
+                    serde_json::to_string_pretty(&root)
+                        .unwrap_or_default()
+                        .as_bytes(),
+                );
             }
         }
     }
     let cx = codex_config();
     if let Ok(text) = std::fs::read_to_string(&cx) {
         let lines: Vec<&str> = text.split('\n').collect();
-        if let Some(start) = lines.iter().position(|l| l.trim() == "[mcp_servers.nocturnal]") {
+        if let Some(start) = lines
+            .iter()
+            .position(|l| l.trim() == "[mcp_servers.nocturnal]")
+        {
             let end = lines[start + 1..]
                 .iter()
                 .position(|l| l.trim_start().starts_with('['))
                 .map_or(lines.len(), |i| start + 1 + i);
-            let kept: Vec<&str> = lines[..start].iter().chain(&lines[end..]).copied().collect();
+            let kept: Vec<&str> = lines[..start]
+                .iter()
+                .chain(&lines[end..])
+                .copied()
+                .collect();
             let _ = std::fs::write(cx.with_extension("toml.nocturnal-backup"), &text);
             let _ = write_atomic(&cx, kept.join("\n").as_bytes());
         }
@@ -328,7 +375,10 @@ mod tests {
         connect_codex_at(&codex).unwrap();
         let t = std::fs::read_to_string(&codex).unwrap();
         assert!(t.contains("[mcp_servers.nocturnal]") && t.contains("args = [\"mcp\"]"));
-        assert_eq!(connect_codex_at(&codex).unwrap(), "Codex already has Nocturnal.");
+        assert_eq!(
+            connect_codex_at(&codex).unwrap(),
+            "Codex already has Nocturnal."
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

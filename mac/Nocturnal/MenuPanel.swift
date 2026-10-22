@@ -4,7 +4,7 @@ import SwiftUI
 /// The menu bar panel, two tabs:
 ///  • Now: the mode (Off / When Busy / Always) with one sentence, what closing the lid does right now, the battery.
 ///  • Apps: what keeps the Mac awake, what closing the lid slows or pauses, the battery limit, per-app rules.
-/// Everything else is in Settings.
+/// Everything else is in Settings. Before setup is done it shows the first-run steps instead.
 struct PanelView: View {
     enum Tab: String { case now, apps }
 
@@ -13,17 +13,20 @@ struct PanelView: View {
     /// Opens on this tab (previews and screenshots); otherwise the last one used.
     var showTab: Tab? = nil
     @AppStorage("panelTab") private var tab: Tab = .now
+    @AppStorage("onboardingDone") private var onboardingDone = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            if engine.setupReady {
+            if engine.setupReady && (onboardingDone || showTab != nil) {
                 header
                 switch showTab ?? tab {
                 case .now: NowTab(engine: engine)
                 case .apps: AppsView(engine: engine, openAgentSettings: { UIState.shared.settingsTab = .ai; actions.openSettings() })
                 }
             } else {
-                SetupView(engine: engine)
+                FirstRunView(engine: engine,
+                             openPhoneSettings: { UIState.shared.settingsTab = .phone; actions.openSettings() },
+                             done: { onboardingDone = true })
             }
         }
         .padding(16)
@@ -254,9 +257,8 @@ struct AppsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             keepAwake
-            // Only while it's on (or couldn't be put back): a warning, not one more routine setting. Reading
-            // approveVersion makes the panel redraw when it turns itself off.
-            if let open = openAgentSettings, engine.approveVersion >= 0, AutoApprove.isOn {
+            // Only while it's on (or couldn't be put back): a warning, not one more routine setting.
+            if let open = openAgentSettings, engine.approve.on {
                 Divider()
                 approveRow(open)
             }
@@ -314,8 +316,8 @@ struct AppsView: View {
             Image(systemName: "exclamationmark.shield.fill").foregroundStyle(.orange).frame(width: 22)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Agents don't ask before acting").font(.subheadline.weight(.semibold))
-                Text(AutoApprove.endsLine ?? "Approve everything is on")
-                    .font(.caption).foregroundStyle(AutoApprove.problem == nil ? Color.secondary : Color.orange)
+                Text(engine.approve.endsLine ?? "Approve everything is on")
+                    .font(.caption).foregroundStyle(engine.approve.problem == nil ? Color.secondary : Color.orange)
             }
             Spacer()
             Button { open() } label: { Text("Change…") }
@@ -459,23 +461,6 @@ struct AppsView: View {
 
     @ViewBuilder private func check(_ on: Bool, _ title: String) -> some View {
         if on { Label(title, systemImage: "checkmark") } else { Text(title) }
-    }
-}
-
-// MARK: - Setup
-
-private struct SetupView: View {
-    let engine: Engine
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Set Up Nocturnal").font(.headline)
-            Text("Nocturnal needs your password once to control sleep.")
-                .font(.subheadline).foregroundStyle(.secondary)
-            if let err = engine.setupError { Text(err).font(.subheadline).foregroundStyle(.red) }
-            Button { UIState.shared.whilePinned { engine.runSetup() } } label: { Text("Continue").frame(maxWidth: .infinity) }
-                .buttonStyle(.borderedProminent).controlSize(.large)
-                .padding(.top, 8)
-        }
     }
 }
 

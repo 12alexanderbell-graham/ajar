@@ -31,7 +31,8 @@ pub fn app_running(root: &Path) -> bool {
 pub fn call(root: &Path, cmd: &str, args: Value, timeout: Duration) -> Result<Value, String> {
     if !app_running(root) {
         return Err(
-            "Nocturnal isn't running. Start the Nocturnal app first (it lives in the system tray).".into(),
+            "Nocturnal isn't running. Start the Nocturnal app first (it lives in the system tray)."
+                .into(),
         );
     }
     let req = root.join("requests");

@@ -234,7 +234,8 @@ final class CommandCenter {
             ok(["path": Config.url.path, "config": (try? JSONSerialization.jsonObject(with: engine.config.encoded())) ?? [:]])
 
         case "open":
-            if str("where") == "window" { ui.showMainWindow() } else { ui.showPopover() }
+            // "window" is still accepted from older scripts; Nocturnal's only window is the panel.
+            ui.showPopover()
             ok()
 
         case "settings":
@@ -247,13 +248,12 @@ final class CommandCenter {
             let name = str("path").map { ($0 as NSString).lastPathComponent }.flatMap { $0.isEmpty ? nil : $0 } ?? "snapshot.png"
             guard name.lowercased().hasSuffix(".png"), !name.hasPrefix(".") else { return fail("snapshot name must end in .png") }
             let path = StateFiles.dir.appendingPathComponent(name).path
-            let window = str("where") == "window"
             let settings = str("where") == "settings"
             // Give SwiftUI a beat to lay out and load data before capturing.
-            if settings { ui.showSettings() } else if window { ui.showMainWindow() } else { ui.showPopover() }
+            if settings { ui.showSettings() } else { ui.showPopover() }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { [weak self] in
                 guard let self else { return }
-                let done = self.ui.snapshot(to: URL(fileURLWithPath: path), window: window, settings: settings)
+                let done = self.ui.snapshot(to: URL(fileURLWithPath: path), settings: settings)
                 done ? ok(["path": path]) : fail("snapshot failed")
             }
 

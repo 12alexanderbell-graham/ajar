@@ -26,13 +26,22 @@ pub fn dir() -> PathBuf {
             .filter(|p| p.is_absolute())
             .unwrap_or_else(|| home().join(".config"))
     };
-    let d = base.join(if cfg!(windows) { "Nocturnal" } else { "nocturnal" });
+    let d = base.join(if cfg!(windows) {
+        "Nocturnal"
+    } else {
+        "nocturnal"
+    });
     let fresh = !d.exists();
     ensure_private_dir(&d);
     // The app used to be called Ajar: carry its settings, history and Approve everything journal over once.
     if fresh {
         let old = base.join(if cfg!(windows) { "Ajar" } else { "ajar" });
-        for f in ["config.json", "safety.json", "stats.json", "auto-approve.json"] {
+        for f in [
+            "config.json",
+            "safety.json",
+            "stats.json",
+            "auto-approve.json",
+        ] {
             let _ = std::fs::copy(old.join(f), d.join(f));
         }
     }

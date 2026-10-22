@@ -2,15 +2,14 @@ import AppKit
 import Observation
 import SwiftUI
 
-/// Owns the menu bar icon, its popover, and Nocturnal's windows. Plain AppKit so every piece can be opened
-/// from code (the `nocturnal open` command, the Dock, a second launch) and checked by snapshot.
+/// Owns the menu bar icon and its popover, the only window Nocturnal has. Plain AppKit so it can be opened from
+/// code (first launch, the `nocturnal open` command, the Dock, a second launch) and checked by snapshot.
 @MainActor
 final class StatusController: NSObject, NSPopoverDelegate {
     let engine: Engine
     let island: Island
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let popover = NSPopover()
-    private var mainWindow: NSWindow?
 
     /// Fit the popover to what it shows, capped to the menu bar's screen. The main page reports its own height
     /// (measured on the live view, so dismissed rows and "Show More" count); Settings scroll inside a fixed page.
@@ -42,15 +41,14 @@ final class StatusController: NSObject, NSPopoverDelegate {
         }
     }
 
-    /// The panel counts as open while the popover or the main window is on screen (faster refresh then).
+    /// The panel counts as open while the popover is on screen (faster refresh then).
     private func updatePanelOpen() {
-        engine.panelOpen = popover.isShown || mainWindow?.isVisible == true
+        engine.panelOpen = popover.isShown
     }
 
     /// Nocturnal's own Light/Dark choice also for the popover, which otherwise follows the menu bar.
     func applyAppearance(_ a: NSAppearance?) {
         popover.appearance = a
-        mainWindow?.appearance = a
     }
 
     init(engine: Engine) {
@@ -169,83 +167,20 @@ final class StatusController: NSObject, NSPopoverDelegate {
         updatePanelOpen()
     }
 
-    // MARK: Windows
+    // MARK: Settings
 
-    /// Settings live inside Nocturnal's own panel (or its window when that's open), never in a separate window.
+    /// Settings slide in inside the panel, never in a separate window.
     func showSettings() {
-        if let w = mainWindow, w.isVisible {
-            UIState.shared.windowSettings = true
-            present(w)
-            return
-        }
         UIState.shared.panelSettings = true
         if popover.isShown { fitPopover() } else { showPopover() }
-    }
-
-    /// A normal window with the same controls, for when the menu bar is crowded or on first launch.
-    func showMainWindow() {
-        if mainWindow == nil {
-            let host = NSHostingController(rootView: MainWindowView(engine: engine, actions: .init(
-                openSettings: { UIState.shared.windowSettings = true },
-                quit: { NSApp.terminate(nil) })))
-            // Fixed size: letting SwiftUI resize the window from live-updating content caused an AppKit layout-loop crash.
-            host.sizingOptions = []
-            let w = NSWindow(contentViewController: host)
-            w.setContentSize(NSSize(width: 460, height: 720))
-            w.title = "Nocturnal"
-            w.styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
-            w.titlebarAppearsTransparent = true
-            w.isMovableByWindowBackground = true
-            w.isReleasedWhenClosed = false
-            w.collectionBehavior = [.moveToActiveSpace]   // comes to the current desktop instead of switching to its own
-            w.appearance = popover.appearance
-            w.center()
-            mainWindow = w
-        }
-        present(mainWindow!)
-        updatePanelOpen()
-    }
-
-    private var observedWindows = Set<ObjectIdentifier>()
-
-    private func present(_ w: NSWindow) {
-        NSApp.setActivationPolicy(.regular)
-        w.makeKeyAndOrderFront(nil)
-        NSApp.activate()
-        // One close observer per window, not one per time it's shown.
-        if observedWindows.insert(ObjectIdentifier(w)).inserted {
-            NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.windowClosed() }
-            }
-        }
-    }
-
-    private func windowClosed() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            if self.mainWindow?.isVisible != true {
-                UIState.shared.windowSettings = false
-                if !self.engine.config.showInDock { NSApp.setActivationPolicy(.accessory) }
-                self.updatePanelOpen()
-            }
-        }
     }
 
     // MARK: Verification
 
     /// Renders what the popover shows into a PNG, so a build can be checked without screen access.
-    func snapshot(to url: URL, window: Bool = false, settings: Bool = false) -> Bool {
-        let view: NSView?
-        if settings {
-            showSettings()
-            view = popover.contentViewController?.view
-        } else if window {
-            showMainWindow()
-            view = mainWindow?.contentView
-        } else {
-            if !popover.isShown { showPopover() }
-            view = popover.contentViewController?.view
-        }
+    func snapshot(to url: URL, settings: Bool = false) -> Bool {
+        if settings { showSettings() } else if !popover.isShown { showPopover() }
+        let view = popover.contentViewController?.view
         guard let v = view else { return false }
         v.layoutSubtreeIfNeeded()
         guard let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) else { return false }
@@ -260,12 +195,11 @@ struct PanelActions {
     var quit: () -> Void
 }
 
-/// Which page Nocturnal's panel and window show. Not saved: both open on the main page.
+/// Which page Nocturnal's panel shows. Not saved: it opens on the main page.
 @Observable @MainActor
 final class UIState {
     static let shared = UIState()
     var panelSettings = false
-    var windowSettings = false
     /// Which Settings tab is showing. Phone first; the panel's phone button opens it directly.
     var settingsTab: SettingsTopic = .phone
     /// Height the main page needs, reported by the live view.

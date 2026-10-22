@@ -14,7 +14,7 @@ IDENTITY="Developer ID Application"
 DD="${TMPDIR:-/tmp}/nocturnal-signed"
 rm -rf "$DD"
 echo "Building…"
-/usr/bin/xcodebuild -project Ajar.xcodeproj -scheme Ajar -configuration Release -destination 'generic/platform=macOS' \
+/usr/bin/xcodebuild -project Nocturnal.xcodeproj -scheme Nocturnal -configuration Release -destination 'generic/platform=macOS' \
   -derivedDataPath "$DD" ONLY_ACTIVE_ARCH=NO ARCHS="arm64 x86_64" \
   CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="$IDENTITY" DEVELOPMENT_TEAM="$TEAM" \
   ENABLE_HARDENED_RUNTIME=YES OTHER_CODE_SIGN_FLAGS="--timestamp" build | tail -3

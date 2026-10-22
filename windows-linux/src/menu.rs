@@ -274,10 +274,7 @@ pub fn build(s: &UiState) -> Vec<Node> {
         m.push(text("sleepnow", "Sleep Now"));
     }
     if s.snoozed {
-        m.push(info(
-            "snoozed",
-            "Letting it sleep until the lid opens",
-        ));
+        m.push(info("snoozed", "Letting it sleep until the lid opens"));
     }
     if let Some(w) = &s.warning {
         for (i, line) in wrap(w, 58).into_iter().enumerate() {
@@ -908,7 +905,10 @@ mod tests {
     #[test]
     fn topics_are_long_and_safe() {
         let t = new_topic();
-        assert!(t.len() == "nocturnal-".len() + 12 && crate::config::valid_topic(&t), "{t}");
+        assert!(
+            t.len() == "nocturnal-".len() + 12 && crate::config::valid_topic(&t),
+            "{t}"
+        );
         assert_ne!(new_topic(), new_topic());
     }
 }

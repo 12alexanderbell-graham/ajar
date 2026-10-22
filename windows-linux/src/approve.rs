@@ -102,14 +102,21 @@ pub fn read_claude(p: &Paths) -> Result<(Map<String, Value>, Option<String>), St
     let text = match std::fs::read_to_string(&p.claude) {
         Ok(t) => t,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok((Map::new(), None)),
-        Err(e) => return Err(format!("Couldn't read ~/.claude/settings.json ({e}), so it was left alone.")),
+        Err(e) => {
+            return Err(format!(
+                "Couldn't read ~/.claude/settings.json ({e}), so it was left alone."
+            ))
+        }
     };
     if text.trim().is_empty() {
         return Ok((Map::new(), Some(text)));
     }
     match serde_json::from_str::<Value>(&text) {
         Ok(Value::Object(m)) => Ok((m, Some(text))),
-        _ => Err("Couldn't read ~/.claude/settings.json (it isn't plain JSON), so it was left alone.".into()),
+        _ => Err(
+            "Couldn't read ~/.claude/settings.json (it isn't plain JSON), so it was left alone."
+                .into(),
+        ),
     }
 }
 
@@ -117,7 +124,9 @@ fn read_codex(p: &Paths) -> Result<Option<String>, String> {
     match std::fs::read_to_string(&p.codex) {
         Ok(t) => Ok(Some(t)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(format!("Couldn't read Codex's config.toml ({e}), so it was left alone.")),
+        Err(e) => Err(format!(
+            "Couldn't read Codex's config.toml ({e}), so it was left alone."
+        )),
     }
 }
 
@@ -142,14 +151,21 @@ pub fn write(path: &Path, text: &str) -> Result<(), String> {
 }
 
 /// Writes only if the file still holds exactly `expect` (None = no file): Claude Code or an editor may be saving it.
-fn write_if_unchanged(path: &Path, expect: Option<&str>, text: &str, name: &str) -> Result<(), String> {
+fn write_if_unchanged(
+    path: &Path,
+    expect: Option<&str>,
+    text: &str,
+    name: &str,
+) -> Result<(), String> {
     let now = match std::fs::read_to_string(path) {
         Ok(t) => Some(t),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => return Err(format!("Couldn't read {name} ({e}).")),
     };
     if now.as_deref() != expect {
-        return Err(format!("{name} changed while Nocturnal was editing it; try again."));
+        return Err(format!(
+            "{name} changed while Nocturnal was editing it; try again."
+        ));
     }
     write(path, text)
 }
@@ -195,8 +211,9 @@ pub fn turn_on(p: &Paths, ends: Ends, hours: Option<f64>, now: u64) -> Result<()
         saw_work: false,
         problem: None,
     };
-    save_journal(p, &j)
-        .map_err(|_| "Couldn't save Nocturnal's record of your settings, so nothing was changed.".to_string())?;
+    save_journal(p, &j).map_err(|_| {
+        "Couldn't save Nocturnal's record of your settings, so nothing was changed.".to_string()
+    })?;
     let r = (|| -> Result<(), String> {
         let mut c = claude.clone();
         let mut perms = perms.clone();
@@ -268,7 +285,9 @@ pub fn turn_off(p: &Paths) -> Result<(), String> {
     let why = problems.join(" ");
     j.problem = Some(why.clone());
     let _ = save_journal(p, &j);
-    Err(format!("{why} Approve everything may still be on; Nocturnal keeps trying."))
+    Err(format!(
+        "{why} Approve everything may still be on; Nocturnal keeps trying."
+    ))
 }
 
 fn restore_claude(p: &Paths, j: &Journal) -> Result<(), String> {
@@ -293,7 +312,10 @@ fn restore_claude(p: &Paths, j: &Journal) -> Result<(), String> {
     } else {
         c.insert("permissions".into(), Value::Object(perms));
     }
-    if c.get("skipDangerousModePermissionPrompt").and_then(Value::as_bool) == Some(true) {
+    if c.get("skipDangerousModePermissionPrompt")
+        .and_then(Value::as_bool)
+        == Some(true)
+    {
         match j.claude_skip {
             Some(s) => c.insert("skipDangerousModePermissionPrompt".into(), json!(s)),
             None => c.remove("skipDangerousModePermissionPrompt"),
@@ -333,7 +355,8 @@ fn restore_codex(p: &Paths, j: &Journal) -> Result<(), String> {
         write_if_unchanged(&p.codex, Some(&t0), &t, "Codex's config.toml")?;
     }
     let after = read_codex(p)?.unwrap_or_default();
-    let still_approval = toml_top::line(&after, "approval_policy").as_deref() == Some(CODEX_APPROVAL)
+    let still_approval = toml_top::line(&after, "approval_policy").as_deref()
+        == Some(CODEX_APPROVAL)
         && j.codex_approval.as_deref() != Some(CODEX_APPROVAL);
     let still_sandbox = toml_top::line(&after, "sandbox_mode").as_deref() == Some(CODEX_SANDBOX)
         && j.codex_sandbox.as_deref() != Some(CODEX_SANDBOX);
@@ -541,7 +564,10 @@ pub mod toml_top {
         };
         let found = {
             let refs: Vec<&str> = lines.iter().map(String::as_str).collect();
-            scan(&refs).into_iter().find(|e| e.key == key).map(|e| e.index)
+            scan(&refs)
+                .into_iter()
+                .find(|e| e.key == key)
+                .map(|e| e.index)
         };
         match (found, line) {
             (Some(i), Some(l)) => lines[i] = l.to_string(),
@@ -567,7 +593,8 @@ mod tests {
     use super::*;
 
     fn paths(name: &str) -> Paths {
-        let d = std::env::temp_dir().join(format!("nocturnal-approve-{name}-{}", std::process::id()));
+        let d =
+            std::env::temp_dir().join(format!("nocturnal-approve-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         Paths {
@@ -592,10 +619,16 @@ mod tests {
         assert!(is_on(&p));
         let c: Value = serde_json::from_str(&std::fs::read_to_string(&p.claude).unwrap()).unwrap();
         assert_eq!(c["permissions"]["defaultMode"], "bypassPermissions");
-        assert_eq!(c["permissions"]["allow"][0], "Bash(ls)", "other settings kept");
+        assert_eq!(
+            c["permissions"]["allow"][0], "Bash(ls)",
+            "other settings kept"
+        );
         assert_eq!(c["skipDangerousModePermissionPrompt"], true);
         let t = std::fs::read_to_string(&p.codex).unwrap();
-        assert!(t.contains(CODEX_APPROVAL) && t.starts_with(CODEX_SANDBOX), "{t}");
+        assert!(
+            t.contains(CODEX_APPROVAL) && t.starts_with(CODEX_SANDBOX),
+            "{t}"
+        );
         assert!(
             t.contains("[profiles.fast]\nsandbox_mode = \"read-only\""),
             "tables untouched"
@@ -641,7 +674,11 @@ mod tests {
         save_journal(&p, &j).unwrap();
         turn_off(&p).unwrap();
         assert!(!is_on(&p));
-        assert_eq!(std::fs::read_to_string(&p.claude).unwrap(), claude, "untouched file not rewritten");
+        assert_eq!(
+            std::fs::read_to_string(&p.claude).unwrap(),
+            claude,
+            "untouched file not rewritten"
+        );
         assert!(!p.codex.exists(), "no Codex file created");
     }
 
@@ -680,7 +717,11 @@ mod tests {
         assert!(!std::fs::read_to_string(&p.codex).unwrap().contains("never"));
         // Fixed: the retry finishes.
         std::fs::remove_dir(&p.claude).unwrap();
-        write(&p.claude, r#"{"permissions":{"defaultMode":"bypassPermissions"}}"#).unwrap();
+        write(
+            &p.claude,
+            r#"{"permissions":{"defaultMode":"bypassPermissions"}}"#,
+        )
+        .unwrap();
         turn_off(&p).unwrap();
         assert!(!is_on(&p));
         let c: Value = serde_json::from_str(&std::fs::read_to_string(&p.claude).unwrap()).unwrap();
@@ -705,7 +746,9 @@ mod tests {
         assert!(!is_on(&p));
         let c: Value = serde_json::from_str(&std::fs::read_to_string(&p.claude).unwrap()).unwrap();
         assert!(c.get("permissions").is_none());
-        assert!(!std::fs::read_to_string(&p.codex).unwrap().contains("danger"));
+        assert!(!std::fs::read_to_string(&p.codex)
+            .unwrap()
+            .contains("danger"));
     }
 
     #[test]
@@ -716,7 +759,10 @@ mod tests {
         mark_work(&p);
         assert_eq!(expiry(&p, true, NOW + 60), None, "still working");
         assert_eq!(expiry(&p, false, NOW + 120), Some("The work finished"));
-        assert_eq!(expiry(&p, true, NOW + WORK_CAP_SECS), Some("No work started for a day"));
+        assert_eq!(
+            expiry(&p, true, NOW + WORK_CAP_SECS),
+            Some("No work started for a day")
+        );
         turn_off(&p).unwrap();
         turn_on(&p, Ends::Time, Some(2.0), NOW).unwrap();
         assert_eq!(expiry(&p, false, NOW + 7199), None);
@@ -729,13 +775,22 @@ mod tests {
         use toml_top::*;
         let t = "# comment\nmodel = \"x\"\nnotes = \"\"\"\napproval_policy = \"inside a string\"\n\"\"\"\nlist = [\n  [1, 2],\n  \"]\",\n]\n\"sandbox_mode\" = \"read-only\"\n[table]\napproval_policy = \"in a table\"\n";
         assert_eq!(line(t, "approval_policy"), None);
-        assert_eq!(line(t, "sandbox_mode").as_deref(), Some("\"sandbox_mode\" = \"read-only\""));
+        assert_eq!(
+            line(t, "sandbox_mode").as_deref(),
+            Some("\"sandbox_mode\" = \"read-only\"")
+        );
         let t2 = set(t, "sandbox_mode", Some(CODEX_SANDBOX)).unwrap();
         assert!(t2.contains(CODEX_SANDBOX) && !t2.contains("read-only"));
         let t3 = set(&t2, "approval_policy", Some(CODEX_APPROVAL)).unwrap();
         assert!(t3.starts_with(CODEX_APPROVAL));
-        assert!(t3.contains("approval_policy = \"inside a string\""), "string body untouched");
-        assert!(t3.contains("approval_policy = \"in a table\""), "table untouched");
+        assert!(
+            t3.contains("approval_policy = \"inside a string\""),
+            "string body untouched"
+        );
+        assert!(
+            t3.contains("approval_policy = \"in a table\""),
+            "table untouched"
+        );
         let back = set(&t3, "approval_policy", None).unwrap();
         assert_eq!(back, t2);
         assert!(check("approval_policy = \"a\"\napproval_policy = \"b\"\n").is_err());

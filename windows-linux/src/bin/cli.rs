@@ -143,7 +143,10 @@ fn main() -> ExitCode {
                         .parent()
                         .is_some_and(|d| d.exists()))
             {
-                println!("Codex: {}", nocturnal::ai::connect_codex().unwrap_or_else(|e| e));
+                println!(
+                    "Codex: {}",
+                    nocturnal::ai::connect_codex().unwrap_or_else(|e| e)
+                );
                 did = true;
             }
             if !did {
@@ -173,7 +176,14 @@ fn main() -> ExitCode {
             let mut input = String::new();
             let _ = std::io::stdin().take(1 << 20).read_to_string(&mut input);
             let agent = rest.first().map(String::as_str).unwrap_or("");
-            nocturnal::events::record(&root, agent, &input, nocturnal::now(), &nocturnal::procs::snapshot(), std::process::id());
+            nocturnal::events::record(
+                &root,
+                agent,
+                &input,
+                nocturnal::now(),
+                &nocturnal::procs::snapshot(),
+                std::process::id(),
+            );
             return ExitCode::SUCCESS;
         }
         "run" => return run(&root, rest),
@@ -502,7 +512,10 @@ fn journal_lines(root: &std::path::Path) -> Vec<String> {
         ));
     }
     if !r.lid_more.is_empty() {
-        out.push(format!("lid-close action also set to Do nothing in {} other power plan(s)", r.lid_more.len()));
+        out.push(format!(
+            "lid-close action also set to Do nothing in {} other power plan(s)",
+            r.lid_more.len()
+        ));
     }
     if r.sleep_idle.is_some() {
         out.push("sleep timeouts set to never".into());
@@ -546,7 +559,9 @@ fn doctor(root: &std::path::Path) -> ExitCode {
     if changes.is_empty() {
         println!("Changes Nocturnal has made right now: none");
     } else {
-        println!("Changes Nocturnal has made right now (put back when the lid opens or work ends):");
+        println!(
+            "Changes Nocturnal has made right now (put back when the lid opens or work ends):"
+        );
         for c in changes {
             println!("  {c}");
         }
@@ -579,7 +594,10 @@ fn put_everything_back(root: &std::path::Path) -> Result<(), Vec<String>> {
     let mut p = platform::native();
     let r = run_watchdog(&mut p, root, true);
     // Approve everything is a setting the person chose, not a change to undo here.
-    let left: Vec<String> = journal_lines(root).into_iter().filter(|l| !l.starts_with("Approve everything")).collect();
+    let left: Vec<String> = journal_lines(root)
+        .into_iter()
+        .filter(|l| !l.starts_with("Approve everything"))
+        .collect();
     if r == "restored" && left.is_empty() {
         Ok(())
     } else {

@@ -1219,7 +1219,11 @@ impl Platform for Win {
             }
         } else {
             unsafe {
-                RegDeleteKeyValueW(HKEY_CURRENT_USER, wide(run).as_ptr(), wide("Nocturnal").as_ptr())
+                RegDeleteKeyValueW(
+                    HKEY_CURRENT_USER,
+                    wide(run).as_ptr(),
+                    wide("Nocturnal").as_ptr(),
+                )
             };
             Ok(())
         }

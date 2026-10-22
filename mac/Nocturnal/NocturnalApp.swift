@@ -55,9 +55,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if lockFD >= 0 { close(lockFD); lockFD = -1 }   // closing drops the flock
             engine = Engine(passive: true)
             if !isPreview, others.first?.bundleURL?.path.hasPrefix("/Applications") == true, CommandLine.arguments.count <= 1 {
-                // Opened again by hand: bring up the running copy's window and leave.
+                // Opened again by hand: drop the running copy's panel down and leave.
                 DistributedNotificationCenter.default().postNotificationName(Wire.requestName, object: nil,
-                    userInfo: ["json": Wire.json(["id": UUID().uuidString, "cmd": "open", "args": ["where": "window"]])], deliverImmediately: true)
+                    userInfo: ["json": Wire.json(["id": UUID().uuidString, "cmd": "open", "args": ["where": "panel"]])], deliverImmediately: true)
                 NSApp.terminate(nil)
             } else if installed, !isPreview {
                 // The installed app lost the lock, or saw a copy that was still quitting (a restart, an update, a
@@ -101,10 +101,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applyAppearanceSettings()
         observeSettings()
 
-        // First run, setup missing, or the three-step welcome not finished yet: open the window once.
-        if !engine.setupReady || !UserDefaults.standard.bool(forKey: "launchedBefore") || !UserDefaults.standard.bool(forKey: "onboardingDone") {
-            UserDefaults.standard.set(true, forKey: "launchedBefore")
-            ui.showMainWindow()
+        // First run, or setup not finished: drop the panel down from the menu bar, so the first thing anyone sees
+        // is where Nocturnal lives. (A moment later, once the menu bar has placed the icon.)
+        if !engine.setupReady || !UserDefaults.standard.bool(forKey: "onboardingDone") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { ui.showPopover() }
         }
     }
 
@@ -152,14 +152,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applied = now
     }
 
+    /// Opened again (Dock icon, Finder, Spotlight): show the panel under the menu bar icon.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        ui?.showMainWindow()
-        return true
+        ui?.showPopover()
+        return false
     }
 
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
         guard let ui else { return nil }
-        return QuickMenu.build(engine: engine, openPanel: { ui.showMainWindow() }, openSettings: { ui.showSettings() })
+        return QuickMenu.build(engine: engine, openPanel: { ui.showPopover() }, openSettings: { ui.showSettings() })
     }
 
     func applicationWillTerminate(_ notification: Notification) {

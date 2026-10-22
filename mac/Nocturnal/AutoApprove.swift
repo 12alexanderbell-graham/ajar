@@ -59,6 +59,17 @@ enum AutoApprove {
     /// "When the work finishes" still ends after a day, so a session that never starts can't leave it on.
     static let workCap: TimeInterval = 24 * 3600
 
+    /// What the panel and Settings show, read from the journal in one go.
+    struct Status: Equatable {
+        var on = false
+        var endsLine: String?
+        var problem: String?
+        static func read() -> Status {
+            guard AutoApprove.isOn else { return Status() }
+            return Status(on: true, endsLine: AutoApprove.endsLine, problem: AutoApprove.problem)
+        }
+    }
+
     static func load() -> Journal? {
         guard let d = try? Data(contentsOf: journalURL) else { return nil }
         return try? JSONDecoder().decode(Journal.self, from: d)

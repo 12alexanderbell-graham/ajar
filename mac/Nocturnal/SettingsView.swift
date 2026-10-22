@@ -336,8 +336,7 @@ struct SettingsView: View {
     // MARK: AI Agents
 
     @ViewBuilder private var aiPage: some View {
-        let _ = engine.approveVersion   // draw again when it turns itself off
-        let on = AutoApprove.isOn
+        let on = engine.approve.on
         Section {
             if approveConfirm {
                 VStack(alignment: .leading, spacing: 8) {
@@ -373,11 +372,11 @@ struct SettingsView: View {
                 })) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Approve everything automatically")
-                        Text(on ? (AutoApprove.endsLine ?? "On") : "Risky: agents never ask before acting")
+                        Text(on ? (engine.approve.endsLine ?? "On") : "Risky: agents never ask before acting")
                             .font(.caption).foregroundStyle(on ? Color.red : Color.secondary)
                     }
                 }
-                if let p = AutoApprove.problem {
+                if let p = engine.approve.problem {
                     HStack(alignment: .firstTextBaseline) {
                         Text(p).font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
                         Spacer()

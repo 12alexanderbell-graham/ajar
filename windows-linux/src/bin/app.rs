@@ -389,7 +389,11 @@ fn engine_thread(
                 } else {
                     json!({ "ok": false, "error": "not allowed" })
                 };
-                let _ = reply.send(remote::phone_reply(&cmd, &r, e.panel_json(nocturnal::now())));
+                let _ = reply.send(remote::phone_reply(
+                    &cmd,
+                    &r,
+                    e.panel_json(nocturnal::now()),
+                ));
                 changed = true;
             }
             Ok(Cmd::RemoteStatus(s)) => {
@@ -472,7 +476,8 @@ fn check_approve<P: Platform>(e: &mut Engine<P>, p: &nocturnal::approve::Paths) 
             body: if ok {
                 format!("{why}, so Claude Code and Codex ask before acting again.")
             } else {
-                "Couldn't put your Claude Code and Codex settings back yet; Nocturnal keeps trying.".into()
+                "Couldn't put your Claude Code and Codex settings back yet; Nocturnal keeps trying."
+                    .into()
             },
         });
     }
@@ -535,7 +540,10 @@ fn apply<P: Platform>(
         Action::PhoneOn | Action::PhoneShow | Action::PhoneNewKey => {
             let mut s = remote::Settings::load(root);
             // "Pair a Phone…" after phone control was off makes a fresh key, so phones paired before don't come back.
-            if s.key.is_empty() || matches!(a, Action::PhoneNewKey) || (matches!(a, Action::PhoneOn) && !s.enabled) {
+            if s.key.is_empty()
+                || matches!(a, Action::PhoneNewKey)
+                || (matches!(a, Action::PhoneOn) && !s.enabled)
+            {
                 s.key = remote::new_key();
             }
             if s.panel_url.is_empty() {
@@ -669,7 +677,10 @@ fn single_instance(root: &Path) -> Option<std::fs::File> {
 fn single_instance(_root: &Path) -> Option<isize> {
     use windows_sys::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
     use windows_sys::Win32::System::Threading::CreateMutexW;
-    let name: Vec<u16> = "Local\\NocturnalTrayApp".encode_utf16().chain(Some(0)).collect();
+    let name: Vec<u16> = "Local\\NocturnalTrayApp"
+        .encode_utf16()
+        .chain(Some(0))
+        .collect();
     let h = unsafe { CreateMutexW(std::ptr::null(), 1, name.as_ptr()) };
     if h.is_null() || unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
         return None;

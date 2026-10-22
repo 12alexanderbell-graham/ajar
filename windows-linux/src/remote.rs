@@ -181,14 +181,20 @@ pub struct Guard {
 impl Guard {
     /// The ids seen, one "id<TAB>time" per line, so a restart still refuses a replay.
     pub fn seen_text(&self) -> String {
-        self.seen.iter().map(|(id, at)| format!("{id}\t{at}\n")).collect()
+        self.seen
+            .iter()
+            .map(|(id, at)| format!("{id}\t{at}\n"))
+            .collect()
     }
 
     /// Adds ids saved by `seen_text` (from an earlier run) that aren't known yet.
     pub fn load_seen(&mut self, text: &str) {
         for line in text.lines() {
             let mut parts = line.split('\t');
-            if let (Some(id), Some(at)) = (parts.next(), parts.next().and_then(|a| a.parse::<u64>().ok())) {
+            if let (Some(id), Some(at)) = (
+                parts.next(),
+                parts.next().and_then(|a| a.parse::<u64>().ok()),
+            ) {
                 if !id.is_empty() && id.len() <= 64 && !self.seen.iter().any(|(s, _)| s == id) {
                     self.seen.push_back((id.to_string(), at));
                 }
@@ -459,7 +465,10 @@ pub fn listen(
         .filter(|s| valid_id(s));
     let seen_file = cursor.with_file_name("remote-seen");
     if let Some(text) = crate::state::read(&seen_file) {
-        GUARD.lock().unwrap_or_else(|e| e.into_inner()).load_seen(&text);
+        GUARD
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .load_seen(&text);
     }
     let mut backoff = 5u64;
     while !stop.load(Ordering::SeqCst) {
