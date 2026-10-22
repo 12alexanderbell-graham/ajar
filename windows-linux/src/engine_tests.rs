@@ -54,9 +54,20 @@ fn sleeper() -> Child {
         c.arg("30");
         c
     };
-    c.stdout(std::process::Stdio::null())
+    let child = c
+        .stdout(std::process::Stdio::null())
         .spawn()
-        .expect("spawn a sleeping child")
+        .expect("spawn a sleeping child");
+    // Right after spawn the child can still be the forked test binary, not yet `sleep`: tests that record its
+    // name would then race the exec. Wait until it really is the sleeping program.
+    #[cfg(not(windows))]
+    for _ in 0..300 {
+        if procs::name_of(child.id()).as_deref() == Some("sleep") {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    child
 }
 
 fn battery(percent: u32, on_ac: bool) -> Option<Battery> {
