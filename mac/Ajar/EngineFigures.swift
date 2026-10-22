@@ -42,7 +42,7 @@ extension Engine {
         switch rule(for: a.bundleID) { case .leave: return a.watts; case .slow: return a.watts * 0.25; case .pause: return 0 }
     }
 
-    /// Seconds until Ajar lets the Mac sleep if this agent stays idle, or nil when that doesn't apply.
+    /// Seconds until Nocturnal lets the Mac sleep if this agent stays idle, or nil when that doesn't apply.
     func sleepsIn(_ s: AgentSession) -> TimeInterval? {
         guard config.mode == .auto, config.sleepWhenDone, !isWorking(s), s.lastActive != .distantPast,
               !config.trackOnly.contains(s.kind.id) else { return nil }
@@ -60,11 +60,11 @@ extension Engine {
     var lidOutcome: (keeps: Bool, headline: String, detail: String) {
         let keeps = "Keeps working"
         let sleeps = Registry.hasLid && lidClosed ? "Going to sleep" : "Sleeps normally"
-        guard setupReady else { return (false, sleeps, "Ajar needs a one-time setup") }
+        guard setupReady else { return (false, sleeps, "Nocturnal needs a one-time setup") }
         if let b = blockedReason { return (false, sleeps, b) }
         if holding { return (true, keeps, holdReason ?? "Staying awake") }
         switch config.mode {
-        case .off: return (false, sleeps, "Ajar is off")
+        case .off: return (false, sleeps, "Nocturnal is off")
         case .auto: return (false, sleeps, snoozed ? "Sleeping until you open the lid" : "No agent is working right now")
         case .on: return (false, sleeps, holdFailing ? "macOS wouldn't switch sleep off" : "Starting…")
         }

@@ -4,10 +4,10 @@ import Foundation
 /// the person's settings back when it's turned off.
 ///
 /// • Claude Code: `permissions.defaultMode = "bypassPermissions"` and `skipDangerousModePermissionPrompt = true`
-///   in ~/.claude/settings.json (the person accepted the same warning in Ajar).
+///   in ~/.claude/settings.json (the person accepted the same warning in Nocturnal).
 /// • Codex: top-level `approval_policy = "never"` and `sandbox_mode = "danger-full-access"` in ~/.codex/config.toml.
 ///
-/// New sessions pick it up; running ones keep the mode they started with. It can only be turned on from Ajar's
+/// New sessions pick it up; running ones keep the mode they started with. It can only be turned on from Nocturnal's
 /// own window (never from the CLI, MCP, the phone or the settings file), so an agent can't grant itself this.
 /// The journal file is the switch: it exists exactly while it's on, and holds what to put back.
 enum AutoApprove {
@@ -45,7 +45,7 @@ enum AutoApprove {
         j.claudeSkip = claude["skipDangerousModePermissionPrompt"] as? Bool
         j.codexApproval = topLevelLine(codexText, key: "approval_policy")
         j.codexSandbox = topLevelLine(codexText, key: "sandbox_mode")
-        // Journal before touching anything: if Ajar dies halfway, turning it off still puts things back.
+        // Journal before touching anything: if Nocturnal dies halfway, turning it off still puts things back.
         try JSONEncoder().encode(j).write(to: journalURL, options: .atomic)
         do { try apply(claude: claude, codexText: codexText, journal: &j) } catch {
             try? turnOff()   // put back whatever got changed, so a failure never leaves it half on
@@ -71,11 +71,11 @@ enum AutoApprove {
         try JSONEncoder().encode(j).write(to: journalURL, options: .atomic)
     }
 
-    /// Turns it off: puts back what was there, but only where the value is still Ajar's (a value the person has
+    /// Turns it off: puts back what was there, but only where the value is still Nocturnal's (a value the person has
     /// changed since is left alone).
     static func turnOff() throws {
         guard isOn else { return }
-        // A damaged journal still means "on": undo Ajar's own values (they can only be Ajar's) without the
+        // A damaged journal still means "on": undo Nocturnal's own values (they can only be Nocturnal's) without the
         // previous ones, rather than leaving both tools running without asking.
         let j = (try? Data(contentsOf: journalURL)).flatMap { try? JSONDecoder().decode(Journal.self, from: $0) }
             ?? Journal(claudeTouched: true, codexTouched: true)

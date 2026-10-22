@@ -72,7 +72,7 @@ pub struct AgentRow {
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiState {
     pub keeps: bool,
-    /// Ajar is holding the laptop awake right now (offers Sleep Now).
+    /// Nocturnal is holding the laptop awake right now (offers Sleep Now).
     pub holding: bool,
     pub headline: String,
     pub detail: String,
@@ -211,7 +211,7 @@ impl UiState {
     }
 
     pub fn tooltip(&self) -> String {
-        format!("Ajar · {} · {}", self.headline, self.detail)
+        format!("Nocturnal · {} · {}", self.headline, self.detail)
     }
 }
 
@@ -295,7 +295,7 @@ pub fn build(s: &UiState) -> Vec<Node> {
     m.push(sub("apps", "Apps and Agents", apps_menu(s)));
     m.push(sub("settings", "Settings", settings_menu(s)));
     m.push(Node::Sep);
-    m.push(text("quit", "Quit Ajar"));
+    m.push(text("quit", "Quit Nocturnal"));
     dedupe_ids(&mut m);
     m
 }
@@ -570,7 +570,7 @@ fn settings_menu(s: &UiState) -> Vec<Node> {
     ));
     settings.push(Node::Sep);
     settings.push(text("editconfig", "Edit settings file…"));
-    settings.push(text("openfolder", "Open Ajar folder"));
+    settings.push(text("openfolder", "Open Nocturnal folder"));
     if !s.recent.is_empty() {
         settings.push(sub(
             "recent",
@@ -708,7 +708,7 @@ pub fn action(id: &str) -> Option<Action> {
 /// A topic nobody can guess (ntfy topics are public by name).
 pub fn new_topic() -> String {
     use std::hash::{BuildHasher, Hasher};
-    let mut out = String::from("ajar-");
+    let mut out = String::from("nocturnal-");
     let alphabet = b"abcdefghijkmnpqrstuvwxyz23456789";
     for round in 0..2u64 {
         let mut h = std::collections::hash_map::RandomState::new().build_hasher();
@@ -742,7 +742,7 @@ mod tests {
                 name: "Claude Code".into(),
                 working: true,
                 idle_minutes: Some(0),
-                project: Some("ajar".into()),
+                project: Some("nocturnal".into()),
                 keeps_awake: true,
             }],
             holds: vec![],
@@ -795,7 +795,7 @@ mod tests {
         let mut s = state();
         s.holds = vec![("ab12".into(), "Tests".into(), None)];
         s.can_override_floor = true;
-        s.ntfy_topic = "ajar-x".into();
+        s.ntfy_topic = "nocturnal-x".into();
         s.recent = vec!["Today 10:00 · 20 min closed".into()];
         let m = build(&s);
         let mut all = vec![];
@@ -887,7 +887,7 @@ mod tests {
     #[test]
     fn topics_are_long_and_safe() {
         let t = new_topic();
-        assert!(t.len() == 17 && crate::config::valid_topic(&t), "{t}");
+        assert!(t.len() == "nocturnal-".len() + 12 && crate::config::valid_topic(&t), "{t}");
         assert_ne!(new_topic(), new_topic());
     }
 }

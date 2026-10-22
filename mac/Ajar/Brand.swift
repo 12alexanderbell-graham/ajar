@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Ajar's colours: the green of the app icon and the website.
+/// Nocturnal's colours: the green of the app icon and the website.
 enum Brand {
     static let mid = Color(red: 0.078, green: 0.424, blue: 0.251)     // #146C40
     static let mint = Color(red: 0.247, green: 0.839, blue: 0.612)    // #3FD69C
@@ -11,7 +11,7 @@ enum Brand {
 
 /// The app icon's mark: one thin bar (the laptop, shut) and a translucent fan (the lid's swing), same geometry as
 /// AppIconArt. `open` is 0…1 (closed…35°); `glow` tints the fan mint.
-struct AjarMark: View {
+struct NocturnalMark: View {
     var open: Double = 1
     var glow: Bool = false
     var color: Color = .white
@@ -70,9 +70,9 @@ enum MenuGlyph {
 
 #Preview("Mark") {
     HStack(spacing: 24) {
-        AjarMark(open: 0.2).frame(width: 60)
-        AjarMark().frame(width: 60)
-        AjarMark(glow: true).frame(width: 60)
+        NocturnalMark(open: 0.2).frame(width: 60)
+        NocturnalMark().frame(width: 60)
+        NocturnalMark(glow: true).frame(width: 60)
         Image(nsImage: MenuGlyph.image(.off))
         Image(nsImage: MenuGlyph.image(.watching))
         Image(nsImage: MenuGlyph.image(.holding))

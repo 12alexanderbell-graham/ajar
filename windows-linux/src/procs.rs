@@ -7,7 +7,7 @@ use crate::config::exe_key;
 pub struct Proc {
     pub pid: u32,
     pub ppid: u32,
-    /// Executable name as Ajar compares it (lowercase, no `.exe`).
+    /// Executable name as Nocturnal compares it (lowercase, no `.exe`).
     pub name: String,
     /// Full executable path when readable (own-user processes).
     pub exe: Option<String>,
@@ -17,7 +17,7 @@ pub struct Proc {
     pub cpu_ns: u64,
     /// When the process started (platform units, only compared for equality to detect pid reuse).
     pub start: u64,
-    /// Owned by the current user, so Ajar may read and adjust it.
+    /// Owned by the current user, so Nocturnal may read and adjust it.
     pub mine: bool,
 }
 

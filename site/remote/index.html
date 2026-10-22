@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Ajar">
+<meta name="apple-mobile-web-app-title" content="Nocturnal">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
@@ -14,9 +14,9 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="icon-192.png">
-<title>Ajar Remote</title>
+<title>Nocturnal Remote</title>
 <style>
-/* Mirrors Ajar's Mac panel: system font, Ajar green, grouped rows, the same order and words. */
+/* Mirrors Nocturnal's Mac panel: system font, Nocturnal green, grouped rows, the same order and words. */
 :root{--bg:#f2f2f7;--card:#fff;--text:#1d1d1f;--sub:#6e6e73;--ter:#aeaeb2;--line:#e5e5ea;--accent:#15784a;--green:#1fa868;--seg:#e3e3e8;--orange:#c45500;--red:#d70015;--greenbg:rgba(31,168,104,.14);color-scheme:light}
 @media (prefers-color-scheme:dark){:root{--bg:#000;--card:#1c1c1e;--text:#f5f5f7;--sub:#98989d;--ter:#636366;--line:#2c2c2e;--accent:#30bb81;--green:#30bb81;--seg:#2c2c2e;--orange:#ff9f0a;--red:#ff453a;--greenbg:rgba(48,187,129,.18);color-scheme:dark}}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -101,7 +101,7 @@ select.pick{-webkit-appearance:none;appearance:none;border:0;background:none;col
 .list button.item:last-child{padding-bottom:0}
 .list button.item.danger{color:var(--red)}
 .list button.item.confirm{font-weight:600}
-/* Status card: Ajar green while it keeps the laptop working, plain while it sleeps normally. */
+/* Status card: Nocturnal green while it keeps the laptop working, plain while it sleeps normally. */
 .hero{position:relative;isolation:isolate;overflow:hidden;background:var(--card);border-radius:22px;padding:16px 18px 16px;margin:0 0 6px}
 .hero.keeps{color:#fff;background:radial-gradient(70% 80% at 92% 0%,rgba(63,214,156,.9),rgba(63,214,156,0) 72%),radial-gradient(50% 60% at 0% 100%,rgba(34,184,102,.45),rgba(34,184,102,0) 72%),linear-gradient(45deg,#08341a,#146c40)}
 .hero.keeps::after{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;opacity:.22;mix-blend-mode:overlay;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 1.6 -.3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
@@ -147,12 +147,12 @@ select.pick{-webkit-appearance:none;appearance:none;border:0;background:none;col
 </head>
 <body>
 <main>
-  <!-- In a phone's browser tab: Ajar is meant to run from the Home Screen, full screen, without the browser's bars. -->
+  <!-- In a phone's browser tab: Nocturnal is meant to run from the Home Screen, full screen, without the browser's bars. -->
   <section id="install" hidden>
     <div class="pairbox">
       <div class="pairhead">
         <img class="appicon" src="apple-touch-icon.png" alt="" width="60" height="60">
-        <div><h1>Ajar</h1><p class="lead">Add it to your Home Screen</p></div>
+        <div><h1>Nocturnal</h1><p class="lead">Add it to your Home Screen</p></div>
       </div>
       <ol class="group steps" id="steps"></ol>
       <p class="hint" id="installhint"></p>
@@ -165,14 +165,14 @@ select.pick{-webkit-appearance:none;appearance:none;border:0;background:none;col
     <div class="pairbox">
       <div class="pairhead">
         <img class="appicon" src="apple-touch-icon.png" alt="" width="60" height="60">
-        <div><h1>Ajar</h1><p class="lead">Pair with your laptop</p></div>
+        <div><h1>Nocturnal</h1><p class="lead">Pair with your laptop</p></div>
       </div>
       <button class="btn primary" type="button" id="scanbtn">Scan QR Code</button>
       <div id="scanner" hidden>
         <video id="cam" playsinline muted autoplay></video>
         <button class="btn" type="button" id="scanstop">Cancel</button>
       </div>
-      <p class="hint">On your laptop, open Ajar and choose Pair a Phone.</p>
+      <p class="hint">On your laptop, open Nocturnal and choose Pair a Phone.</p>
       <div class="sec">Or paste the code</div>
       <form id="pairform" class="group" autocomplete="off">
         <input type="text" id="code" placeholder="Pairing code or link" aria-label="Pairing code or link" autocapitalize="off" autocorrect="off" spellcheck="false">
@@ -285,7 +285,7 @@ select.pick{-webkit-appearance:none;appearance:none;border:0;background:none;col
 </main>
 <script>
 "use strict";
-// Same protocol as Ajar on the laptop (Remote.swift / remote.rs): AES-256-GCM with the topic name as associated
+// Same protocol as Nocturnal on the laptop (Remote.swift / remote.rs): AES-256-GCM with the topic name as associated
 // data; both topic names are derived from the key, so the key is the only secret and it never leaves this phone.
 const enc = new TextEncoder(), dec = new TextDecoder();
 const b64u = {
@@ -343,7 +343,7 @@ function setConn(t) {
 
 async function topic(label, raw) {
   const d = await crypto.subtle.digest("SHA-256", new Uint8Array([...enc.encode(label), ...raw]));
-  return "ajar-" + hex(d).slice(0, 24);
+  return "nocturnal-" + hex(d).slice(0, 24);
 }
 
 async function seal(topicName, obj) {
@@ -513,7 +513,7 @@ async function startScan() {
     if (text) {
       const { k, s } = parsePairing(text);
       if (k && keyBytes(k)) { stopScan(); save(k, s); await begin(k, s); return; }
-      if (!warned) { warned = true; $("pairerr").textContent = "That QR code isn't from Ajar. Point at the one in Ajar's Settings › Phone."; }
+      if (!warned) { warned = true; $("pairerr").textContent = "That QR code isn't from Nocturnal. Point at the one in Nocturnal's Settings › Phone."; }
     }
     scanTimer = setTimeout(tick, 120);
   };
@@ -555,7 +555,7 @@ function toggleRow(label, sub, checked, onChange) {
 
 function empty(el, text) { const e = document.createElement("div"); e.className = "empty"; e.textContent = text; el.appendChild(e); }
 
-// Settings page: every setting the laptop reports, grouped like Ajar's Settings on the Mac. Values and choices
+// Settings page: every setting the laptop reports, grouped like Nocturnal's Settings on the Mac. Values and choices
 // come from the laptop (the same table its AI tools use); only the words live here.
 const SETTING_GROUPS = [
   ["Screen and power", ["screen", "low_power", "pause_simulators", "shut_down_simulators", "pause_background_audio"], "Dark means no password when you open the lid."],
@@ -726,7 +726,7 @@ function asleepHint() {
   const t = wakeSentAt
     ? "Sent. It wakes at its next check-in" + (every ? " (within " + every + " min)" : "") + " and stays awake for an hour."
     : every ? "If it's asleep, it checks for a wake every " + every + " min."
-            : "To wake it from here, turn on “Check for a wake from your phone” in Ajar's settings on the laptop.";
+            : "To wake it from here, turn on “Check for a wake from your phone” in Nocturnal's settings on the laptop.";
   text("waketext", t); show("waketext", true);
 }
 function wakeAnswered() {
@@ -749,7 +749,7 @@ function render(p, at = Date.now()) {
   const fresh = at && at > (stateAt || 0) && Date.now() - at < 60000;   // a new answer, not a redraw of the last one
   state = p; stateAt = at;
   if (fresh) wakeAnswered();   // it answered, so it's awake
-  store.set("ajar.last", JSON.stringify({ p, at }));
+  store.set("nocturnal.last", JSON.stringify({ p, at }));
   text("host", p.host || "Laptop");
   // Plain state, the same words on every laptop version: it keeps working, or it sleeps.
   text("headline", p.keeps ? "Keeps working" : p.lidClosed ? "Going to sleep" : "Sleeps normally");
@@ -808,7 +808,7 @@ function renderSavings(p) {
     if (p.powerTestAborted) empty(el, "Last measurement stopped: " + String(p.powerTestAborted).replace(/\.$/, "") + ".");
     if (has) {
       if ("total" in s || unclear.includes("total")) {
-        row("All of Ajar's savings", unclear.includes("total") ? "unclear" : s.total >= 0.05 ? "saves " + s.total.toFixed(1) + " W" : "≈0 W");
+        row("All of Nocturnal's savings", unclear.includes("total") ? "unclear" : s.total >= 0.05 ? "saves " + s.total.toFixed(1) + " W" : "≈0 W");
         if (s.closed_without && s.closed_with && !unclear.includes("total"))
           row("Lid shut, without → with", s.closed_without.toFixed(1) + " → " + s.closed_with.toFixed(1) + " W");
         if (unclear.includes("total")) empty(el, "Too much changed while measuring. Try again when it's quieter.");
@@ -836,11 +836,11 @@ function confirmTap(btn, warning, action) {
   });
 }
 
-// Ajar is meant to be opened from the Home Screen, where it runs full screen like an app. In a phone's browser tab
+// Nocturnal is meant to be opened from the Home Screen, where it runs full screen like an app. In a phone's browser tab
 // (Safari's bars always show there) it asks for that first, once per visit; "Continue in the browser" skips it.
 const phone = ios || /Android/i.test(navigator.userAgent);
 let inBrowser = false;
-try { inBrowser = sessionStorage.getItem("ajar.inBrowser") === "1"; } catch (_) {}
+try { inBrowser = sessionStorage.getItem("nocturnal.inBrowser") === "1"; } catch (_) {}
 const needsInstall = () => phone && !standalone && !inBrowser;
 function showInstall() {
   const share = '<svg width="15" height="18" viewBox="0 0 15 18" aria-hidden="true"><path d="M7.5 1v10M4 4.5 7.5 1 11 4.5M3 7.5H1.5v9h12v-9H12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -848,7 +848,7 @@ function showInstall() {
     ? [`Tap ${share} <b>Share</b> in Safari's bar`, "Tap <b>Add to Home Screen</b>", "Keep <b>Open as Web App</b> on, then tap <b>Add</b>"]
     : ["Open the browser menu <b>⋮</b>", "Tap <b>Add to Home screen</b> or <b>Install app</b>", "Confirm with <b>Add</b>"];
   $("steps").innerHTML = steps.map((t, i) => `<li><span class="num">${i + 1}</span><span>${t}</span></li>`).join("");
-  text("installhint", key ? "Then open Ajar from your Home Screen. It stays paired." : "Then open Ajar from your Home Screen and pair it there.");
+  text("installhint", key ? "Then open Nocturnal from your Home Screen. It stays paired." : "Then open Nocturnal from your Home Screen and pair it there.");
   $("pair").hidden = true; $("app").hidden = true; $("install").hidden = false;
 }
 
@@ -858,29 +858,29 @@ async function begin(k, s) {
   keyText = k;
   server = s || DEFAULT_SERVER;
   key = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
-  cmdTopic = await topic("ajar/cmd/v1", raw);
-  replyTopic = await topic("ajar/reply/v1", raw);
+  cmdTopic = await topic("nocturnal/cmd/v1", raw);
+  replyTopic = await topic("nocturnal/reply/v1", raw);
   $("pair").hidden = true;
   $("app").hidden = false;
   // The last status this phone saw, with the time it came, until the laptop answers (older pages saved just the panel).
-  try { const last = JSON.parse(store.get("ajar.last") || "null"); if (last) last.p ? render(last.p, last.at || null) : render(last, null); } catch (_) {}
+  try { const last = JSON.parse(store.get("nocturnal.last") || "null"); if (last) last.p ? render(last.p, last.at || null) : render(last, null); } catch (_) {}
   if (needsInstall()) showInstall();
   refresh(true);
   return true;
 }
 
 function save(k, s) {
-  if (store.get("ajar.k") !== k) store.del("ajar.last");   // another laptop: don't show the old one's status
-  store.set("ajar.k", k);
-  store.del("ajar.unpaired");
-  if (s) store.set("ajar.s", s); else store.del("ajar.s");
+  if (store.get("nocturnal.k") !== k) store.del("nocturnal.last");   // another laptop: don't show the old one's status
+  store.set("nocturnal.k", k);
+  store.del("nocturnal.unpaired");
+  if (s) store.set("nocturnal.s", s); else store.del("nocturnal.s");
   // In a browser tab, keep the key in the address too: Add to Home Screen saves this address in the icon, so
   // the app re-pairs itself on every launch even if the phone ever clears the page's storage.
   if (!standalone) { try { history.replaceState(null, "", "#k=" + k + (s ? "&s=" + encodeURIComponent(s) : "")); } catch (_) {} }
 }
 
 async function start() {
-  if (!window.crypto || !crypto.subtle) { $("pair").hidden = false; $("pairerr").textContent = "This browser can't do the encryption Ajar needs. Open the page in Safari or Chrome."; return; }
+  if (!window.crypto || !crypto.subtle) { $("pair").hidden = false; $("pairerr").textContent = "This browser can't do the encryption Nocturnal needs. Open the page in Safari or Chrome."; return; }
 
   const pick = (attr, b) => document.querySelectorAll(`[${attr}]`).forEach(x => x.classList.toggle("sel", x === b));   // answer the tap at once
   document.querySelectorAll("[data-mode]").forEach(b => {
@@ -899,7 +899,7 @@ async function start() {
   $("refresh").addEventListener("click", () => send("panel", {}, { force: true }));
   $("measure").addEventListener("click", async () => { await send("power_test"); setTimeout(() => refresh(true), 3000); });
   $("inbrowser").addEventListener("click", () => {
-    inBrowser = true; try { sessionStorage.setItem("ajar.inBrowser", "1"); } catch (_) {}
+    inBrowser = true; try { sessionStorage.setItem("nocturnal.inBrowser", "1"); } catch (_) {}
     $("install").hidden = true;
     if (key) $("app").hidden = false; else $("pair").hidden = false;
   });
@@ -922,8 +922,8 @@ async function start() {
     }
     clearTimeout(unpairArmed);
     closeStream();
-    ["ajar.k", "ajar.s", "ajar.last"].forEach(store.del);
-    store.set("ajar.unpaired", "1");   // so the home-screen icon's saved link doesn't pair it again on the next launch
+    ["nocturnal.k", "nocturnal.s", "nocturnal.last"].forEach(store.del);
+    store.set("nocturnal.unpaired", "1");   // so the home-screen icon's saved link doesn't pair it again on the next launch
     location.replace(location.pathname);
   });
   // In the background the open connection is closed (iPhone would drop it anyway). Back on screen: reopen it, which
@@ -941,7 +941,7 @@ async function start() {
   $("pairform").addEventListener("submit", async e => {
     e.preventDefault();
     const { k, s } = parsePairing($("code").value);
-    if (!k || !keyBytes(k)) { $("pairerr").textContent = "That doesn't look like an Ajar pairing code."; return; }
+    if (!k || !keyBytes(k)) { $("pairerr").textContent = "That doesn't look like an Nocturnal pairing code."; return; }
     save(k, s);
     $("pairerr").textContent = "";
     await begin(k, s);
@@ -954,19 +954,19 @@ async function start() {
   //    an unpair made in the app since.
   const fromLink = parsePairing(location.hash.slice(1));
   if (fromLink.k && keyBytes(fromLink.k)) {
-    const stored = store.get("ajar.k");
-    const stale = standalone && fromLink.k === store.get("ajar.linkApplied") &&
-      (store.get("ajar.unpaired") === "1" || (!!stored && stored !== fromLink.k));
+    const stored = store.get("nocturnal.k");
+    const stale = standalone && fromLink.k === store.get("nocturnal.linkApplied") &&
+      (store.get("nocturnal.unpaired") === "1" || (!!stored && stored !== fromLink.k));
     if (standalone) { try { history.replaceState(null, "", location.pathname); } catch (_) {} }
     if (!stale) {
       save(fromLink.k, fromLink.s);
-      store.set("ajar.linkApplied", fromLink.k);
+      store.set("nocturnal.linkApplied", fromLink.k);
       return begin(fromLink.k, fromLink.s);
     }
   }
   // 2. Paired before on this phone.
-  const k = store.get("ajar.k");
-  if (k && await begin(k, parsePairing("s=" + (store.get("ajar.s") || "")).s)) return;
+  const k = store.get("nocturnal.k");
+  if (k && await begin(k, parsePairing("s=" + (store.get("nocturnal.s") || "")).s)) return;
   // 3. Not paired yet.
   if (needsInstall()) showInstall(); else $("pair").hidden = false;
 }

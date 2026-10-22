@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Settings inside Ajar's panel or window: five tabs across the top, each a short page. Phone comes first, so
+/// Settings inside Nocturnal's panel or window: five tabs across the top, each a short page. Phone comes first, so
 /// pairing a phone is one click from the panel (its phone button opens this tab).
 struct SettingsPage: View {
     @Bindable var engine: Engine
@@ -27,7 +27,7 @@ struct SettingsPage: View {
                 .keyboardShortcut(.cancelAction)
                 .help("Back (Esc)")
                 Spacer()
-                Button { quit() } label: { Text("Quit Ajar").font(.subheadline).foregroundStyle(.secondary) }
+                Button { quit() } label: { Text("Quit Nocturnal").font(.subheadline).foregroundStyle(.secondary) }
                     .buttonStyle(.plain)
             }
             .padding(.horizontal, 16)
@@ -313,11 +313,11 @@ struct SettingsView: View {
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { saveTopic() }
                 if topic.isEmpty {
-                    Button("Suggest") { topic = "ajar-" + UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(12).lowercased(); topicDirty = true; saveTopic() }
+                    Button("Suggest") { topic = "nocturnal-" + UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(12).lowercased(); topicDirty = true; saveTopic() }
                 } else {
                     Button("Send Test") {
                         saveTopic()
-                        Notifier.push(topic: topic, title: "Ajar test", body: "Phone alerts work. You'll get one when an agent goes idle.") { ok in
+                        Notifier.push(topic: topic, title: "Nocturnal test", body: "Phone alerts work. You'll get one when an agent goes idle.") { ok in
                             note = ok ? "Sent. Check the ntfy app on your phone." : "Couldn't reach ntfy.sh. Check the topic and your connection."
                         }
                     }
@@ -392,10 +392,10 @@ struct SettingsView: View {
                 Button("Copy") {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(AIConnect.setupPrompt, forType: .string)
-                    note = "Copied. Paste it into Claude or Codex and it sets Ajar up with you."
+                    note = "Copied. Paste it into Claude or Codex and it sets Nocturnal up with you."
                 }
             }
-            LabeledContent("ajar command") {
+            LabeledContent("nocturnal command") {
                 if cliInstalled { Text("Installed").foregroundStyle(.secondary) }
                 else {
                     Button("Install…") {
@@ -467,7 +467,7 @@ struct SettingsView: View {
                 if engine.setupReady { Text("Done").foregroundStyle(.secondary) } else { Button("Set Up…") { engine.runSetup() } }
             }
             LabeledContent("Shortcuts") { Text("3 actions").foregroundStyle(.secondary) }
-                .help("Keep Mac Awake, Let Mac Sleep, Get Ajar Status")
+                .help("Keep Mac Awake, Let Mac Sleep, Get Nocturnal Status")
         }
         if !engine.stats.sessions.isEmpty {
             Section("Recent Lid-Closed Sessions") {
@@ -482,15 +482,15 @@ struct SettingsView: View {
             }
         }
         Section {
-            Button("Remove Ajar…", role: .destructive) {
+            Button("Remove Nocturnal…", role: .destructive) {
                 UIState.shared.whilePinned {
-                    do { try engine.uninstallHelper(); note = "Removed. Quit Ajar and move it to the Trash to finish." }
+                    do { try engine.uninstallHelper(); note = "Removed. Quit Nocturnal and move it to the Trash to finish." }
                     catch { note = error.localizedDescription }
                 }
             }
             if let note { Text(note).font(.caption).foregroundStyle(.secondary) }
         } footer: {
-            Text("Puts everything back and removes Ajar's helper.")
+            Text("Puts everything back and removes Nocturnal's helper.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }

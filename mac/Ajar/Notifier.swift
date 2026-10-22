@@ -2,7 +2,7 @@ import AppKit
 import UserNotifications
 
 /// "Claude Code went idle" alerts: a Mac notification, an optional chime, and an optional phone push through
-/// ntfy (free app, no account: the person subscribes to a topic name and Ajar posts to it).
+/// ntfy (free app, no account: the person subscribes to a topic name and Nocturnal posts to it).
 /// Asks for notification permission the first time one is due, not at launch.
 @MainActor
 final class Notifier {
@@ -32,7 +32,7 @@ final class Notifier {
         }
     }
 
-    /// Ajar sees activity stop; it can't tell a finished task from a crash or a question waiting for an
+    /// Nocturnal sees activity stop; it can't tell a finished task from a crash or a question waiting for an
     /// answer, so it says "went idle" (or "closed" when the process is gone), never "finished".
     private func finished(_ name: String, minutes: Double, gone: Bool) {
         let c = engine.config

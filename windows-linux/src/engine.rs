@@ -53,7 +53,7 @@ struct Runtime {
 /// The person's safety settings as last set from the menu. A settings-file edit (by hand, a script or an
 /// agent) can make these stricter but not weaker; weakening needs the menu. This raises the bar against
 /// accidental or agent-driven edits; it can't stop a program determined to defeat it, since anything running
-/// as the same user could also edit this file or stop Ajar.
+/// as the same user could also edit this file or stop Nocturnal.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 struct Safety {
     heat_guard: bool,
@@ -81,9 +81,9 @@ pub struct Stats {
 pub struct Receipt {
     pub closed_at: u64,
     pub opened_at: Option<u64>,
-    /// When Ajar asked the machine to sleep.
+    /// When Nocturnal asked the machine to sleep.
     pub sleep_requested_at: Option<u64>,
-    /// Set only once a sleep actually happened (seen as a gap in Ajar's own ticks), never on request alone.
+    /// Set only once a sleep actually happened (seen as a gap in Nocturnal's own ticks), never on request alone.
     pub slept_at: Option<u64>,
     pub start_percent: Option<u32>,
     pub end_percent: Option<u32>,
@@ -160,7 +160,7 @@ pub const DEFAULT_FULL_WH: f64 = 55.0;
 pub const DEFAULT_CLOSED_W: f64 = 3.0;
 
 impl<P: Platform> Engine<P> {
-    /// `root` is Ajar's folder (tests pass a temporary one).
+    /// `root` is Nocturnal's folder (tests pass a temporary one).
     pub fn new(platform: P, root: PathBuf, procs_now: Vec<Proc>) -> Self {
         state::ensure_private_dir(&root);
         let text = state::read(&root.join("config.json"));
@@ -173,7 +173,7 @@ impl<P: Platform> Engine<P> {
             corrupt_note = Some(Announcement {
                 title: "Settings file couldn't be read".into(),
                 body: format!(
-                    "Ajar is using its defaults. Your file was saved as {}",
+                    "Nocturnal is using its defaults. Your file was saved as {}",
                     backup
                         .file_name()
                         .map(|n| n.to_string_lossy().to_string())
@@ -339,7 +339,7 @@ impl<P: Platform> Engine<P> {
         self.outbox.push(Announcement {
             title: "Settings file change ignored".into(),
             body: format!(
-                "Safety settings can only be loosened from the Ajar menu: {}.",
+                "Safety settings can only be loosened from the Nocturnal menu: {}.",
                 undone.join(" and ")
             ),
         });
@@ -422,7 +422,7 @@ impl<P: Platform> Engine<P> {
 
     pub fn tick(&mut self, now: u64, procs_now: Option<Vec<Proc>>) {
         self.ticks += 1;
-        // A long gap between ticks means the machine was asleep: that confirms a sleep Ajar asked for.
+        // A long gap between ticks means the machine was asleep: that confirms a sleep Nocturnal asked for.
         let gap = self.last_tick_at > 0 && now.saturating_sub(self.last_tick_at) > 45;
         self.last_tick_at = now;
         if gap {
@@ -593,7 +593,7 @@ impl<P: Platform> Engine<P> {
         }
     }
 
-    /// Asks for the wake right before Ajar itself puts the machine to sleep (the minute timer may be stale).
+    /// Asks for the wake right before Nocturnal itself puts the machine to sleep (the minute timer may be stale).
     fn arm_before_sleep(&mut self, now: u64) {
         self.wake_armed_at = None;
         self.keep_wake_armed(now);
@@ -754,7 +754,7 @@ impl<P: Platform> Engine<P> {
                         return;
                     }
                 }
-                self.watchdog_warning = Some("The safety watchdog isn't installed, so a crash wouldn't be cleaned up automatically. Run `ajar install`.".into());
+                self.watchdog_warning = Some("The safety watchdog isn't installed, so a crash wouldn't be cleaned up automatically. Run `nocturnal install`.".into());
             }
             _ => self.watchdog_warning = None,
         }
@@ -783,7 +783,7 @@ impl<P: Platform> Engine<P> {
             Err(e) => {
                 self.setup_error = Some(e);
                 if self.holding {
-                    self.end_hold("Ajar can't control sleep on this machine", now);
+                    self.end_hold("Nocturnal can't control sleep on this machine", now);
                 }
                 return;
             }
@@ -806,7 +806,7 @@ impl<P: Platform> Engine<P> {
         let mut want = false;
         let mut reason = None;
         match self.cfg.mode {
-            // Holds are explicit requests (a timer, `ajar run`, MCP), so they work in any mode.
+            // Holds are explicit requests (a timer, `nocturnal run`, MCP), so they work in any mode.
             Mode::Off => {
                 if let Some(h) = self.holds.last() {
                     want = true;
@@ -978,7 +978,7 @@ impl<P: Platform> Engine<P> {
             if self.holding {
                 self.enter_closed(now);
             } else if !self.platform.sleeps_on_close_itself() {
-                // The desktop leaves lid-close sleep to Ajar (see Platform::sleeps_on_close_itself).
+                // The desktop leaves lid-close sleep to Nocturnal (see Platform::sleeps_on_close_itself).
                 self.arm_before_sleep(now);
                 self.platform.sleep_now();
             }
@@ -1104,7 +1104,7 @@ impl<P: Platform> Engine<P> {
                 continue;
             }
             // Journal first and only act if it's safely on disk, so a crash at any point leaves a record of
-            // every app Ajar changed (the watchdog and the next start undo it).
+            // every app Nocturnal changed (the watchdog and the next start undo it).
             let paused = rule == AppRule::Pause;
             self.touched.push(Touched {
                 pid,
@@ -1142,7 +1142,7 @@ impl<P: Platform> Engine<P> {
         self.save_touched();
     }
 
-    /// Apps Ajar changed and hasn't managed to put back yet (shown in the menu and `ajar doctor`).
+    /// Apps Nocturnal changed and hasn't managed to put back yet (shown in the menu and `nocturnal doctor`).
     pub fn unrestored(&self) -> Vec<String> {
         if self.lid_closed && self.holding {
             return vec![];
@@ -1230,7 +1230,7 @@ impl<P: Platform> Engine<P> {
     }
 
     /// "Claude Code went idle": an agent that was busy for at least a minute has been quiet for 2 minutes.
-    /// Ajar can't tell success from a crash or a question waiting for an answer, so it never says "finished".
+    /// Nocturnal can't tell success from a crash or a question waiting for an answer, so it never says "finished".
     fn detect_finished(&mut self, now: u64) {
         let mut current: HashMap<String, (u64, String)> = HashMap::new();
         let present: std::collections::HashSet<String> = self
@@ -1593,7 +1593,7 @@ impl<P: Platform> Engine<P> {
             );
         }
         let detail = match self.cfg.mode {
-            Mode::Off => "Ajar is off".to_string(),
+            Mode::Off => "Nocturnal is off".to_string(),
             Mode::Auto if self.snoozed => "Sleeping until you open the lid".to_string(),
             Mode::Auto => "No agent is working right now".to_string(),
             Mode::On => "Starting…".to_string(),
@@ -1782,9 +1782,9 @@ impl<P: Platform> Engine<P> {
                 r
             }
             "release" => {
-                // One hold by id, or all of them only when asked in so many words (`ajar release` with no id).
+                // One hold by id, or all of them only when asked in so many words (`nocturnal release` with no id).
                 if s("id").is_none() && boolean("all") != Some(true) {
-                    return fail("needs id (see ajar status), or all: true".into());
+                    return fail("needs id (see nocturnal status), or all: true".into());
                 }
                 let n = self.release_hold(s("id").as_deref());
                 let mut r = self.ok();
@@ -1968,15 +1968,15 @@ impl<P: Platform> Engine<P> {
                     // Like the heat guard: commands can raise the battery limit but only the menu can lower it.
                     "battery_floor" => match v_num {
                         Some(n) if (n as u32).min(80) >= c.battery_floor => c.battery_floor = (n as u32).min(80),
-                        Some(_) => bad = Some("to be lowered from the Ajar menu (it can only be raised from here)"),
+                        Some(_) => bad = Some("to be lowered from the Nocturnal menu (it can only be raised from here)"),
                         None => bad = Some("a number (0 = never stop for battery)"),
                     },
                     "quiet_minutes" => match v_num { Some(n) => c.quiet_minutes = (n as u32).clamp(1, 240), None => bad = Some("a number of minutes") },
                     "sleep_when_done" => match v_bool { Some(b) => c.sleep_when_done = b, None => bad = Some("on/off") },
                     "low_power" => match v_bool { Some(b) => c.low_power_while_closed = b, None => bad = Some("on/off") },
                     // The heat guard protects a laptop in a bag; only the person can turn it off (in the tray menu).
-                    "heat_guard" => match v_bool { Some(true) => c.heat_guard = true, Some(false) => bad = Some("to be turned off from the Ajar menu (it can only be turned on from here)"), None => bad = Some("on/off") },
-                    "only_on_power" => match v_bool { Some(b) if b || !c.only_on_power => c.only_on_power = b, Some(_) => bad = Some("to be turned off from the Ajar menu (it can only be turned on from here)"), None => bad = Some("on/off") },
+                    "heat_guard" => match v_bool { Some(true) => c.heat_guard = true, Some(false) => bad = Some("to be turned off from the Nocturnal menu (it can only be turned on from here)"), None => bad = Some("on/off") },
+                    "only_on_power" => match v_bool { Some(b) if b || !c.only_on_power => c.only_on_power = b, Some(_) => bad = Some("to be turned off from the Nocturnal menu (it can only be turned on from here)"), None => bad = Some("on/off") },
                     "claude_app" => match v_bool { Some(b) => c.count_claude_app = b, None => bad = Some("on/off") },
                     "notify_done" => match v_bool { Some(b) => c.notify_done = b, None => bad = Some("on/off") },
                     "check_in_minutes" => match v_num.map(|n| n as u32).filter(|n| crate::wake::CHECK_IN_CHOICES.contains(n)) {
@@ -1984,13 +1984,13 @@ impl<P: Platform> Engine<P> {
                         None => bad = Some("0, 15, 30 or 60"),
                     },
                     // Alerts go wherever this topic points, so only the menu sets it; commands may turn it off.
-                    "ntfy_topic" => match v_str { Some(t) if t.is_empty() => c.ntfy_topic = t, _ => bad = Some("to be set from the Ajar menu (commands can only turn it off with an empty value)") },
+                    "ntfy_topic" => match v_str { Some(t) if t.is_empty() => c.ntfy_topic = t, _ => bad = Some("to be set from the Nocturnal menu (commands can only turn it off with an empty value)") },
                     _ => bad = Some("a known key"),
                 });
                 if let Some(b) = bad {
                     let keys: Vec<&str> = crate::ai::SETTINGS.iter().map(|s| s.key).collect();
                     return fail(format!(
-                        "{key} needs {b}. Keys: {} (ajar settings explains each)",
+                        "{key} needs {b}. Keys: {} (nocturnal settings explains each)",
                         keys.join(", ")
                     ));
                 }
@@ -2001,7 +2001,7 @@ impl<P: Platform> Engine<P> {
                 // turn the override back off.
                 if boolean("on").unwrap_or(true) {
                     return fail(
-                        "Going below the battery limit can only be allowed from the Ajar menu"
+                        "Going below the battery limit can only be allowed from the Nocturnal menu"
                             .into(),
                     );
                 }
@@ -2112,7 +2112,7 @@ impl<P: Platform> Engine<P> {
             "learned_closed_watts": r1(self.closed_draw),
             "suspects": [
                 { "id": "apps", "active": !busy.is_empty(), "title": if busy.is_empty() { "No other app is busy".to_string() } else { format!("Busy apps: {}", busy.join(", ")) },
-                  "setting": "preset", "value": preset, "suggested_value": "max_battery", "per_app": "ajar rule <app> pause" },
+                  "setting": "preset", "value": preset, "suggested_value": "max_battery", "per_app": "nocturnal rule <app> pause" },
                 { "id": "low_power", "active": !self.cfg.low_power_while_closed, "title": if self.cfg.low_power_while_closed { "Power saver turns on with the lid closed" } else { "Power saver stays off with the lid closed" },
                   "setting": "low_power", "value": self.cfg.low_power_while_closed, "suggested_value": "on" },
             ],
@@ -2126,7 +2126,7 @@ impl<P: Platform> Engine<P> {
             json!({
                 "name": name,
                 "cpu_percent": (cpu * 10.0).round() / 10.0,
-                "while_closed": if kept { "kept (Ajar is keeping it awake)".to_string() } else { format!("{:?}", self.cfg.rule_for(name, self.cfg.preset)).to_lowercase() },
+                "while_closed": if kept { "kept (Nocturnal is keeping it awake)".to_string() } else { format!("{:?}", self.cfg.rule_for(name, self.cfg.preset)).to_lowercase() },
             })
         }).collect::<Vec<_>>())
     }
@@ -2135,10 +2135,10 @@ impl<P: Platform> Engine<P> {
 /// How long "serious" heat with the lid shut is tolerated before the laptop is put to sleep.
 pub const HOT_GRACE_SECS: u64 = 300;
 
-/// Processes Ajar never slows or pauses, whatever the rules say: the desktop, audio, input and Ajar itself.
+/// Processes Nocturnal never slows or pauses, whatever the rules say: the desktop, audio, input and Nocturnal itself.
 pub const SYSTEM_NEVER: &[&str] = &[
-    "ajar",
-    "ajar-app",
+    "nocturnal",
+    "nocturnal-app",
     "explorer",
     "dwm",
     "csrss",
@@ -2194,7 +2194,7 @@ pub fn receipt_line(r: &Receipt) -> String {
         format!("Ran {}, then slept", crate::format::minutes(mins))
     } else if r.sleep_requested_at.is_some() {
         format!(
-            "Ran {}, then Ajar asked it to sleep",
+            "Ran {}, then Nocturnal asked it to sleep",
             crate::format::minutes(mins)
         )
     } else {

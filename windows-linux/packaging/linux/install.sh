@@ -1,5 +1,5 @@
 #!/bin/sh
-# Installs Ajar for the current user (no root needed): binaries in ~/.local/bin, a launcher entry, the icon,
+# Installs Nocturnal for the current user (no root needed): binaries in ~/.local/bin, a launcher entry, the icon,
 # and the watchdog timer. Run again to update.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
@@ -8,7 +8,7 @@ apps="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 icons="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor"
 
 if ! command -v systemctl >/dev/null 2>&1 || ! busctl --system status org.freedesktop.login1 >/dev/null 2>&1; then
-  echo "Ajar needs systemd-logind to keep the machine awake, and it isn't available here." >&2
+  echo "Nocturnal needs systemd-logind to keep the machine awake, and it isn't available here." >&2
   exit 1
 fi
 if ! ldconfig -p 2>/dev/null | grep -q -e libayatana-appindicator3 -e libappindicator3; then
@@ -20,29 +20,31 @@ if ! ldconfig -p 2>/dev/null | grep -q -e libayatana-appindicator3 -e libappindi
 fi
 
 # Stop a running copy gracefully (it puts back anything it changed) before replacing the files.
-if [ -x "$bin/ajar" ]; then "$bin/ajar" rescue >/dev/null 2>&1 || true; fi
+if [ -x "$bin/nocturnal" ]; then "$bin/nocturnal" rescue >/dev/null 2>&1 || true; fi
+# The app's old name: put back what it changed and unregister its watchdog (its files are left in place).
+if [ -x "$bin/ajar" ]; then "$bin/ajar" rescue >/dev/null 2>&1 || true; "$bin/ajar" uninstall >/dev/null 2>&1 || true; fi
 
 mkdir -p "$bin" "$apps" "$icons/256x256/apps" "$icons/128x128/apps" "$icons/48x48/apps"
-install -m 755 "$here/ajar" "$here/ajar-app" "$bin/"
-install -m 644 "$here/icons/ajar-256.png" "$icons/256x256/apps/ajar.png"
-install -m 644 "$here/icons/ajar-128.png" "$icons/128x128/apps/ajar.png"
-install -m 644 "$here/icons/ajar-48.png" "$icons/48x48/apps/ajar.png"
-cat > "$apps/ajar.desktop" <<EOF
+install -m 755 "$here/nocturnal" "$here/nocturnal-app" "$bin/"
+install -m 644 "$here/icons/nocturnal-256.png" "$icons/256x256/apps/nocturnal.png"
+install -m 644 "$here/icons/nocturnal-128.png" "$icons/128x128/apps/nocturnal.png"
+install -m 644 "$here/icons/nocturnal-48.png" "$icons/48x48/apps/nocturnal.png"
+cat > "$apps/nocturnal.desktop" <<EOF
 [Desktop Entry]
 Type=Application
-Name=Ajar
+Name=Nocturnal
 Comment=Keep the laptop awake with the lid closed while AI agents work
-Exec="$bin/ajar-app"
-Icon=ajar
+Exec="$bin/nocturnal-app"
+Icon=nocturnal
 Terminal=false
 Categories=Utility;
 StartupNotify=false
 EOF
-"$bin/ajar" install || echo "Couldn't register the watchdog; run 'ajar install' later." >&2
+"$bin/nocturnal" install || echo "Couldn't register the watchdog; run 'nocturnal install' later." >&2
 
-# Optional: let Ajar turn off turbo and switch on the kernel's power saving while the lid is closed. Needs root
+# Optional: let Nocturnal turn off turbo and switch on the kernel's power saving while the lid is closed. Needs root
 # once, for a fixed helper and a sudoers entry for exactly its commands (also used for waking from sleep).
-helper=/usr/local/libexec/ajar-power
+helper=/usr/local/libexec/nocturnal-power
 if [ -t 0 ] && command -v sudo >/dev/null 2>&1 && [ ! -x "$helper" ]; then
   printf 'Save more battery with the lid closed (turbo off, kernel power saving) and allow waking from sleep for phone control? Asks for your password once. [y/N] '
   read -r answer || answer=n
@@ -52,11 +54,11 @@ if [ -t 0 ] && command -v sudo >/dev/null 2>&1 && [ ! -x "$helper" ]; then
       tmp=$(mktemp)
       cmds="$helper apply, $helper restore, $helper wake off"
       for n in 60 300 900 1800 3600; do cmds="$cmds, $helper wake $n"; done
-      printf '# Installed by Ajar: only these commands, nothing else.\n%s ALL=(root) NOPASSWD: %s\n' "$user" "$cmds" > "$tmp"
-      if sudo sh -c "install -d -m 755 /usr/local/libexec && install -m 755 -o root -g root '$here/ajar-power' '$helper' \
-          && install -m 440 -o root -g root '$tmp' /etc/sudoers.d/.ajar-power.new && visudo -cf /etc/sudoers.d/.ajar-power.new \
-          && mv -f /etc/sudoers.d/.ajar-power.new /etc/sudoers.d/ajar-power"; then
-        echo "Done. Ajar uses it while the lid is closed and puts everything back when it opens."
+      printf '# Installed by Nocturnal: only these commands, nothing else.\n%s ALL=(root) NOPASSWD: %s\n' "$user" "$cmds" > "$tmp"
+      if sudo sh -c "install -d -m 755 /usr/local/libexec && install -m 755 -o root -g root '$here/nocturnal-power' '$helper' \
+          && install -m 440 -o root -g root '$tmp' /etc/sudoers.d/.nocturnal-power.new && visudo -cf /etc/sudoers.d/.nocturnal-power.new \
+          && mv -f /etc/sudoers.d/.nocturnal-power.new /etc/sudoers.d/nocturnal-power"; then
+        echo "Done. Nocturnal uses it while the lid is closed and puts everything back when it opens."
       else
         echo "Skipped: couldn't install the power helper." >&2
       fi
@@ -64,6 +66,6 @@ if [ -t 0 ] && command -v sudo >/dev/null 2>&1 && [ ! -x "$helper" ]; then
   esac
 fi
 
-case ":$PATH:" in *":$bin:"*) ;; *) echo "Add $bin to your PATH to use the 'ajar' command.";; esac
-setsid -f "$bin/ajar-app" >/dev/null 2>&1 < /dev/null
-echo "Ajar is installed and running in the tray. Turn on 'Open at login' in its Settings menu."
+case ":$PATH:" in *":$bin:"*) ;; *) echo "Add $bin to your PATH to use the 'nocturnal' command.";; esac
+setsid -f "$bin/nocturnal-app" >/dev/null 2>&1 < /dev/null
+echo "Nocturnal is installed and running in the tray. Turn on 'Open at login' in its Settings menu."

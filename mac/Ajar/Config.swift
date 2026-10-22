@@ -41,15 +41,15 @@ enum AppearanceChoice: String, CaseIterable, Codable {
     var label: String { switch self { case .system: "Match System"; case .light: "Light"; case .dark: "Dark" } }
 }
 
-/// An agent the person (or their Claude) taught Ajar about.
+/// An agent the person (or their Claude) taught Nocturnal about.
 struct CustomAgent: Codable, Hashable {
     var name: String
     var executables: [String]
     var idleWatts: Double?
 }
 
-/// Everything you can change, in one JSON file at ~/Library/Application Support/Ajar/config.json.
-/// Ajar reloads it the moment it changes, so a person, a script or Claude can edit it directly.
+/// Everything you can change, in one JSON file at ~/Library/Application Support/Nocturnal/config.json.
+/// Nocturnal reloads it the moment it changes, so a person, a script or Claude can edit it directly.
 /// Every key is optional when written by hand; anything missing keeps its default.
 struct Config: Codable, Equatable {
     var mode: Mode = .auto
@@ -112,7 +112,7 @@ struct Config: Codable, Equatable {
     var slowBuildsWhileClosed = false
     /// Pause Time Machine's automatic backups while the lid is closed (an agent's file changes trigger them).
     var pauseTimeMachine = true
-    /// The person says Wi-Fi › "Ask to join hotspots" is on Automatic, so Ajar stops reminding them on a hotspot.
+    /// The person says Wi-Fi › "Ask to join hotspots" is on Automatic, so Nocturnal stops reminding them on a hotspot.
     var hotspotAutomatic = false
 
     init() {}

@@ -64,7 +64,7 @@ private struct Welcome: View {
             Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 88, height: 88)
                 .padding(.top, 36)
             StepHeader(step: 1, title: "Close the lid. Your work keeps going.",
-                       subtitle: "Ajar keeps your Mac awake with the lid shut while your AI agents work.")
+                       subtitle: "Nocturnal keeps your Mac awake with the lid shut while your AI agents work.")
             VStack(alignment: .leading, spacing: 14) {
                 Feature(symbol: "laptopcomputer", color: Brand.mid, title: "Shut it and walk away",
                         text: "Your agent keeps going in your bag.")
@@ -181,7 +181,7 @@ private struct Extras: View {
             Text("Check on it from your phone").font(.system(size: 14, weight: .semibold))
             Text("See if it's still working from anywhere.")
                 .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            if let remote = AjarShared.remote {
+            if let remote = NocturnalShared.remote {
                 if showPairing && remote.enabled {
                     PairingView(settings: remote.settings) { showPairing = false }.frame(maxWidth: .infinity)
                 } else {
@@ -196,7 +196,7 @@ private struct Extras: View {
     }
 }
 
-/// Shown once after setup: connect the agents found on this Mac, and the prompt that has one set Ajar up.
+/// Shown once after setup: connect the agents found on this Mac, and the prompt that has one set Nocturnal up.
 private struct ConnectCard: View {
     @State private var note: String?
     /// (installed, connected) for Claude Code, Codex, the Claude app; read off the main thread.

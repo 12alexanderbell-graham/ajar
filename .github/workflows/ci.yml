@@ -36,10 +36,10 @@ jobs:
       - name: Zip the app (ad-hoc signed, same as install.sh makes)
         working-directory: mac
         run: |
-          codesign --verify --deep --strict build/Build/Products/Release/Ajar.app
-          ditto -c -k --keepParent build/Build/Products/Release/Ajar.app Ajar-mac.zip
-          shasum -a 256 Ajar-mac.zip
+          codesign --verify --deep --strict build/Build/Products/Release/Nocturnal.app
+          ditto -c -k --keepParent build/Build/Products/Release/Nocturnal.app Nocturnal-mac.zip
+          shasum -a 256 Nocturnal-mac.zip
       - uses: actions/upload-artifact@v4
         with:
           name: mac
-          path: mac/Ajar-mac.zip
+          path: mac/Nocturnal-mac.zip

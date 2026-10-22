@@ -222,7 +222,7 @@ struct IslandView: View {
     private var content: some View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
-                AjarMark(glow: model.glow)
+                NocturnalMark(glow: model.glow)
                     .frame(width: 30, height: 22)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(model.title).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white).lineLimit(1)

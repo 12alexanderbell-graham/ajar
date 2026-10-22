@@ -1,5 +1,5 @@
-//! Ajar's folder and the small files in it. Linux: `$XDG_CONFIG_HOME/ajar` (usually `~/.config/ajar`),
-//! Windows: `%APPDATA%\Ajar`. Created owner-only on Linux because the command inbox lives here.
+//! Nocturnal's folder and the small files in it. Linux: `$XDG_CONFIG_HOME/nocturnal` (usually `~/.config/nocturnal`),
+//! Windows: `%APPDATA%\Nocturnal`. Created owner-only on Linux because the command inbox lives here.
 //!
 //! | file            | what                                                              |
 //! |-----------------|-------------------------------------------------------------------|
@@ -7,9 +7,9 @@
 //! | runtime.json    | holds, the Always timer, the mode to return to                    |
 //! | stats.json      | lid-closed sessions                                               |
 //! | alive           | heartbeat, touched every few seconds (the watchdog reads it)      |
-//! | touched.json    | apps Ajar slowed or paused, so they can always be put back        |
-//! | restore.json    | system settings Ajar changed (power profile, lid action)          |
-//! | requests/ replies/ | command inbox and outbox for the `ajar` CLI and MCP server     |
+//! | touched.json    | apps Nocturnal slowed or paused, so they can always be put back        |
+//! | restore.json    | system settings Nocturnal changed (power profile, lid action)          |
+//! | requests/ replies/ | command inbox and outbox for the `nocturnal` CLI and MCP server     |
 
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -26,8 +26,16 @@ pub fn dir() -> PathBuf {
             .filter(|p| p.is_absolute())
             .unwrap_or_else(|| home().join(".config"))
     };
-    let d = base.join(if cfg!(windows) { "Ajar" } else { "ajar" });
+    let d = base.join(if cfg!(windows) { "Nocturnal" } else { "nocturnal" });
+    let fresh = !d.exists();
     ensure_private_dir(&d);
+    // The app used to be called Ajar: carry its settings, history and Approve everything journal over once.
+    if fresh {
+        let old = base.join(if cfg!(windows) { "Ajar" } else { "ajar" });
+        for f in ["config.json", "safety.json", "stats.json", "auto-approve.json"] {
+            let _ = std::fs::copy(old.join(f), d.join(f));
+        }
+    }
     d
 }
 
@@ -136,7 +144,7 @@ pub fn save_json<T: Serialize>(path: &Path, v: &T) -> bool {
     }
 }
 
-/// An app Ajar slowed or paused. Its start time is checked before undoing anything, so a reused pid is never touched.
+/// An app Nocturnal slowed or paused. Its start time is checked before undoing anything, so a reused pid is never touched.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct Touched {
     pub pid: u32,
@@ -156,26 +164,26 @@ pub struct Touched {
 /// Journal value for a slow-down recorded before it happened; restore falls back to the normal priority.
 pub const PREVIOUS_UNKNOWN: i64 = i64::MIN + 1;
 
-/// System settings Ajar changed and must restore. Missing fields read as "nothing to restore".
+/// System settings Nocturnal changed and must restore. Missing fields read as "nothing to restore".
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Restore {
     /// Windows: other power plans that became active during a hold and were also set to "Do nothing":
     /// (plan GUID, AC, DC) originals.
     pub lid_more: Vec<(String, u32, u32)>,
-    /// Linux: power-profiles-daemon profile before Ajar switched to power-saver.
+    /// Linux: power-profiles-daemon profile before Nocturnal switched to power-saver.
     pub power_profile: Option<String>,
-    /// Windows: power overlay scheme GUID before Ajar switched to best power efficiency.
+    /// Windows: power overlay scheme GUID before Nocturnal switched to best power efficiency.
     pub power_overlay: Option<String>,
-    /// Windows: lid-close action (AC, DC) before Ajar set it to "do nothing".
+    /// Windows: lid-close action (AC, DC) before Nocturnal set it to "do nothing".
     pub lid_action: Option<(u32, u32)>,
     /// Windows: the power plan the lid action was changed in (restored in that plan even if the active one changed).
     pub lid_scheme: Option<String>,
-    /// Windows (Modern Standby): the sleep timeouts before Ajar set them to "never" for a hold:
+    /// Windows (Modern Standby): the sleep timeouts before Nocturnal set them to "never" for a hold:
     /// (plan GUID, [sleep AC, sleep DC, unattended AC, unattended DC]) in seconds.
     pub sleep_idle: Option<(String, [u32; 4])>,
-    /// Windows: processor boost mode on battery (plan GUID, DC value) before Ajar turned turbo off while closed.
+    /// Windows: processor boost mode on battery (plan GUID, DC value) before Nocturnal turned turbo off while closed.
     pub boost_dc: Option<(String, u32)>,
-    /// Linux: Ajar's root helper applied turbo-off and kernel power saving (its own file holds the old values).
+    /// Linux: Nocturnal's root helper applied turbo-off and kernel power saving (its own file holds the old values).
     pub linux_tuned: bool,
 }

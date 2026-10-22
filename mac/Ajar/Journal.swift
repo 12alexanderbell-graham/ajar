@@ -1,7 +1,7 @@
 import Foundation
 
-/// An app Ajar slowed or paused. Written to disk *before* the change is made, so a crash at any moment leaves
-/// a record of everything Ajar touched. Undo checks pid, start time and executable path, so a reused pid is
+/// An app Nocturnal slowed or paused. Written to disk *before* the change is made, so a crash at any moment leaves
+/// a record of everything Nocturnal touched. Undo checks pid, start time and executable path, so a reused pid is
 /// never touched.
 struct Touched: Codable, Equatable {
     var pid: Int32
@@ -9,7 +9,7 @@ struct Touched: Codable, Equatable {
     var path: String
     var paused: Bool
 
-    /// Still the very process Ajar changed.
+    /// Still the very process Nocturnal changed.
     var isSameProcess: Bool { Procs.startTime(pid) == start && Procs.path(pid) == path }
 }
 
@@ -78,7 +78,7 @@ enum Heartbeat {
     }
 }
 
-/// The person's safety settings as last set in Ajar's own UI. Edits to config.json (by hand, a script or an
+/// The person's safety settings as last set in Nocturnal's own UI. Edits to config.json (by hand, a script or an
 /// agent) can make them stricter, never weaker. This stops accidental and agent-driven loosening; a program
 /// running as the same user could still edit this file too, so it isn't a defence against deliberate attacks.
 struct Safety: Codable, Equatable {
@@ -90,7 +90,7 @@ struct Safety: Codable, Equatable {
     func save() { _ = StateFiles.writeDurably((try? JSONEncoder().encode(self)) ?? Data(), to: Self.url) }
 }
 
-/// Runs every minute from launchd (`Ajar cli watchdog`). If the app has died or hung, put back everything it
+/// Runs every minute from launchd (`Nocturnal cli watchdog`). If the app has died or hung, put back everything it
 /// changed. Pure Swift with the same checks the app uses; no shell parsing.
 enum Watchdog {
     static func run(force: Bool) -> String {
@@ -121,7 +121,7 @@ enum Watchdog {
         return ok ? "restored" : "partly restored"
     }
 
-    /// Plain-language list of what Ajar has changed right now (for `ajar doctor` and `ajar rescue`).
+    /// Plain-language list of what Nocturnal has changed right now (for `nocturnal doctor` and `nocturnal rescue`).
     static func outstanding() -> [String] {
         systemChanges() + (AutoApprove.isOn ? ["Approve everything is on: Claude Code and Codex run without asking (turn off in Settings › Agents)"] : [])
     }

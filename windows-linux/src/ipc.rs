@@ -1,4 +1,4 @@
-//! How the `ajar` command and the MCP server talk to the running app: a request file dropped into
+//! How the `nocturnal` command and the MCP server talk to the running app: a request file dropped into
 //! `requests/`, answered in `replies/`. Plain files keep it identical on Windows and Linux, need no open port,
 //! and are protected by the folder's permissions (owner-only on Linux, the user profile on Windows).
 
@@ -31,7 +31,7 @@ pub fn app_running(root: &Path) -> bool {
 pub fn call(root: &Path, cmd: &str, args: Value, timeout: Duration) -> Result<Value, String> {
     if !app_running(root) {
         return Err(
-            "Ajar isn't running. Start the Ajar app first (it lives in the system tray).".into(),
+            "Nocturnal isn't running. Start the Nocturnal app first (it lives in the system tray).".into(),
         );
     }
     let req = root.join("requests");
@@ -57,7 +57,7 @@ pub fn call(root: &Path, cmd: &str, args: Value, timeout: Duration) -> Result<Va
     }
     crate::state::remove(&req.join(format!("{id}.json")));
     Err(
-        "Ajar didn't answer in time. It may be busy or stuck; try again, or restart the app."
+        "Nocturnal didn't answer in time. It may be busy or stuck; try again, or restart the app."
             .into(),
     )
 }
@@ -148,7 +148,7 @@ mod tests {
     use super::*;
 
     fn tmp(name: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("ajar-ipc-{name}-{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("nocturnal-ipc-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(d.join("requests")).unwrap();
         d

@@ -2,9 +2,9 @@
 //! power, the systemd user manager to slow apps, signals to pause them.
 //!
 //! Keeping awake = a logind inhibitor lock ("sleep:idle:handle-lid-switch", block mode) held as a file
-//! descriptor. The kernel closes it when Ajar exits for any reason, so a crash can never leave the machine
+//! descriptor. The kernel closes it when Nocturnal exits for any reason, so a crash can never leave the machine
 //! unable to sleep. GNOME and KDE also get their own session inhibitors (their automatic suspend doesn't
-//! always look at logind's), tied to Ajar's D-Bus connection, which also dies with the process.
+//! always look at logind's), tied to Nocturnal's D-Bus connection, which also dies with the process.
 
 use super::{Battery, Platform, Thermal};
 use crate::state::{Restore, Touched};
@@ -40,7 +40,7 @@ impl Linux {
             gnome_cookie: None,
             pm_cookie: None,
             // Test hook: point at a fake sysfs tree (battery, chassis, thermal) in integration tests.
-            sys: std::env::var_os("AJAR_SYSFS_ROOT")
+            sys: std::env::var_os("NOCTURNAL_SYSFS_ROOT")
                 .map(PathBuf::from)
                 .unwrap_or_else(|| PathBuf::from("/sys")),
             throttled: HashSet::new(),
@@ -219,7 +219,7 @@ impl Platform for Linux {
         }
         if self.logind_property("LidClosed").is_none() {
             return Err(
-                "Ajar needs systemd-logind to keep this machine awake, and it isn't available here"
+                "Nocturnal needs systemd-logind to keep this machine awake, and it isn't available here"
                     .into(),
             );
         }
@@ -272,7 +272,7 @@ impl Platform for Linux {
                     LOGIND_PATH,
                     Some(LOGIND_IFACE),
                     "Inhibit",
-                    &("sleep:idle:handle-lid-switch", "Ajar", reason, "block"),
+                    &("sleep:idle:handle-lid-switch", "Nocturnal", reason, "block"),
                 )
                 .map_err(|e| format!("logind refused to keep the machine awake: {e}"))?;
             let fd: OwnedFd = reply
@@ -290,7 +290,7 @@ impl Platform for Linux {
                         "/org/gnome/SessionManager",
                         Some("org.gnome.SessionManager"),
                         "Inhibit",
-                        &("ajar", 0u32, reason, 4u32),
+                        &("nocturnal", 0u32, reason, 4u32),
                     )
                     .ok()
                     .and_then(|m| m.body().deserialize::<u32>().ok());
@@ -302,7 +302,7 @@ impl Platform for Linux {
                         "/org/freedesktop/PowerManagement/Inhibit",
                         Some("org.freedesktop.PowerManagement.Inhibit"),
                         "Inhibit",
-                        &("Ajar", reason),
+                        &("Nocturnal", reason),
                     )
                     .ok()
                     .and_then(|m| m.body().deserialize::<u32>().ok());
@@ -358,7 +358,7 @@ impl Platform for Linux {
     }
 
     fn sleeps_on_close_itself(&mut self) -> bool {
-        // KDE handles the lid itself. With its lid action set to "Do nothing", Ajar does the sleeping, unless an
+        // KDE handles the lid itself. With its lid action set to "Do nothing", Nocturnal does the sleeping, unless an
         // external display is connected (a docked laptop should keep running).
         if !self.kde() {
             return true;
@@ -371,7 +371,7 @@ impl Platform for Linux {
         if self.kde() {
             let ac = self.on_ac();
             if kde_lid_action(ac) != Some(0) {
-                return Some("KDE may still sleep when the lid closes. In System Settings › Power Management, set \"When laptop lid closed\" to \"Do nothing\"; Ajar then sleeps it on close whenever nothing is working.".into());
+                return Some("KDE may still sleep when the lid closes. In System Settings › Power Management, set \"When laptop lid closed\" to \"Do nothing\"; Nocturnal then sleeps it on close whenever nothing is working.".into());
             }
         }
         None
@@ -434,7 +434,7 @@ impl Platform for Linux {
             }
             self.set_power_profile(dest, path, "power-saver")
         } else {
-            // Only put it back if it's still the profile Ajar chose (the person may have changed it since).
+            // Only put it back if it's still the profile Nocturnal chose (the person may have changed it since).
             super::put_back(
                 &mut restore.power_profile,
                 current == "power-saver",
@@ -525,14 +525,14 @@ impl Platform for Linux {
 
     fn verify_hold(&mut self, _restore: &mut Restore) -> Result<(), String> {
         if self.inhibitor.is_none() {
-            return Err("Ajar lost its keep-awake lock".into());
+            return Err("Nocturnal lost its keep-awake lock".into());
         }
         Ok(())
     }
 
     fn watchdog_installed(&mut self) -> Option<bool> {
         let out = std::process::Command::new("systemctl")
-            .args(["--user", "is-enabled", "ajar-watchdog.timer"])
+            .args(["--user", "is-enabled", "nocturnal-watchdog.timer"])
             .output()
             .ok()?;
         Some(String::from_utf8_lossy(&out.stdout).trim() == "enabled")
@@ -555,7 +555,7 @@ impl Platform for Linux {
 
     fn sleep_after_hold(&mut self) -> bool {
         if self.kde() {
-            return true; // KDE's own lid action is "Do nothing" on Ajar's advice; Ajar does the sleeping
+            return true; // KDE's own lid action is "Do nothing" on Nocturnal's advice; Nocturnal does the sleeping
         }
         // The person set logind to ignore the lid: they want it running with the lid shut.
         let on_ac = self.on_ac();
@@ -577,7 +577,7 @@ impl Platform for Linux {
             let _ = fs::write(&icon, crate::icon::png(128, &crate::icon::app(128)));
         }
         let _ = notify_rust::Notification::new()
-            .appname("Ajar")
+            .appname("Nocturnal")
             .summary(title)
             .body(body)
             .icon(&icon.to_string_lossy())
@@ -586,7 +586,7 @@ impl Platform for Linux {
 
     fn set_open_at_login(&mut self, on: bool) -> Result<(), String> {
         let dir = crate::state::home().join(".config/autostart");
-        let file = dir.join("ajar.desktop");
+        let file = dir.join("nocturnal.desktop");
         if !on {
             crate::state::remove(&file);
             return Ok(());
@@ -602,27 +602,27 @@ impl Platform for Linux {
         let dir = crate::state::home().join(".config/systemd/user");
         fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let service = format!(
-            "[Unit]\nDescription=Ajar watchdog: puts apps and settings back if Ajar stops unexpectedly\n\n[Service]\nType=oneshot\nExecStart={} watchdog\n",
+            "[Unit]\nDescription=Nocturnal watchdog: puts apps and settings back if Nocturnal stops unexpectedly\n\n[Service]\nType=oneshot\nExecStart={} watchdog\n",
             systemd_quote(&exe.to_string_lossy())
         );
-        let timer = "[Unit]\nDescription=Run the Ajar watchdog every minute\n\n[Timer]\nOnBootSec=1min\nOnUnitActiveSec=1min\nAccuracySec=10s\n\n[Install]\nWantedBy=timers.target\n";
-        fs::write(dir.join("ajar-watchdog.service"), service).map_err(|e| e.to_string())?;
-        fs::write(dir.join("ajar-watchdog.timer"), timer).map_err(|e| e.to_string())?;
+        let timer = "[Unit]\nDescription=Run the Nocturnal watchdog every minute\n\n[Timer]\nOnBootSec=1min\nOnUnitActiveSec=1min\nAccuracySec=10s\n\n[Install]\nWantedBy=timers.target\n";
+        fs::write(dir.join("nocturnal-watchdog.service"), service).map_err(|e| e.to_string())?;
+        fs::write(dir.join("nocturnal-watchdog.timer"), timer).map_err(|e| e.to_string())?;
         run("systemctl", &["--user", "daemon-reload"])?;
         run(
             "systemctl",
-            &["--user", "enable", "--now", "ajar-watchdog.timer"],
+            &["--user", "enable", "--now", "nocturnal-watchdog.timer"],
         )
     }
 
     fn uninstall(&mut self) -> Result<(), String> {
         let _ = run(
             "systemctl",
-            &["--user", "disable", "--now", "ajar-watchdog.timer"],
+            &["--user", "disable", "--now", "nocturnal-watchdog.timer"],
         );
         let dir = crate::state::home().join(".config/systemd/user");
-        crate::state::remove(&dir.join("ajar-watchdog.service"));
-        crate::state::remove(&dir.join("ajar-watchdog.timer"));
+        crate::state::remove(&dir.join("nocturnal-watchdog.service"));
+        crate::state::remove(&dir.join("nocturnal-watchdog.timer"));
         let _ = run("systemctl", &["--user", "daemon-reload"]);
         self.set_open_at_login(false)
     }
@@ -630,7 +630,7 @@ impl Platform for Linux {
 
 /// Sends a signal only if `pid` is still the process that started at `start`. With a pidfd (Linux 5.3+) the
 /// check and the signal refer to the same process even if the pid is reused in between.
-pub const POWER_HELPER: &str = "/usr/local/libexec/ajar-power";
+pub const POWER_HELPER: &str = "/usr/local/libexec/nocturnal-power";
 
 fn power_helper(action: &str) -> bool {
     power_helper_args(&[action])
@@ -691,7 +691,7 @@ fn run(cmd: &str, args: &[&str]) -> Result<(), String> {
 /// The tray app's executable (the watchdog and autostart both run it).
 pub fn app_exe() -> Result<PathBuf, String> {
     let me = std::env::current_exe().map_err(|e| e.to_string())?;
-    let sibling = me.with_file_name("ajar-app");
+    let sibling = me.with_file_name("nocturnal-app");
     Ok(if sibling.exists() { sibling } else { me })
 }
 
@@ -717,7 +717,7 @@ pub fn desktop_entry(exe: &Path, autostart: bool) -> String {
             .replace('$', "\\$")
     );
     let mut s = format!(
-        "[Desktop Entry]\nType=Application\nName=Ajar\nComment=Keep the laptop awake with the lid closed while AI agents work\nExec={quoted}\nIcon=ajar\nTerminal=false\nCategories=Utility;\nStartupNotify=false\n"
+        "[Desktop Entry]\nType=Application\nName=Nocturnal\nComment=Keep the laptop awake with the lid closed while AI agents work\nExec={quoted}\nIcon=nocturnal\nTerminal=false\nCategories=Utility;\nStartupNotify=false\n"
     );
     if autostart {
         s.push_str("X-GNOME-Autostart-enabled=true\n");
@@ -940,7 +940,7 @@ mod tests {
     use super::*;
 
     fn tree(name: &str, files: &[(&str, &str)]) -> PathBuf {
-        let root = std::env::temp_dir().join(format!("ajar-linux-{name}-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("nocturnal-linux-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         for (path, contents) in files {
             let p = root.join(path);
@@ -1120,11 +1120,11 @@ mod tests {
     #[test]
     fn exec_lines_are_quoted() {
         assert_eq!(
-            systemd_quote("/opt/My Apps/ajar-app"),
-            "\"/opt/My Apps/ajar-app\""
+            systemd_quote("/opt/My Apps/nocturnal-app"),
+            "\"/opt/My Apps/nocturnal-app\""
         );
         assert_eq!(systemd_quote("/a/100%/$x"), "\"/a/100%%/$$x\"");
-        assert!(desktop_entry(Path::new("/opt/a b/ajar-app"), true)
-            .contains("Exec=\"/opt/a b/ajar-app\""));
+        assert!(desktop_entry(Path::new("/opt/a b/nocturnal-app"), true)
+            .contains("Exec=\"/opt/a b/nocturnal-app\""));
     }
 }

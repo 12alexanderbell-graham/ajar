@@ -29,7 +29,7 @@ enum Brightness {
         return setFn(id, min(1, max(0, v))) == 0
     }
 
-    /// Present while Ajar has the screen dimmed for a closed lid; holds the brightness to put back.
+    /// Present while Nocturnal has the screen dimmed for a closed lid; holds the brightness to put back.
     static var restoreFile: URL { StateFiles.dir.appendingPathComponent("brightness-restore") }
 
     /// Dims to zero, remembering the old level on disk first so a crash can't leave the screen black.
@@ -81,7 +81,7 @@ final class LidSensor {
 /// Turns the built-in display fully off without sleeping it, through the same private WindowServer call display
 /// managers use (CGSConfigureDisplayEnabled, as in blackoutd, BetterDisplay and Lunar). A display that's
 /// configured off isn't "asleep", so macOS doesn't show the lock screen afterwards. A marker file is written
-/// before the change, so the next launch or the watchdog turns it back on if Ajar dies while it's off.
+/// before the change, so the next launch or the watchdog turns it back on if Nocturnal dies while it's off.
 enum DisplayPower {
     private typealias Configure = @convention(c) (CGDisplayConfigRef?, CGDirectDisplayID, Bool) -> CGError
     private static let configure: Configure? = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGSConfigureDisplayEnabled")
@@ -110,7 +110,7 @@ enum DisplayPower {
         guard CGBeginDisplayConfiguration(&config) == .success else { return .failure }
         let err = configure(config, id, enabled)
         guard err == .success else { CGCancelDisplayConfiguration(config); return err }
-        // For this login session only: logging out always brings the display back, whatever happens to Ajar.
+        // For this login session only: logging out always brings the display back, whatever happens to Nocturnal.
         return CGCompleteDisplayConfiguration(config, .forSession)
     }
 
@@ -124,7 +124,7 @@ enum DisplayPower {
         return false
     }
 
-    /// Back on if Ajar turned it off (marker present). Keeps the marker if macOS refused, so it's retried.
+    /// Back on if Nocturnal turned it off (marker present). Keeps the marker if macOS refused, so it's retried.
     @discardableResult
     static func restoreBuiltIn() -> Bool {
         guard StateFiles.exists(marker) else { return true }

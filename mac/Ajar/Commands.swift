@@ -10,10 +10,10 @@ enum PanelFormatTime {
     }
 }
 
-/// The single command surface behind the `ajar` CLI, the MCP server and the app's own controls.
+/// The single command surface behind the `nocturnal` CLI, the MCP server and the app's own controls.
 /// Requests arrive as distributed notifications; replies are written to a file the caller is waiting on.
 enum Wire {
-    static let requestName = Notification.Name("com.alexander.Ajar.request")
+    static let requestName = Notification.Name("com.alexander.Nocturnal.request")
     static var replyDir: URL {
         let u = StateFiles.dir.appendingPathComponent("replies")
         try? FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
@@ -123,7 +123,7 @@ final class CommandCenter {
             DispatchQueue.main.async { NSApp.terminate(nil) }
 
         case "hold":
-            guard engine.setupReady else { return fail("Ajar needs its one-time setup first. Open Ajar from the menu bar and click Continue.") }
+            guard engine.setupReady else { return fail("Nocturnal needs its one-time setup first. Open Nocturnal from the menu bar and click Continue.") }
             // A hold is an explicit request, so it works in any mode without changing the person's mode.
             let pid = num("pid", max: Double(Int32.max)).map { Int32($0) }.flatMap { p -> Int32? in
                 p > 1 && (kill(p, 0) == 0 || errno == EPERM) ? p : nil
@@ -135,14 +135,14 @@ final class CommandCenter {
             ok(["hold": holdDict(h)])
 
         case "release":
-            // One hold by id, or all of them only when asked in so many words (`ajar release` with no id).
+            // One hold by id, or all of them only when asked in so many words (`nocturnal release` with no id).
             if let id = str("id") { return ok(["released": engine.releaseHold(id)]) }
-            guard a["all"] as? Bool == true else { return fail("id: the hold to end (see ajar status), or all: true") }
+            guard a["all"] as? Bool == true else { return fail("id: the hold to end (see nocturnal status), or all: true") }
             ok(["released": engine.releaseHold(nil)])
 
         case "wake":
             // From the phone while the Mac slept (picked up at the next check-in), or any time: stay awake a while.
-            guard engine.setupReady else { return fail("Ajar needs its one-time setup first. Open Ajar from the menu bar and click Continue.") }
+            guard engine.setupReady else { return fail("Nocturnal needs its one-time setup first. Open Nocturnal from the menu bar and click Continue.") }
             // One that waited at the relay and arrives with the lid open is stale: someone opened the Mac in the
             // meantime, and a surprise hour awake after they close it again would be wrong.
             if !engine.lidClosed, let age = (a["_age"] as? NSNumber)?.doubleValue, age > 300 { return ok(["skipped": "already awake"]) }
@@ -208,7 +208,7 @@ final class CommandCenter {
         case "set":
             guard let key = str("key") else { return fail("needs key") }
             guard let spec = SettingsSchema.spec(key) else {
-                return fail("unknown setting \(key). Keys: \(SettingsSchema.all.map(\.key).joined(separator: ", ")) (ajar settings explains each)")
+                return fail("unknown setting \(key). Keys: \(SettingsSchema.all.map(\.key).joined(separator: ", ")) (nocturnal settings explains each)")
             }
             guard let v = a["value"] else { return fail("\(spec.key) needs a value") }
             var bad: String?
@@ -223,7 +223,7 @@ final class CommandCenter {
             let detailed = bool("detailed") ?? false
             if let problem = engine.startPowerTest(includeScreen: bool("screen") ?? false, detailed: detailed) { return fail(problem) }
             ok(["started": true, "about_seconds": detailed ? 720 : 210,
-                "next": "Call power again (ajar power) for results once power_test shows done."])
+                "next": "Call power again (nocturnal power) for results once power_test shows done."])
 
         case "schema":
             var d = SettingsSchema.describe(engine.config)
@@ -242,7 +242,7 @@ final class CommandCenter {
             ok()
 
         case "snapshot":
-            // Only ever writes a .png inside Ajar's own folder: any local process can send this command, so it must
+            // Only ever writes a .png inside Nocturnal's own folder: any local process can send this command, so it must
             // never be able to overwrite the person's files. A given path keeps just its file name.
             let name = str("path").map { ($0 as NSString).lastPathComponent }.flatMap { $0.isEmpty ? nil : $0 } ?? "snapshot.png"
             guard name.lowercased().hasSuffix(".png"), !name.hasPrefix(".") else { return fail("snapshot name must end in .png") }
@@ -258,9 +258,9 @@ final class CommandCenter {
             }
 
         case "override_floor":
-            // Running below the person's battery limit is their call, made in Ajar's own UI. Commands can only
+            // Running below the person's battery limit is their call, made in Nocturnal's own UI. Commands can only
             // turn the override back off.
-            if bool("on") ?? true { return fail("Going below the battery limit can only be allowed in Ajar itself") }
+            if bool("on") ?? true { return fail("Going below the battery limit can only be allowed in Nocturnal itself") }
             engine.overrideFloor(false)
             ok(["below_floor_allowed": engine.floorOverride])
 
@@ -281,7 +281,7 @@ final class CommandCenter {
         case "island":
             // Any local program can send this, so keep it to one short line each.
             let line = { (s: String?, n: Int) in s.map { String($0.replacingOccurrences(of: "\n", with: " ").prefix(n)) } }
-            ui.island.show(title: line(str("title"), 40) ?? "Ajar", subtitle: line(str("subtitle"), 80) ?? engine.statusLine, glyph: engine.holding)
+            ui.island.show(title: line(str("title"), 40) ?? "Nocturnal", subtitle: line(str("subtitle"), 80) ?? engine.statusLine, glyph: engine.holding)
             ok()
 
         default:
@@ -347,7 +347,7 @@ final class CommandCenter {
                 "name": a.name,
                 "bundle_id": a.bundleID ?? "",
                 "watts": (a.watts * 100).rounded() / 100,
-                "while_closed": engine.isProtected(a) ? "kept (Ajar is keeping it awake)" : engine.rule(for: a.bundleID).rawValue,
+                "while_closed": engine.isProtected(a) ? "kept (Nocturnal is keeping it awake)" : engine.rule(for: a.bundleID).rawValue,
             ]
         }
     }

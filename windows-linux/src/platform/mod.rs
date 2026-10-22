@@ -41,15 +41,15 @@ pub enum Thermal {
 
 pub trait Platform {
     fn name(&self) -> &'static str;
-    /// Whether Ajar can keep this machine awake (Err explains why not, in words for the person).
+    /// Whether Nocturnal can keep this machine awake (Err explains why not, in words for the person).
     fn ready(&mut self) -> Result<(), String>;
     fn has_lid(&mut self) -> bool;
     fn lid_closed(&mut self) -> bool;
     fn battery(&mut self) -> Option<Battery>;
     fn thermal(&mut self) -> Thermal;
 
-    /// Start keeping the machine awake, including with the lid closed. Must be crash-safe: if Ajar dies, the
-    /// machine must be able to sleep again without Ajar's help (or with the watchdog's).
+    /// Start keeping the machine awake, including with the lid closed. Must be crash-safe: if Nocturnal dies, the
+    /// machine must be able to sleep again without Nocturnal's help (or with the watchdog's).
     fn begin_hold(&mut self, reason: &str, restore: &mut Restore) -> Result<(), String>;
     fn end_hold(&mut self, restore: &mut Restore) -> Result<(), String>;
     /// Put the machine to sleep now (the lid is already shut and the work is done).
@@ -83,7 +83,7 @@ pub trait Platform {
         Ok(())
     }
 
-    /// False when the desktop leaves lid-close sleep to Ajar (KDE with "Do nothing"): then Ajar sleeps the
+    /// False when the desktop leaves lid-close sleep to Nocturnal (KDE with "Do nothing"): then Nocturnal sleeps the
     /// machine itself when the lid closes and nothing is working.
     fn sleeps_on_close_itself(&mut self) -> bool {
         true
@@ -101,7 +101,7 @@ pub trait Platform {
     fn sleep_after_hold(&mut self) -> bool {
         true
     }
-    /// While holding: is what Ajar set still in place? (Err describes what changed.)
+    /// While holding: is what Nocturnal set still in place? (Err describes what changed.)
     fn verify_hold(&mut self, _restore: &mut Restore) -> Result<(), String> {
         Ok(())
     }
@@ -121,7 +121,7 @@ pub trait Platform {
 }
 
 /// Puts back one setting recorded in `restore.json`. The record is cleared only once that worked, or when there
-/// is nothing to do because the setting is no longer Ajar's (`still_ours` false); after a failure it's kept, to
+/// is nothing to do because the setting is no longer Nocturnal's (`still_ours` false); after a failure it's kept, to
 /// be retried (by the next tick, the next start or the watchdog).
 pub fn put_back<T>(record: &mut Option<T>, still_ours: bool, set: impl FnOnce(&T) -> bool) -> bool {
     let done = match record.as_ref() {
@@ -190,7 +190,7 @@ mod tests {
         assert_eq!((r, asked.as_deref()), (None, Some("balanced")));
         let mut changed = Some("balanced".to_string());
         assert!(put_back(&mut changed, false, |_| panic!(
-            "not Ajar's setting any more: left alone"
+            "not Nocturnal's setting any more: left alone"
         )));
         assert!(changed.is_none());
         assert!(

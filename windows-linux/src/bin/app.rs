@@ -1,13 +1,13 @@
-//! Ajar's tray app. One engine thread owns every decision and every OS change; the main thread only draws the
-//! tray menu and forwards clicks. Also `ajar-app watchdog`, run every minute by the OS scheduler.
+//! Nocturnal's tray app. One engine thread owns every decision and every OS change; the main thread only draws the
+//! tray menu and forwards clicks. Also `nocturnal-app watchdog`, run every minute by the OS scheduler.
 
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
-use ajar::engine::{run_watchdog, Engine};
-use ajar::icon::{self, TrayState};
-use ajar::menu::{self, Action, Node, UiState};
-use ajar::platform::{self, Platform};
-use ajar::{ipc, procs, remote, state};
+use nocturnal::engine::{run_watchdog, Engine};
+use nocturnal::icon::{self, TrayState};
+use nocturnal::menu::{self, Action, Node, UiState};
+use nocturnal::platform::{self, Platform};
+use nocturnal::{ipc, procs, remote, state};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -38,7 +38,7 @@ const MENU_OPEN_GRACE: Duration = Duration::from_secs(20);
 enum Cmd {
     Action(Action),
     /// A command from the phone panel, answered on the channel. Dropped unanswered if it's still queued at
-    /// the deadline: the relay thread has already told the phone Ajar is busy, so a retry mustn't run it twice.
+    /// the deadline: the relay thread has already told the phone Nocturnal is busy, so a retry mustn't run it twice.
     Remote(String, Value, Sender<Value>, Instant),
     RemoteStatus(Option<String>),
     Quit,
@@ -81,7 +81,7 @@ fn main() {
     {
         let (shared, proxy, tx2, root) = (shared.clone(), proxy.clone(), tx.clone(), root.clone());
         std::thread::Builder::new()
-            .name("ajar-engine".into())
+            .name("nocturnal-engine".into())
             .spawn(move || engine_thread(root, rx, tx2, shared, proxy))
             .expect("start engine thread");
     }
@@ -113,7 +113,7 @@ fn main() {
                 }]);
                 tray = TrayIconBuilder::new()
                     .with_icon(icon)
-                    .with_tooltip("Ajar")
+                    .with_tooltip("Nocturnal")
                     .with_menu(Box::new(built.menu.clone()))
                     .with_menu_on_left_click(true)
                     .build()
@@ -287,7 +287,7 @@ fn start_remote(root: &Path, tx: Sender<Cmd>) -> Option<RemoteHandle> {
     let tx_status = tx.clone();
     let cursor = root.join("remote-cursor");
     std::thread::Builder::new()
-        .name("ajar-remote".into())
+        .name("nocturnal-remote".into())
         .spawn(move || {
             remote::listen(
                 settings,
@@ -304,11 +304,11 @@ fn start_remote(root: &Path, tx: Sender<Cmd>) -> Option<RemoteHandle> {
                         ))
                         .is_err()
                     {
-                        return json!({ "ok": false, "error": "Ajar is quitting" });
+                        return json!({ "ok": false, "error": "Nocturnal is quitting" });
                     }
                     // A little longer than the deadline, so a command started just before it can still answer.
                     rrx.recv_timeout(Duration::from_secs(15))
-                        .unwrap_or_else(|_| json!({ "ok": false, "error": "Ajar is busy" }))
+                        .unwrap_or_else(|_| json!({ "ok": false, "error": "Nocturnal is busy" }))
                 },
                 |err| {
                     let _ = tx_status.send(Cmd::RemoteStatus(err));
@@ -327,14 +327,14 @@ fn engine_thread(
     proxy: EventLoopProxy<UserEvent>,
 ) {
     let mut e = Engine::new(platform::native(), root.clone(), procs::snapshot());
-    // First run: register the watchdog (it puts things back if Ajar ever dies while it has changed something).
+    // First run: register the watchdog (it puts things back if Nocturnal ever dies while it has changed something).
     if !root.join("installed").exists() && e.platform.install_watchdog().is_ok() {
         state::touch(&root.join("installed"));
     }
     let mut remote = start_remote(&root, tx.clone());
     let mut last_tick = Instant::now() - Duration::from_secs(10);
     let mut wakes = e.wakes();
-    let approve_paths = ajar::approve::Paths::new(&root);
+    let approve_paths = nocturnal::approve::Paths::new(&root);
     // First click on "Approve everything" arms a confirmation for 30 s; only the second click turns it on.
     let mut approve_armed: Option<Instant> = None;
     let mut last_ui: Option<UiState> = None;
@@ -343,13 +343,13 @@ fn engine_thread(
         match rx.recv_timeout(Duration::from_millis(250)) {
             Ok(Cmd::Quit) => quit(&mut e, remote.as_ref()),
             Ok(Cmd::Action(Action::ApproveToggle)) => {
-                if ajar::approve::is_on(&approve_paths) {
-                    let msg = match ajar::approve::turn_off(&approve_paths) {
+                if nocturnal::approve::is_on(&approve_paths) {
+                    let msg = match nocturnal::approve::turn_off(&approve_paths) {
                         Ok(()) => "Off. Your previous Claude Code and Codex settings are back."
                             .to_string(),
                         Err(err) => err,
                     };
-                    e.outbox.push(ajar::engine::Announcement {
+                    e.outbox.push(nocturnal::engine::Announcement {
                         title: "Approve everything".into(),
                         body: msg,
                     });
@@ -363,11 +363,11 @@ fn engine_thread(
                     .take()
                     .is_some_and(|t| t.elapsed() < Duration::from_secs(30))
                 {
-                    let msg = match ajar::approve::turn_on(&approve_paths) {
+                    let msg = match nocturnal::approve::turn_on(&approve_paths) {
                         Ok(()) => "On. New Claude Code and Codex sessions won't ask before acting; running ones keep their mode.".to_string(),
                         Err(err) => err,
                     };
-                    e.outbox.push(ajar::engine::Announcement {
+                    e.outbox.push(nocturnal::engine::Announcement {
                         title: "Approve everything".into(),
                         body: msg,
                     });
@@ -385,7 +385,7 @@ fn engine_thread(
                 } else {
                     json!({ "ok": false, "error": "not allowed" })
                 };
-                let _ = reply.send(remote::phone_reply(&cmd, &r, e.panel_json(ajar::now())));
+                let _ = reply.send(remote::phone_reply(&cmd, &r, e.panel_json(nocturnal::now())));
                 changed = true;
             }
             Ok(Cmd::RemoteStatus(s)) => {
@@ -408,7 +408,7 @@ fn engine_thread(
         }
         if last_tick.elapsed() >= Duration::from_secs(2) {
             last_tick = Instant::now();
-            e.tick(ajar::now(), Some(procs::snapshot()));
+            e.tick(nocturnal::now(), Some(procs::snapshot()));
             if e.wakes() != wakes {
                 wakes = e.wakes();
                 // Just woke: the relay connection is probably dead without knowing it. Start a fresh listener
@@ -426,9 +426,9 @@ fn engine_thread(
             changed = true;
         }
         if changed {
-            let mut ui = UiState::from_engine(&e, ajar::now());
+            let mut ui = UiState::from_engine(&e, nocturnal::now());
             ui.phone_on = remote.is_some();
-            ui.auto_approve = ajar::approve::is_on(&approve_paths);
+            ui.auto_approve = nocturnal::approve::is_on(&approve_paths);
             if approve_armed.is_some_and(|t| t.elapsed() >= Duration::from_secs(30)) {
                 approve_armed = None;
             }
@@ -463,9 +463,9 @@ fn apply<P: Platform>(
         Action::Mode(m) => e.set_mode(m),
         Action::StayFor(min) => e.stay_awake(Some(min)),
         Action::StayUntil(h) => {
-            let now = ajar::now();
+            let now = nocturnal::now();
             e.stay_awake(Some(
-                ajar::format::next_local_hour(now, h)
+                nocturnal::format::next_local_hour(now, h)
                     .saturating_sub(now)
                     .div_ceil(60),
             ));
@@ -509,7 +509,7 @@ fn apply<P: Platform>(
             }
             s.enabled = true;
             if !s.save(root) {
-                e.outbox.push(ajar::engine::Announcement {
+                e.outbox.push(nocturnal::engine::Announcement {
                     title: "Phone control".into(),
                     body: "Couldn't save the pairing key.".into(),
                 });
@@ -532,8 +532,8 @@ fn apply<P: Platform>(
         }
         Action::CheckIn(m) => e.update(|c| c.check_in_minutes = m),
         Action::WakeAt(h) => {
-            let now = ajar::now();
-            e.set_wake(Some(ajar::format::next_local_hour(now, h)), None);
+            let now = nocturnal::now();
+            e.set_wake(Some(nocturnal::format::next_local_hour(now, h)), None);
         }
         Action::WakeOff => e.set_wake(None, None),
         Action::EditConfig
@@ -544,11 +544,11 @@ fn apply<P: Platform>(
     }
 }
 
-/// Where the phone page is served from (ajar.tools/remote). To host it elsewhere, set `panelUrl` in remote.json.
+/// Where the phone page is served from (nocturnal.tools/remote). To host it elsewhere, set `panelUrl` in remote.json.
 fn default_panel_url(root: &Path) -> String {
     let _ = root;
-    option_env!("AJAR_PANEL_URL")
-        .unwrap_or("https://ajar.tools/remote/")
+    option_env!("NOCTURNAL_PANEL_URL")
+        .unwrap_or("https://nocturnal.tools/remote/")
         .to_string()
 }
 
@@ -557,7 +557,7 @@ fn show_pairing(root: &Path, s: &remote::Settings) {
     let html = match s.pairing_link() {
         Some(link) => remote::pairing_page(&link),
         None => format!(
-            "<!doctype html><meta charset=utf-8><title>Ajar phone control</title><body style=\"font:16px system-ui;max-width:520px;margin:40px auto;padding:0 16px\"><h1>One step left</h1><p>Ajar doesn't know the phone page's address. Add <code>\"panelUrl\": \"https://ajar.tools/remote/\"</code> (or your own copy of that page) to <code>{}</code> and choose Pair a Phone again.</p></body>",
+            "<!doctype html><meta charset=utf-8><title>Nocturnal phone control</title><body style=\"font:16px system-ui;max-width:520px;margin:40px auto;padding:0 16px\"><h1>One step left</h1><p>Nocturnal doesn't know the phone page's address. Add <code>\"panelUrl\": \"https://nocturnal.tools/remote/\"</code> (or your own copy of that page) to <code>{}</code> and choose Pair a Phone again.</p></body>",
             root.join("remote.json").display()
         ),
     };
@@ -576,12 +576,12 @@ fn deliver<P: Platform>(e: &mut Engine<P>) {
     for a in &items {
         e.platform.notify(&a.title, &a.body);
     }
-    if !topic.is_empty() && ajar::config::valid_topic(&topic) {
+    if !topic.is_empty() && nocturnal::config::valid_topic(&topic) {
         std::thread::spawn(move || {
             for a in items {
                 let url = format!(
                     "https://ntfy.sh/{topic}?title={}",
-                    ajar::format::url_encode(&a.title)
+                    nocturnal::format::url_encode(&a.title)
                 );
                 let _ = ureq::post(&url).send(a.body.as_str());
             }
@@ -617,7 +617,7 @@ fn open_settings_file(p: &Path) {
     }
 }
 
-/// One Ajar per user. The lock is held for the life of the process and released by the OS when it exits.
+/// One Nocturnal per user. The lock is held for the life of the process and released by the OS when it exits.
 #[cfg(unix)]
 fn single_instance(root: &Path) -> Option<std::fs::File> {
     use std::os::unix::io::AsRawFd;
@@ -635,7 +635,7 @@ fn single_instance(root: &Path) -> Option<std::fs::File> {
 fn single_instance(_root: &Path) -> Option<isize> {
     use windows_sys::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
     use windows_sys::Win32::System::Threading::CreateMutexW;
-    let name: Vec<u16> = "Local\\AjarTrayApp".encode_utf16().chain(Some(0)).collect();
+    let name: Vec<u16> = "Local\\NocturnalTrayApp".encode_utf16().chain(Some(0)).collect();
     let h = unsafe { CreateMutexW(std::ptr::null(), 1, name.as_ptr()) };
     if h.is_null() || unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
         return None;

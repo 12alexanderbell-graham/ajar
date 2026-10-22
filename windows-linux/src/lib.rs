@@ -1,4 +1,4 @@
-//! Ajar for Windows and Linux.
+//! Nocturnal for Windows and Linux.
 //!
 //! The same product as the macOS app: keep a laptop awake with the lid closed while AI agents (or anything
 //! the person picks) are working, save battery while it's shut, and let it sleep when the work is done.

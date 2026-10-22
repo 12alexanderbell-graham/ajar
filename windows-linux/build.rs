@@ -13,7 +13,7 @@ fn main() {
         return;
     }
     let out = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
-    let ico = out.join("ajar.ico");
+    let ico = out.join("nocturnal.ico");
     std::fs::write(&ico, icon::ico(&[16, 20, 24, 32, 40, 48, 64, 256])).unwrap();
     let version = env!("CARGO_PKG_VERSION");
     let v: Vec<&str> = version.split('.').collect();
@@ -33,12 +33,12 @@ BEGIN
   BEGIN
     BLOCK "040904b0"
     BEGIN
-      VALUE "CompanyName", "Ajar"
-      VALUE "FileDescription", "Ajar: keeps the laptop awake with the lid closed while AI agents work"
+      VALUE "CompanyName", "Nocturnal"
+      VALUE "FileDescription", "Nocturnal: keeps the laptop awake with the lid closed while AI agents work"
       VALUE "FileVersion", "{version}"
-      VALUE "ProductName", "Ajar"
+      VALUE "ProductName", "Nocturnal"
       VALUE "ProductVersion", "{version}"
-      VALUE "OriginalFilename", "ajar-app.exe"
+      VALUE "OriginalFilename", "nocturnal-app.exe"
     END
   END
   BLOCK "VarFileInfo"
@@ -49,9 +49,9 @@ END
 "#,
         ico = ico.display().to_string().replace('\\', "/")
     );
-    let rc_path = out.join("ajar.rc");
+    let rc_path = out.join("nocturnal.rc");
     std::fs::write(&rc_path, rc).unwrap();
-    let obj = out.join("ajar-res.o");
+    let obj = out.join("nocturnal-res.o");
     let windres = if target.contains("gnu") {
         "x86_64-w64-mingw32-windres"
     } else {

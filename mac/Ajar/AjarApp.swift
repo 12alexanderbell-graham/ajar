@@ -2,11 +2,11 @@ import AppKit
 import SwiftUI
 
 @main
-struct AjarApp: App {
+struct NocturnalApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     init() {
-        // `ajar …` on the command line and `ajar mcp` run here and exit before any UI exists.
+        // `nocturnal …` on the command line and `nocturnal mcp` run here and exit before any UI exists.
         if CLI.shouldRun() { exit(CLI.main()) }
     }
 
@@ -14,9 +14,9 @@ struct AjarApp: App {
         // Everything visible is AppKit-managed in StatusController; SwiftUI needs at least one scene.
         Settings { EmptyView() }
             .commands {
-                // ⌘, opens Ajar's Settings page, not the empty window SwiftUI would show.
+                // ⌘, opens Nocturnal's Settings page, not the empty window SwiftUI would show.
                 CommandGroup(replacing: .appSettings) {
-                    Button("Settings…") { AjarShared.ui?.showSettings() }.keyboardShortcut(",")
+                    Button("Settings…") { NocturnalShared.ui?.showSettings() }.keyboardShortcut(",")
                 }
             }
     }
@@ -30,7 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var notifier: Notifier?
     private var remote: RemoteControl?
     private let hotkey = Hotkey()
-    /// Held for the life of the process: one active Ajar per user, decided atomically by the OS.
+    /// Held for the life of the process: one active Nocturnal per user, decided atomically by the OS.
     private var lockFD: Int32 = -1
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -44,9 +44,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Previews never run the installed copy; an installed copy opened from a shell that Xcode started can inherit
         // Xcode's preview variables, and must still start normally.
         let isPreview = !installed && (env["XCODE_RUNNING_FOR_PREVIEWS"] == "1" || env["DYLD_INSERT_LIBRARIES"]?.contains("__preview") == true)
-        // A build that isn't the installed app (Xcode snippets, previews, a dev run) never takes control while Ajar is
-        // installed, even if the installed app is quitting or restarting right then. AJAR_ACTIVE=1 overrides it.
-        let devDefers = !installed && FileManager.default.fileExists(atPath: "/Applications/Ajar.app") && env["AJAR_ACTIVE"] != "1"
+        // A build that isn't the installed app (Xcode snippets, previews, a dev run) never takes control while Nocturnal is
+        // installed, even if the installed app is quitting or restarting right then. NOCTURNAL_ACTIVE=1 overrides it.
+        let devDefers = !installed && FileManager.default.fileExists(atPath: "/Applications/Nocturnal.app") && env["NOCTURNAL_ACTIVE"] != "1"
         // Atomic single-instance lock, so two copies launched at once can't both take control of power settings.
         lockFD = isPreview || devDefers ? -1 : open(StateFiles.dir.appendingPathComponent("app.lock").path, O_CREAT | O_RDWR, 0o600)
         let gotLock = lockFD >= 0 && flock(lockFD, LOCK_EX | LOCK_NB) == 0
@@ -90,13 +90,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         engine = Engine()
         let ui = StatusController(engine: engine)
         self.ui = ui
-        AjarShared.ui = ui
+        NocturnalShared.ui = ui
         commands = CommandCenter(engine: engine, ui: ui)
         notifier = Notifier(engine: engine)
-        AjarShared.engine = engine
+        NocturnalShared.engine = engine
         let commands = self.commands
         remote = RemoteControl(engine: engine) { cmd, args, reply in commands?.handle(cmd, args, reply: reply) }
-        AjarShared.remote = remote
+        NocturnalShared.remote = remote
         Hotkey.action = { [weak self] in self?.cycleMode() }
         applyAppearanceSettings()
         observeSettings()

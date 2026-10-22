@@ -1,11 +1,11 @@
 //! Windows 10 and 11.
 //!
 //! Keeping awake = power requests (SystemRequired + ExecutionRequired, and DisplayRequired on Modern Standby
-//! laptops, which sleep whenever the screen goes off). They show up in `powercfg /requests` with Ajar's reason
-//! and die with the process. Windows sleeps on lid close regardless of power requests, so while holding Ajar
+//! laptops, which sleep whenever the screen goes off). They show up in `powercfg /requests` with Nocturnal's reason
+//! and die with the process. Windows sleeps on lid close regardless of power requests, so while holding Nocturnal
 //! sets the plan's "When I close the lid" to "Do nothing" and puts the old value back afterwards; that change
-//! persists if Ajar is killed, so it is recorded in restore.json and the watchdog task restores it within a
-//! minute of Ajar disappearing.
+//! persists if Nocturnal is killed, so it is recorded in restore.json and the watchdog task restores it within a
+//! minute of Nocturnal disappearing.
 //!
 //! Lid state comes from GUID_LIDSWITCH_STATE_CHANGE notifications on a hidden window. There is no public
 //! temperature API without admin rights, so heat is read from the processors' clock limits instead (see
@@ -29,8 +29,8 @@ use windows_sys::Win32::System::Threading::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-const AUMID: &str = "Ajar.App";
-const TASK: &str = "Ajar Watchdog";
+const AUMID: &str = "Nocturnal.App";
+const TASK: &str = "Nocturnal Watchdog";
 
 /// -1 unknown, 0 closed, 1 open. Written by the hidden window's thread.
 static LID: AtomicI8 = AtomicI8::new(-1);
@@ -282,7 +282,7 @@ fn write_sleep_idle(scheme: &GUID, v: [u32; 4]) -> bool {
     }
 }
 
-/// Puts the sleep timeouts back if they're still Ajar's "never" (someone may have set them deliberately since).
+/// Puts the sleep timeouts back if they're still Nocturnal's "never" (someone may have set them deliberately since).
 fn put_back_sleep_idle(r: &mut Restore) -> bool {
     let Some((s, prev)) = r.sleep_idle.clone() else {
         return true;
@@ -375,7 +375,7 @@ pub fn thermal_from_limits(limits: &[(u32, u32)]) -> Thermal {
     }
 }
 
-/// Whether the "Power mode" is on "best power efficiency" (Ajar's low-power setting, or the person's own).
+/// Whether the "Power mode" is on "best power efficiency" (Nocturnal's low-power setting, or the person's own).
 fn efficiency_overlay_on() -> bool {
     let Some((get, _)) = overlay_fns() else {
         return false;
@@ -385,14 +385,14 @@ fn efficiency_overlay_on() -> bool {
 }
 
 /// Puts the lid setting back straight from the journal. Used when Windows is logging off or shutting down,
-/// which can end Ajar without its normal shutdown; the watchdog doesn't run while nobody is logged in.
+/// which can end Nocturnal without its normal shutdown; the watchdog doesn't run while nobody is logged in.
 /// A plan whose write fails stays in the journal for the watchdog or the next start.
 pub fn restore_lid_from_journal() {
     let path = crate::state::file("restore.json");
     let Some(mut r) = crate::state::load_json::<Restore>(&path) else {
         return;
     };
-    // Done when it's back, or no longer Ajar's "Do nothing" (someone changed it deliberately).
+    // Done when it's back, or no longer Nocturnal's "Do nothing" (someone changed it deliberately).
     let put_back = |s: &str, ac: u32, dc: u32| match parse_guid(s) {
         Some(g) => {
             !read_lid_action(&g).is_none_or(|cur| cur == (0, 0)) || write_lid_action(&g, ac, dc)
@@ -525,9 +525,9 @@ fn start_power_window() {
         return;
     }
     std::thread::Builder::new()
-        .name("ajar-power".into())
+        .name("nocturnal-power".into())
         .spawn(|| unsafe {
-            let class = wide("AjarPowerWindow");
+            let class = wide("NocturnalPowerWindow");
             let wc = WNDCLASSW {
                 lpfnWndProc: Some(wndproc),
                 lpszClassName: class.as_ptr(),
@@ -537,7 +537,7 @@ fn start_power_window() {
             let hwnd = CreateWindowExW(
                 0,
                 class.as_ptr(),
-                wide("Ajar").as_ptr(),
+                wide("Nocturnal").as_ptr(),
                 0,
                 0,
                 0,
@@ -567,7 +567,7 @@ fn start_power_window() {
 }
 
 pub struct Win {
-    /// The person's own lid setting is already "Do nothing": Ajar changes nothing and never sleeps it after.
+    /// The person's own lid setting is already "Do nothing": Nocturnal changes nothing and never sleeps it after.
     user_do_nothing: bool,
     request: HANDLE,
     /// Fallback when power requests aren't available: the older thread execution state (always called from
@@ -633,13 +633,13 @@ impl Win {
         };
         if !crate::state::save_json(&crate::state::file("restore.json"), restore) {
             undo(restore);
-            return Err("Ajar couldn't save its recovery record (is the disk full?), so it won't change what closing the lid does".into());
+            return Err("Nocturnal couldn't save its recovery record (is the disk full?), so it won't change what closing the lid does".into());
         }
         if !write_lid_action(scheme, 0, 0) {
             write_lid_action(scheme, current.0, current.1); // AC may have changed before DC failed
             undo(restore);
             crate::state::save_json(&crate::state::file("restore.json"), restore);
-            return Err("Windows didn't let Ajar change what closing the lid does (a work or school policy may block it)".into());
+            return Err("Windows didn't let Nocturnal change what closing the lid does (a work or school policy may block it)".into());
         }
         Ok(())
     }
@@ -697,7 +697,7 @@ fn reg_set(subkey: &str, name: &str, value: &str) -> bool {
 
 pub fn app_exe() -> Result<std::path::PathBuf, String> {
     let me = std::env::current_exe().map_err(|e| e.to_string())?;
-    let sibling = me.with_file_name("ajar-app.exe");
+    let sibling = me.with_file_name("nocturnal-app.exe");
     Ok(if sibling.exists() { sibling } else { me })
 }
 
@@ -715,7 +715,7 @@ pub fn task_xml(exe: &str) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-  <RegistrationInfo><Description>Puts apps and power settings back if Ajar stops unexpectedly.</Description></RegistrationInfo>
+  <RegistrationInfo><Description>Puts apps and power settings back if Nocturnal stops unexpectedly.</Description></RegistrationInfo>
   <Triggers>
     <TimeTrigger>
       <StartBoundary>2025-01-01T00:00:00</StartBoundary>
@@ -810,13 +810,13 @@ impl Platform for Win {
     /// Windows doesn't expose temperatures to normal apps. It does report each processor's clock limit
     /// (PROCESSOR_POWER_INFORMATION.MhzLimit): a limit well below the maximum on every processor, for several
     /// readings in a row, means the firmware is cooling the machine down. Power settings cap that limit too, so
-    /// nothing is read while the "best power efficiency" mode (Ajar's low-power setting) is on: Unknown, which
-    /// the heat guard never acts on, rather than mistaking Ajar's own setting for heat.
+    /// nothing is read while the "best power efficiency" mode (Nocturnal's low-power setting) is on: Unknown, which
+    /// the heat guard never acts on, rather than mistaking Nocturnal's own setting for heat.
     fn thermal(&mut self) -> Thermal {
         let t = thermal_from_limits(&processor_limits());
         if efficiency_overlay_on() {
             // That mode caps the clocks too, so only a cut deeper than it makes (critical) still counts as heat:
-            // the guard stays able to act in Ajar's own low-power mode instead of going blind.
+            // the guard stays able to act in Nocturnal's own low-power mode instead of going blind.
             return self.heat.feed(match t {
                 Thermal::Critical | Thermal::Unknown => t,
                 _ => Thermal::Normal,
@@ -828,7 +828,7 @@ impl Platform for Win {
     fn begin_hold(&mut self, reason: &str, restore: &mut Restore) -> Result<(), String> {
         unsafe {
             if self.request.is_null() && !self.exec_state {
-                self.reason = wide(&format!("Ajar: {reason}"));
+                self.reason = wide(&format!("Nocturnal: {reason}"));
                 let ctx = REASON_CONTEXT {
                     Version: 0, // POWER_REQUEST_CONTEXT_VERSION
                     Flags: POWER_REQUEST_CONTEXT_SIMPLE_STRING,
@@ -856,7 +856,7 @@ impl Platform for Win {
                             flags |= ES_DISPLAY_REQUIRED;
                         }
                         if SetThreadExecutionState(flags) == 0 {
-                            return Err("Windows refused Ajar's request to stay awake".into());
+                            return Err("Windows refused Nocturnal's request to stay awake".into());
                         }
                         self.exec_state = true;
                     }
@@ -919,7 +919,7 @@ impl Platform for Win {
                 .and_then(parse_guid)
                 .or_else(active_scheme)
                 .ok_or("Couldn't find the power plan")?;
-            // Only undo Ajar's own change: if the value is no longer "Do nothing", someone set it deliberately.
+            // Only undo Nocturnal's own change: if the value is no longer "Do nothing", someone set it deliberately.
             let still_ours = read_lid_action(&scheme).is_none_or(|cur| cur == (0, 0));
             if still_ours && !write_lid_action(&scheme, ac, dc) {
                 return Err("Couldn't put back what closing the lid does".into());
@@ -962,7 +962,7 @@ impl Platform for Win {
 
     fn set_low_power(&mut self, on: bool, restore: &mut Restore) -> bool {
         // Turbo off on battery while closed: bursts (builds, tests) are where the watts go once the screen is off.
-        // Only the battery (DC) value changes, journaled; put back only if it's still Ajar's 0.
+        // Only the battery (DC) value changes, journaled; put back only if it's still Nocturnal's 0.
         if on {
             if restore.boost_dc.is_none() {
                 if let Some(scheme) = active_scheme() {
@@ -1001,7 +1001,7 @@ impl Platform for Win {
                 }
                 set(OVERLAY_EFFICIENCY) == 0
             } else {
-                // Only if it's still Ajar's choice; the person may have moved the slider since. Kept for a retry
+                // Only if it's still Nocturnal's choice; the person may have moved the slider since. Kept for a retry
                 // if Windows refuses.
                 super::put_back(
                     &mut restore.power_overlay,
@@ -1110,7 +1110,7 @@ impl Platform for Win {
 
     fn verify_hold(&mut self, restore: &mut Restore) -> Result<(), String> {
         if self.request.is_null() && !self.exec_state {
-            return Err("Ajar lost its keep-awake request".into());
+            return Err("Nocturnal lost its keep-awake request".into());
         }
         if restore.lid_action.is_some() {
             let scheme = restore
@@ -1124,7 +1124,7 @@ impl Platform for Win {
                     // Something changed "When I close the lid" during the hold. Holding is the explicit intent,
                     // so set it back, and say so.
                     write_lid_action(&scheme, 0, 0);
-                    return Err("Something changed what closing the lid does while Ajar was keeping it awake; Ajar set it back to \"Do nothing\" for now".into());
+                    return Err("Something changed what closing the lid does while Nocturnal was keeping it awake; Nocturnal set it back to \"Do nothing\" for now".into());
                 }
             }
             // Another plan became active (OEM tools switch plans on plug/unplug): take it over too.
@@ -1193,13 +1193,13 @@ impl Platform for Win {
     }
 
     fn notify(&mut self, title: &str, body: &str) {
-        // Registering an AppUserModelID makes toasts say "Ajar" with its icon instead of "Windows PowerShell".
+        // Registering an AppUserModelID makes toasts say "Nocturnal" with its icon instead of "Windows PowerShell".
         let icon = crate::state::file("icon.png");
         if !icon.exists() {
             let _ = std::fs::write(&icon, crate::icon::png(128, &crate::icon::app(128)));
         }
         let key = format!("Software\\Classes\\AppUserModelId\\{AUMID}");
-        reg_set(&key, "DisplayName", "Ajar");
+        reg_set(&key, "DisplayName", "Nocturnal");
         reg_set(&key, "IconUri", &icon.to_string_lossy());
         let _ = notify_rust::Notification::new()
             .app_id(AUMID)
@@ -1212,14 +1212,14 @@ impl Platform for Win {
         let run = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
         if on {
             let exe = app_exe()?;
-            if reg_set(run, "Ajar", &format!("\"{}\"", exe.display())) {
+            if reg_set(run, "Nocturnal", &format!("\"{}\"", exe.display())) {
                 Ok(())
             } else {
-                Err("Couldn't add Ajar to startup apps".into())
+                Err("Couldn't add Nocturnal to startup apps".into())
             }
         } else {
             unsafe {
-                RegDeleteKeyValueW(HKEY_CURRENT_USER, wide(run).as_ptr(), wide("Ajar").as_ptr())
+                RegDeleteKeyValueW(HKEY_CURRENT_USER, wide(run).as_ptr(), wide("Nocturnal").as_ptr())
             };
             Ok(())
         }
@@ -1228,7 +1228,7 @@ impl Platform for Win {
     fn install_watchdog(&mut self) -> Result<(), String> {
         let exe = app_exe()?;
         let xml = task_xml(&exe.to_string_lossy());
-        let path = std::env::temp_dir().join(format!("ajar-task-{}.xml", std::process::id()));
+        let path = std::env::temp_dir().join(format!("nocturnal-task-{}.xml", std::process::id()));
         let mut bytes = vec![0xFF, 0xFE];
         for u in xml.encode_utf16() {
             bytes.extend(u.to_le_bytes());
@@ -1313,8 +1313,8 @@ mod tests {
 
     #[test]
     fn task_xml_escapes_the_path_and_runs_on_battery() {
-        let x = task_xml(r"C:\Users\A&B\Ajar\ajar-app.exe");
-        assert!(x.contains(r"C:\Users\A&amp;B\Ajar\ajar-app.exe"));
+        let x = task_xml(r"C:\Users\A&B\Nocturnal\nocturnal-app.exe");
+        assert!(x.contains(r"C:\Users\A&amp;B\Nocturnal\nocturnal-app.exe"));
         assert!(x.contains("<DisallowStartIfOnBatteries>false"));
         assert!(x.contains("<StopIfGoingOnBatteries>false"));
     }

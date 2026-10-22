@@ -7,7 +7,7 @@ use crate::platform::mock::Mock;
 use std::process::{Child, Command};
 
 fn root(name: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("ajar-engine-{name}-{}", std::process::id()));
+    let d = std::env::temp_dir().join(format!("nocturnal-engine-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
     d
 }
@@ -368,7 +368,7 @@ fn always_timer_survives_a_restart() {
 }
 
 fn root_keep(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!("ajar-engine-{name}-{}", std::process::id()))
+    std::env::temp_dir().join(format!("nocturnal-engine-{name}-{}", std::process::id()))
 }
 
 #[test]
@@ -584,7 +584,7 @@ fn desktop_without_lid_reads_stays_awake() {
 }
 
 #[test]
-fn ajar_sleeps_the_machine_when_the_desktop_leaves_it_to_ajar() {
+fn nocturnal_sleeps_the_machine_when_the_desktop_leaves_it_to_nocturnal() {
     let mut m = Mock::laptop();
     m.desktop_sleeps_on_close = Some(false);
     let mut e = engine("kde", m);
@@ -824,7 +824,7 @@ fn journal_is_written_before_the_app_is_touched() {
     let child = sleeper();
     let pid = child.id();
     let start = procs::start_time(pid).unwrap();
-    // Make the journal unwritable: Ajar must not pause anything it can't record.
+    // Make the journal unwritable: Nocturnal must not pause anything it can't record.
     std::fs::create_dir_all(e.path("touched.json")).unwrap();
     e.update(|c| c.preset = Preset::Longest);
     e.procs = vec![proc(pid, 1, "slack", start)];
@@ -881,7 +881,7 @@ fn sleep_is_only_recorded_once_it_happens() {
     }
     assert_eq!(
         e.platform.slept, 1,
-        "agent quiet past the window: Ajar asks to sleep"
+        "agent quiet past the window: Nocturnal asks to sleep"
     );
     let asked = e.receipt.as_ref().unwrap().sleep_requested_at.unwrap();
     assert!(

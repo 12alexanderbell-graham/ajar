@@ -1,5 +1,5 @@
-//! Everything an AI agent needs to understand and drive Ajar: every setting described once (shared by
-//! `ajar settings`, the MCP tools and `ajar set`), the setup prompt, and one-step connection to Claude Code and
+//! Everything an AI agent needs to understand and drive Nocturnal: every setting described once (shared by
+//! `nocturnal settings`, the MCP tools and `nocturnal set`), the setup prompt, and one-step connection to Claude Code and
 //! Codex. Connecting keeps everything else in the agent's config and saves a backup first.
 
 use crate::config::Config;
@@ -28,7 +28,7 @@ pub const SETTINGS: &[Spec] = &[
         note: None, get: |c| json!(c.low_power_while_closed) },
     Spec { key: "battery_floor", kind: "int", allowed: &["0-80"], category: "Safety",
         description: "Sleep when the battery reaches this percent (0 = never stop for battery).",
-        note: Some("Can only be raised from commands; lowering it is the person's call in the Ajar menu."), get: |c| json!(c.battery_floor) },
+        note: Some("Can only be raised from commands; lowering it is the person's call in the Nocturnal menu."), get: |c| json!(c.battery_floor) },
     Spec { key: "heat_guard", kind: "bool", allowed: &["on", "off"], category: "Safety",
         description: "Switch to the strictest rules when the laptop gets hot and sleep if it gets critical.",
         note: Some("Can only be turned on from commands."), get: |c| json!(c.heat_guard) },
@@ -52,12 +52,12 @@ pub const SETTINGS: &[Spec] = &[
 pub const LISTS: &[(&str, &str, &str)] = &[
     (
         "app_rules",
-        "ajar rule <app> leave|slow|pause|default  (MCP: set_app_rule)",
+        "nocturnal rule <app> leave|slow|pause|default  (MCP: set_app_rule)",
         "Per-app override of the preset while the lid is closed.",
     ),
     (
         "watched_apps",
-        "ajar watch <app> [--remove]  (MCP: watch_app)",
+        "nocturnal watch <app> [--remove]  (MCP: watch_app)",
         "Apps or tools that keep the laptop awake while busy.",
     ),
 ];
@@ -81,18 +81,18 @@ pub fn describe(c: &Config, config_path: &Path) -> Value {
         "settings": settings,
         "lists": LISTS.iter().map(|(n, how, what)| json!({ "name": n, "how": how, "what": what })).collect::<Vec<_>>(),
         "config_file": config_path.to_string_lossy(),
-        "how_to_change": "ajar set <key> <value>, MCP set_setting, or edit config.json (reloads instantly).",
+        "how_to_change": "nocturnal set <key> <value>, MCP set_setting, or edit config.json (reloads instantly).",
     })
 }
 
-pub const SETUP_PROMPT: &str = "Ajar is installed on this laptop. It keeps the machine awake with the lid closed while you (and other agents) work, and cuts power use while the lid is shut. You can control all of it through the `ajar` MCP tools (or the `ajar` command). Set it up for me:
+pub const SETUP_PROMPT: &str = "Nocturnal is installed on this laptop. It keeps the machine awake with the lid closed while you (and other agents) work, and cuts power use while the lid is shut. You can control all of it through the `nocturnal` MCP tools (or the `nocturnal` command). Set it up for me:
 
 1. Call settings and power to see every setting and what is using power right now.
 2. Ask me, in one short message: which apps must keep running at full speed with the lid shut (music, calls, a local model, Docker...), and whether the laptop should stay awake only while agents work or always.
 3. Apply the strongest savings that don't touch what I named: preset max_battery, low_power, and per-app rules with set_app_rule.
 4. From now on, call stay_awake before long work and release when it's done.
 
-Never turn off the heat guard or lower the battery limit; Ajar won't let you, and that's on purpose.";
+Never turn off the heat guard or lower the battery limit; Nocturnal won't let you, and that's on purpose.";
 
 fn home() -> PathBuf {
     std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
@@ -102,16 +102,16 @@ fn home() -> PathBuf {
 
 fn server() -> (String, Vec<String>) {
     let exe = std::env::current_exe().ok();
-    // The MCP server lives in the `ajar` command next to the tray app.
+    // The MCP server lives in the `nocturnal` command next to the tray app.
     let cli = exe
         .as_ref()
         .and_then(|p| p.parent())
-        .map(|d| d.join(if cfg!(windows) { "ajar.exe" } else { "ajar" }));
+        .map(|d| d.join(if cfg!(windows) { "nocturnal.exe" } else { "nocturnal" }));
     let path = cli
         .filter(|p| p.exists())
         .or(exe)
         .map(|p| p.display().to_string())
-        .unwrap_or_else(|| "ajar".into());
+        .unwrap_or_else(|| "nocturnal".into());
     (path, vec!["mcp".into()])
 }
 
@@ -131,7 +131,7 @@ pub fn connect_codex() -> Result<String, String> {
     connect_codex_at(&codex_config())
 }
 
-/// Adds `ajar` to Claude Code's user-scope MCP servers (every project), keeping the rest of the file.
+/// Adds `nocturnal` to Claude Code's user-scope MCP servers (every project), keeping the rest of the file.
 fn connect_claude_code_at(path: &Path) -> Result<String, String> {
     let path = path.to_path_buf();
     let mut root: Value = match std::fs::read(&path) {
@@ -146,13 +146,13 @@ fn connect_claude_code_at(path: &Path) -> Result<String, String> {
         ));
     }
     if path.exists() {
-        std::fs::copy(&path, path.with_extension("json.ajar-backup")).map_err(|e| e.to_string())?;
+        std::fs::copy(&path, path.with_extension("json.nocturnal-backup")).map_err(|e| e.to_string())?;
     }
     let (cmd, args) = server();
     if !root["mcpServers"].is_object() {
         root["mcpServers"] = json!({});
     }
-    root["mcpServers"]["ajar"] =
+    root["mcpServers"]["nocturnal"] =
         json!({ "type": "stdio", "command": cmd, "args": args, "env": {} });
     write_atomic(
         &path,
@@ -160,23 +160,23 @@ fn connect_claude_code_at(path: &Path) -> Result<String, String> {
             .unwrap_or_default()
             .as_bytes(),
     )?;
-    Ok("Added to Claude Code for all projects. New sessions can use Ajar.".into())
+    Ok("Added to Claude Code for all projects. New sessions can use Nocturnal.".into())
 }
 
-/// Appends an `[mcp_servers.ajar]` table to Codex's config.toml; an existing entry is left alone.
+/// Appends an `[mcp_servers.nocturnal]` table to Codex's config.toml; an existing entry is left alone.
 fn connect_codex_at(path: &Path) -> Result<String, String> {
     let existing = match std::fs::read_to_string(path) {
         Ok(t) => t,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(_) => return Err(format!("Couldn't read {}, so I left it alone", path.display())),
     };
-    if existing.contains("[mcp_servers.ajar]") {
-        return Ok("Codex already has Ajar.".into());
+    if existing.contains("[mcp_servers.nocturnal]") {
+        return Ok("Codex already has Nocturnal.".into());
     }
     let (cmd, args) = server();
     let q = |s: &str| format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""));
     let block = format!(
-        "\n[mcp_servers.ajar]\ncommand = {}\nargs = [{}]\n",
+        "\n[mcp_servers.nocturnal]\ncommand = {}\nargs = [{}]\n",
         q(&cmd),
         args.iter().map(|a| q(a)).collect::<Vec<_>>().join(", ")
     );
@@ -184,27 +184,27 @@ fn connect_codex_at(path: &Path) -> Result<String, String> {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
     if !existing.is_empty() {
-        std::fs::write(path.with_extension("toml.ajar-backup"), &existing)
+        std::fs::write(path.with_extension("toml.nocturnal-backup"), &existing)
             .map_err(|e| e.to_string())?;
     }
     write_atomic(path, format!("{existing}{block}").as_bytes())?;
-    Ok("Added to Codex. New sessions can use Ajar.".into())
+    Ok("Added to Codex. New sessions can use Nocturnal.".into())
 }
 
 fn write_atomic(path: &Path, data: &[u8]) -> Result<(), String> {
-    let tmp = path.with_extension("ajar-tmp");
+    let tmp = path.with_extension("nocturnal-tmp");
     std::fs::write(&tmp, data).map_err(|e| e.to_string())?;
     std::fs::rename(&tmp, path).map_err(|e| e.to_string())
 }
 
-/// Removes Ajar's MCP entry from Claude Code and Codex (uninstall), so they don't keep starting a program that's
+/// Removes Nocturnal's MCP entry from Claude Code and Codex (uninstall), so they don't keep starting a program that's
 /// about to be deleted. Everything else in their configs stays; a file that can't be read is left alone.
 pub fn disconnect_all() {
     let cc = claude_code_config();
     if let Some(mut root) = std::fs::read(&cc).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok()) {
         if let Some(servers) = root.get_mut("mcpServers").and_then(Value::as_object_mut) {
-            if servers.remove("ajar").is_some() {
-                let _ = std::fs::copy(&cc, cc.with_extension("json.ajar-backup"));
+            if servers.remove("nocturnal").is_some() {
+                let _ = std::fs::copy(&cc, cc.with_extension("json.nocturnal-backup"));
                 let _ = write_atomic(&cc, serde_json::to_string_pretty(&root).unwrap_or_default().as_bytes());
             }
         }
@@ -212,13 +212,13 @@ pub fn disconnect_all() {
     let cx = codex_config();
     if let Ok(text) = std::fs::read_to_string(&cx) {
         let lines: Vec<&str> = text.split('\n').collect();
-        if let Some(start) = lines.iter().position(|l| l.trim() == "[mcp_servers.ajar]") {
+        if let Some(start) = lines.iter().position(|l| l.trim() == "[mcp_servers.nocturnal]") {
             let end = lines[start + 1..]
                 .iter()
                 .position(|l| l.trim_start().starts_with('['))
                 .map_or(lines.len(), |i| start + 1 + i);
             let kept: Vec<&str> = lines[..start].iter().chain(&lines[end..]).copied().collect();
-            let _ = std::fs::write(cx.with_extension("toml.ajar-backup"), &text);
+            let _ = std::fs::write(cx.with_extension("toml.nocturnal-backup"), &text);
             let _ = write_atomic(&cx, kept.join("\n").as_bytes());
         }
     }
@@ -254,7 +254,7 @@ mod tests {
 
     #[test]
     fn connect_keeps_other_servers_and_backs_up() {
-        let dir = std::env::temp_dir().join(format!("ajar-ai-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("nocturnal-ai-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let cc = dir.join(".claude.json");
         let codex = dir.join(".codex/config.toml");
@@ -268,15 +268,15 @@ mod tests {
             serde_json::from_slice(&std::fs::read(dir.join(".claude.json")).unwrap()).unwrap();
         assert_eq!(v["mcpServers"]["other"]["command"], "x");
         assert_eq!(v["theme"], "light");
-        assert_eq!(v["mcpServers"]["ajar"]["args"], json!(["mcp"]));
-        assert!(dir.join(".claude.json.ajar-backup").exists());
+        assert_eq!(v["mcpServers"]["nocturnal"]["args"], json!(["mcp"]));
+        assert!(dir.join(".claude.json.nocturnal-backup").exists());
         std::fs::write(&cc, "not json").unwrap();
         assert!(connect_claude_code_at(&cc).is_err());
         assert_eq!(std::fs::read_to_string(&cc).unwrap(), "not json");
         connect_codex_at(&codex).unwrap();
         let t = std::fs::read_to_string(&codex).unwrap();
-        assert!(t.contains("[mcp_servers.ajar]") && t.contains("args = [\"mcp\"]"));
-        assert_eq!(connect_codex_at(&codex).unwrap(), "Codex already has Ajar.");
+        assert!(t.contains("[mcp_servers.nocturnal]") && t.contains("args = [\"mcp\"]"));
+        assert_eq!(connect_codex_at(&codex).unwrap(), "Codex already has Nocturnal.");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

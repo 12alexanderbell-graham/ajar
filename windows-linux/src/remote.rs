@@ -1,12 +1,12 @@
 //! Phone control from anywhere, with ntfy.sh as a relay that can't read anything.
 //!
-//! Pairing: Ajar makes a random 256-bit key and shows it as a QR code (a link to the phone panel with the key
+//! Pairing: Nocturnal makes a random 256-bit key and shows it as a QR code (a link to the phone panel with the key
 //! after `#`, which browsers never send to any server). Both sides derive two unguessable topic names from the
 //! key, one for commands and one for replies, and encrypt every message with AES-256-GCM (the topic name is
-//! bound in as associated data). Each command carries a timestamp and a random id; Ajar drops anything older
+//! bound in as associated data). Each command carries a timestamp and a random id; Nocturnal drops anything older
 //! than 5 minutes, from the future, or already seen, so a captured message can't be replayed.
 //!
-//! The relay sees only random-looking topic names and ciphertext. Ajar only publishes when the phone asks,
+//! The relay sees only random-looking topic names and ciphertext. Nocturnal only publishes when the phone asks,
 //! so a day of normal use is a handful of messages (ntfy.sh's free tier allows a few hundred per day).
 //!
 //! What the phone may do is a fixed list (`ALLOWED`); like agents and the settings file, it can't loosen the
@@ -130,9 +130,9 @@ pub fn topics(key: &[u8; 32]) -> (String, String) {
         let mut h = Sha256::new();
         h.update(label);
         h.update(key);
-        format!("ajar-{}", &hex(&h.finalize())[..24])
+        format!("nocturnal-{}", &hex(&h.finalize())[..24])
     };
-    (t(b"ajar/cmd/v1"), t(b"ajar/reply/v1"))
+    (t(b"nocturnal/cmd/v1"), t(b"nocturnal/reply/v1"))
 }
 
 pub fn seal(key: &[u8; 32], topic: &str, plaintext: &str) -> String {
@@ -562,7 +562,7 @@ pub fn pairing_page(link: &str) -> String {
     };
     format!(
         r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Ajar phone control</title>
+<title>Nocturnal phone control</title>
 <style>
 :root{{--bg:#f5f5f7;--card:#fff;--text:#1d1d1f;--sub:#6e6e73}}
 @media (prefers-color-scheme:dark){{:root{{--bg:#000;--card:#1c1c1e;--text:#f5f5f7;--sub:#98989d}}}}
@@ -571,11 +571,11 @@ main{{max-width:420px;margin:40px 16px;background:var(--card);border-radius:18px
 h1{{font-size:22px;margin:0 0 6px}} p{{color:var(--sub);margin:6px 0}} svg{{width:260px;height:260px;margin:18px auto;display:block;background:#fff;border-radius:12px}}
 code{{display:block;word-break:break-all;font-size:11px;color:var(--sub);margin-top:14px}}
 </style></head><body><main>
-<h1>Control Ajar from your phone</h1>
+<h1>Control Nocturnal from your phone</h1>
 <p>Scan with the phone's camera, then add the page to your home screen.</p>
 {qr}
 <p>Works from anywhere with internet. Messages are end-to-end encrypted; the key never leaves the link.</p>
-<p>Anyone with this code can control this laptop. Turn phone control off in Ajar's menu to cancel it.</p>
+<p>Anyone with this code can control this laptop. Turn phone control off in Nocturnal's menu to cancel it.</p>
 <code>{}</code>
 </main></body></html>"#,
         esc(link)
@@ -590,7 +590,7 @@ mod tests {
     fn seal_open_round_trip_and_topic_binding() {
         let key = parse_key(&new_key()).unwrap();
         let (c, r) = topics(&key);
-        assert!(c.starts_with("ajar-") && c.len() == 29 && c != r);
+        assert!(c.starts_with("nocturnal-") && c.len() == "nocturnal-".len() + 24 && c != r);
         let m = seal(&key, &c, "{\"cmd\":\"panel\"}");
         assert_eq!(open(&key, &c, &m).as_deref(), Some("{\"cmd\":\"panel\"}"));
         assert!(

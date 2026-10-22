@@ -1,7 +1,7 @@
 //! "Approve everything": sets Claude Code and Codex to run without asking (their own built-in modes) and puts the
 //! person's settings back when it's turned off. Same files and values as the Mac app:
 //! • Claude Code: `permissions.defaultMode = "bypassPermissions"` and `skipDangerousModePermissionPrompt = true`
-//!   in ~/.claude/settings.json (the person confirmed the same warning in Ajar's menu).
+//!   in ~/.claude/settings.json (the person confirmed the same warning in Nocturnal's menu).
 //! • Codex: top-level `approval_policy = "never"` and `sandbox_mode = "danger-full-access"` in config.toml.
 //!
 //! Only the tray menu can turn it on (never the CLI, MCP, the phone or the settings file), so an agent can't grant
@@ -68,7 +68,7 @@ fn write(path: &Path, text: &str) -> Result<(), String> {
     if let Some(d) = path.parent() {
         std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
     }
-    let tmp = path.with_extension("ajar-tmp");
+    let tmp = path.with_extension("nocturnal-tmp");
     std::fs::write(&tmp, text)
         .and_then(|_| std::fs::rename(&tmp, path))
         .map_err(|e| format!("Couldn't write {}: {e}", path.display()))
@@ -106,7 +106,7 @@ pub fn turn_on(p: &Paths) -> Result<(), String> {
         codex_sandbox: top_level_line(&codex, "sandbox_mode"),
         ..Default::default()
     };
-    // Journal before touching anything: if Ajar dies halfway, turning it off still puts things back.
+    // Journal before touching anything: if Nocturnal dies halfway, turning it off still puts things back.
     save_journal(p, &j)?;
     // A failure partway puts back whatever was changed, so it's never left half on.
     apply(p, claude, perms, &codex, &mut j).inspect_err(|_| {
@@ -137,12 +137,12 @@ fn apply(
     save_journal(p, j)
 }
 
-/// Puts back what was there, but only where the value is still Ajar's.
+/// Puts back what was there, but only where the value is still Nocturnal's.
 pub fn turn_off(p: &Paths) -> Result<(), String> {
     if !is_on(p) {
         return Ok(());
     }
-    // A damaged journal still means "on": undo Ajar's own values (they can only be Ajar's) without the
+    // A damaged journal still means "on": undo Nocturnal's own values (they can only be Nocturnal's) without the
     // previous ones, rather than leaving both tools running without asking.
     let j = std::fs::read_to_string(&p.journal)
         .ok()
@@ -255,7 +255,7 @@ mod tests {
     use super::*;
 
     fn paths(name: &str) -> Paths {
-        let d = std::env::temp_dir().join(format!("ajar-approve-{name}-{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("nocturnal-approve-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         Paths {

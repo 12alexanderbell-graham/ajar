@@ -1,12 +1,12 @@
 #!/bin/sh
-# Ajar's power helper, run as root through sudo with a fixed set of arguments (see /etc/sudoers.d/ajar-power).
+# Nocturnal's power helper, run as root through sudo with a fixed set of arguments (see /etc/sudoers.d/nocturnal-power).
 # apply: while the lid is closed, turn off turbo and switch on the kernel's power saving that powertop recommends
 #        (except for network devices, which the agent needs). The old values are saved first.
 # restore: put every saved value back. Also reset by a reboot.
 # wake N|off: set or clear the RTC wake alarm (fixed lengths only), for scheduled wakes and phone check-ins.
 set -u
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
-state=/run/ajar-power.state
+state=/run/nocturnal-power.state
 
 save() {   # path new-value: remember the current value, then write the new one
   [ -w "$1" ] || return 0
@@ -59,5 +59,5 @@ wake)
     *) exit 2 ;;
   esac
   ;;
-*) echo "usage: ajar-power apply|restore|wake 60|300|900|1800|3600|off" >&2; exit 2 ;;
+*) echo "usage: nocturnal-power apply|restore|wake 60|300|900|1800|3600|off" >&2; exit 2 ;;
 esac

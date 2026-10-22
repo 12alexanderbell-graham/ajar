@@ -1,4 +1,4 @@
-//! Settings, stored as `config.json` in Ajar's folder. Same key names as the macOS app, so a person (or their
+//! Settings, stored as `config.json` in Nocturnal's folder. Same key names as the macOS app, so a person (or their
 //! Claude) learns one format. Every key is optional when written by hand; a missing or wrong-typed key keeps its
 //! default instead of the whole file being rejected.
 
@@ -156,7 +156,7 @@ impl Default for Config {
     }
 }
 
-/// Executable name as Ajar compares it: file name only, lowercase, `.exe` removed.
+/// Executable name as Nocturnal compares it: file name only, lowercase, `.exe` removed.
 pub fn exe_key(name: &str) -> String {
     let base = name
         .rsplit(['/', '\\'])

@@ -1,5 +1,5 @@
-//! The Ajar mark, drawn in code so every size is crisp and there is no image file to ship or lose:
-//! one thin bar (the base) and a translucent fan opening 35° from its left end (the lid, ajar).
+//! The Nocturnal mark, drawn in code so every size is crisp and there is no image file to ship or lose:
+//! one thin bar (the base) and a translucent fan opening 35° from its left end (the lid, nocturnal).
 //!
 //! `tray(state, size)` gives the small status icon; `app(size)` the green app icon used for the Windows
 //! executable, the Linux .desktop entry and notifications (the same tile as the macOS icon).

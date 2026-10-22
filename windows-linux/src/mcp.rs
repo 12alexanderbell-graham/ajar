@@ -1,4 +1,4 @@
-//! MCP server (`ajar mcp`), so Claude Code, Codex, Gemini CLI or any MCP client can ask Ajar to stay awake,
+//! MCP server (`nocturnal mcp`), so Claude Code, Codex, Gemini CLI or any MCP client can ask Nocturnal to stay awake,
 //! check the battery, or change a rule. JSON-RPC 2.0 over stdin/stdout, one message per line.
 //!
 //! Holds made through MCP are tied to this server process: when the agent session ends (and with it this
@@ -19,7 +19,7 @@ fn tool(name: &str, description: &str, props: Value, required: &[&str]) -> Value
 
 pub fn tools() -> Value {
     json!([
-        tool("status", "What Ajar is doing: whether closing the lid keeps the machine working, battery %, hours left with the lid closed, which agents it sees and whether they're working, and the apps using the most CPU.", json!({}), &[]),
+        tool("status", "What Nocturnal is doing: whether closing the lid keeps the machine working, battery %, hours left with the lid closed, which agents it sees and whether they're working, and the apps using the most CPU.", json!({}), &[]),
         tool("stay_awake", "Keep the machine awake, including with the lid closed, until released, for a number of minutes, or until this session ends. Use before long unattended work.", json!({
             "reason": { "type": "string", "description": "Shown in the tray menu, e.g. 'Running the test suite'" },
             "minutes": { "type": "number", "description": "Optional limit (max 10080 = 7 days)" },
@@ -43,17 +43,17 @@ pub fn tools() -> Value {
             "remove": { "type": "boolean" },
         }), &["app"]),
         tool("energy", "Apps using the most CPU right now and what happens to each while the lid is closed.", json!({}), &[]),
-        tool("settings", "List every Ajar setting with its current value, allowed values, what it does and any safety rule. Read this before changing settings.", json!({}), &[]),
+        tool("settings", "List every Nocturnal setting with its current value, allowed values, what it does and any safety rule. Read this before changing settings.", json!({}), &[]),
         tool("set_setting", "Change one setting (see settings for every key and what it does). Safety settings can only be made stricter from here: battery_floor can only go up and heat_guard can only be turned on.", json!({
             "key": { "type": "string", "enum": crate::ai::SETTINGS.iter().map(|s| s.key).collect::<Vec<_>>() },
             "value": { "description": "Number, on/off, or text" },
         }), &["key", "value"]),
         tool("power", "Power use right now and what is using it, with the setting that would cut each (busy apps, preset, power saver), plus what the laptop learned it draws open and closed.", json!({}), &[]),
-        tool("setup_prompt", "The recommended steps for setting Ajar up with the person. Use when asked to set up or tune Ajar.", json!({}), &[]),
+        tool("setup_prompt", "The recommended steps for setting Nocturnal up with the person. Use when asked to set up or tune Nocturnal.", json!({}), &[]),
     ])
 }
 
-/// Maps a tool call to an Ajar command and its arguments.
+/// Maps a tool call to an Nocturnal command and its arguments.
 pub fn to_command(name: &str, args: &Value, server_pid: u32) -> Option<(&'static str, Value)> {
     let mut a = args.clone();
     if !a.is_object() {
@@ -89,7 +89,7 @@ pub fn to_command(name: &str, args: &Value, server_pid: u32) -> Option<(&'static
     })
 }
 
-/// One JSON-RPC message in, at most one out. `run` executes an Ajar command.
+/// One JSON-RPC message in, at most one out. `run` executes an Nocturnal command.
 pub fn handle(
     msg: &Value,
     server_pid: u32,
@@ -108,8 +108,8 @@ pub fn handle(
             json!({
                 "protocolVersion": asked,
                 "capabilities": { "tools": {} },
-                "serverInfo": { "name": "ajar", "version": env!("CARGO_PKG_VERSION") },
-                "instructions": "Ajar keeps this laptop awake with the lid closed while you work. Call stay_awake before long unattended work and release when done; check status for battery and hours left. To tune it: settings lists every setting, power shows what's using power and which setting fixes it. If asked to set Ajar up, follow setup_prompt.",
+                "serverInfo": { "name": "nocturnal", "version": env!("CARGO_PKG_VERSION") },
+                "instructions": "Nocturnal keeps this laptop awake with the lid closed while you work. Call stay_awake before long unattended work and release when done; check status for battery and hours left. To tune it: settings lists every setting, power shows what's using power and which setting fixes it. If asked to set Nocturnal up, follow setup_prompt.",
             })
         }
         "ping" => json!({}),
@@ -248,7 +248,7 @@ mod tests {
 
     #[test]
     fn errors_are_reported_not_thrown() {
-        let mut run = |_: &str, _: Value| Err("Ajar isn't running".to_string());
+        let mut run = |_: &str, _: Value| Err("Nocturnal isn't running".to_string());
         let r = handle(
             &json!({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"status"}}),
             1,

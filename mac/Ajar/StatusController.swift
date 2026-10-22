@@ -2,8 +2,8 @@ import AppKit
 import Observation
 import SwiftUI
 
-/// Owns the menu bar icon, its popover, and Ajar's windows. Plain AppKit so every piece can be opened
-/// from code (the `ajar open` command, the Dock, a second launch) and checked by snapshot.
+/// Owns the menu bar icon, its popover, and Nocturnal's windows. Plain AppKit so every piece can be opened
+/// from code (the `nocturnal open` command, the Dock, a second launch) and checked by snapshot.
 @MainActor
 final class StatusController: NSObject, NSPopoverDelegate {
     let engine: Engine
@@ -47,7 +47,7 @@ final class StatusController: NSObject, NSPopoverDelegate {
         engine.panelOpen = popover.isShown || mainWindow?.isVisible == true
     }
 
-    /// Ajar's own Light/Dark choice also for the popover, which otherwise follows the menu bar.
+    /// Nocturnal's own Light/Dark choice also for the popover, which otherwise follows the menu bar.
     func applyAppearance(_ a: NSAppearance?) {
         popover.appearance = a
         mainWindow?.appearance = a
@@ -76,7 +76,7 @@ final class StatusController: NSObject, NSPopoverDelegate {
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
             button.imagePosition = .imageLeading
         }
-        item.autosaveName = "AjarStatusItem"
+        item.autosaveName = "NocturnalStatusItem"
         refreshIcon()
         observeUI()
         UIState.shared.pinHook = { [weak self] on in self?.popover.behavior = on ? .applicationDefined : .transient }
@@ -133,7 +133,7 @@ final class StatusController: NSObject, NSPopoverDelegate {
         updateLidTimer()
         let state: MenuGlyph.State = engine.holding ? .holding : (engine.mode == .off ? .off : .watching)
         button.image = MenuGlyph.image(state, lidAngle: engine.config.liveLidIcon ? shownAngle : nil)
-        button.toolTip = "Ajar · " + engine.statusLine
+        button.toolTip = "Nocturnal · " + engine.statusLine
         let text = engine.menuBarTitle
         button.title = text.isEmpty ? "" : " " + text
         button.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize - 1, weight: .medium)
@@ -171,7 +171,7 @@ final class StatusController: NSObject, NSPopoverDelegate {
 
     // MARK: Windows
 
-    /// Settings live inside Ajar's own panel (or its window when that's open), never in a separate window.
+    /// Settings live inside Nocturnal's own panel (or its window when that's open), never in a separate window.
     func showSettings() {
         if let w = mainWindow, w.isVisible {
             UIState.shared.windowSettings = true
@@ -192,7 +192,7 @@ final class StatusController: NSObject, NSPopoverDelegate {
             host.sizingOptions = []
             let w = NSWindow(contentViewController: host)
             w.setContentSize(NSSize(width: 460, height: 720))
-            w.title = "Ajar"
+            w.title = "Nocturnal"
             w.styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
             w.titlebarAppearsTransparent = true
             w.isMovableByWindowBackground = true
@@ -260,7 +260,7 @@ struct PanelActions {
     var quit: () -> Void
 }
 
-/// Which page Ajar's panel and window show. Not saved: both open on the main page.
+/// Which page Nocturnal's panel and window show. Not saved: both open on the main page.
 @Observable @MainActor
 final class UIState {
     static let shared = UIState()

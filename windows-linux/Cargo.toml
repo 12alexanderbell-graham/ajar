@@ -1,16 +1,16 @@
 [package]
-name = "ajar"
+name = "nocturnal"
 version = "1.0.0"
 edition = "2021"
 description = "Keeps a laptop awake with the lid closed while AI agents work, then lets it sleep. Windows and Linux edition."
 license = "MIT"
 
 [[bin]]
-name = "ajar"          # command line + MCP server (console)
+name = "nocturnal"          # command line + MCP server (console)
 path = "src/bin/cli.rs"
 
 [[bin]]
-name = "ajar-app"      # tray app (no console window on Windows)
+name = "nocturnal-app"      # tray app (no console window on Windows)
 path = "src/bin/app.rs"
 
 [dependencies]

@@ -79,7 +79,7 @@ private struct NowTab: View {
                 Text(w).font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
             }
             if !engine.unrestored.isEmpty {
-                notice("Couldn't put back \(engine.unrestored.joined(separator: ", ")) yet. Ajar keeps trying.", button: "Try Again") { engine.retryRestore() }
+                notice("Couldn't put back \(engine.unrestored.joined(separator: ", ")) yet. Nocturnal keeps trying.", button: "Try Again") { engine.retryRestore() }
             }
             if engine.blockedByFloor {
                 notice("Battery is at \(engine.battery?.percent ?? engine.batteryFloor)%, at your \(engine.batteryFloor)% limit, so it sleeps with the lid closed.", button: "Keep Awake Anyway") { engine.overrideFloor() }
@@ -146,7 +146,7 @@ private struct NowTab: View {
     }
 
     /// On an iPhone hotspot: macOS only reconnects to it by itself with the lid shut if "Ask to join hotspots" is
-    /// on Automatic. Ajar can't read or change that setting, so it asks once and remembers the answer.
+    /// on Automatic. Nocturnal can't read or change that setting, so it asks once and remembers the answer.
     private var hotspotNotice: some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "personalhotspot").font(.system(size: 13)).foregroundStyle(.orange).frame(width: 18, height: 18)
@@ -335,7 +335,7 @@ struct AppsView: View {
             Text(engine.sleepWhenDone ? "\(engine.quietMinutes) min" : "Never")
         }
         .menuStyle(.borderlessButton).fixedSize()
-        .help("How long an agent can sit idle before Ajar lets the Mac sleep")
+        .help("How long an agent can sit idle before Nocturnal lets the Mac sleep")
     }
 
     private var addMenu: some View {
@@ -386,7 +386,7 @@ struct AppsView: View {
             Text(engine.batteryFloor == 0 ? "Never" : "\(engine.batteryFloor)%")
         }
         .menuStyle(.borderlessButton).fixedSize()
-        .help("Below this, Ajar lets the Mac sleep when the lid is closed. With Never it keeps going to empty, and the Mac switches off at 0%.")
+        .help("Below this, Nocturnal lets the Mac sleep when the lid is closed. With Never it keeps going to empty, and the Mac switches off at 0%.")
     }
 
     // Per-app rules
@@ -450,8 +450,8 @@ private struct SetupView: View {
     let engine: Engine
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Set Up Ajar").font(.headline)
-            Text("Ajar needs your password once to control sleep.")
+            Text("Set Up Nocturnal").font(.headline)
+            Text("Nocturnal needs your password once to control sleep.")
                 .font(.subheadline).foregroundStyle(.secondary)
             if let err = engine.setupError { Text(err).font(.subheadline).foregroundStyle(.red) }
             Button { UIState.shared.whilePinned { engine.runSetup() } } label: { Text("Continue").frame(maxWidth: .infinity) }

@@ -7,7 +7,7 @@ import ServiceManagement
 struct Receipt: Equatable {
     var closedAt: Date
     var openedAt: Date?
-    /// When Ajar asked the Mac to sleep.
+    /// When Nocturnal asked the Mac to sleep.
     var sleepRequestedAt: Date?
     /// Set only when macOS actually went to sleep (its own will-sleep notification), never on request alone.
     var sleptAt: Date?
@@ -135,12 +135,12 @@ final class Engine {
     /// Whole-Mac watts from the battery controller (on battery or charger), averaged between readings.
     private(set) var systemWatts: Double?
     private var lastPowerSample: PowerSample?
-    /// What the Mac draws with the lid closed while Ajar holds it, learned from real readings.
+    /// What the Mac draws with the lid closed while Nocturnal holds it, learned from real readings.
     private(set) var closedDraw: Double? = UserDefaults.standard.object(forKey: "closedDraw") as? Double
     /// Simulators, previews and audio holders found on the last lid-closed pass.
     private(set) var background = BackgroundWork.Found()
     private var lidWatcher: LidWatcher?
-    /// Watts each saving is worth, from `ajar power test` (step → watts saved).
+    /// Watts each saving is worth, from `nocturnal power test` (step → watts saved).
     private(set) var powerEffects: [String: Double] = (UserDefaults.standard.dictionary(forKey: "powerEffects2") as? [String: Double]) ?? [:]
     private(set) var powerTestRunning = false
     private(set) var powerTestProgress: String?
@@ -155,7 +155,7 @@ final class Engine {
     private var timer: Timer?
     private var configWatcher: ConfigWatcher?
     private var ticks = 0
-    /// Apps Ajar slowed or paused, mirrored to touched.json before each change (see Journal).
+    /// Apps Nocturnal slowed or paused, mirrored to touched.json before each change (see Journal).
     private var touched: [Touched] = []
     /// Last time a counted agent was busy / was running at all. The quiet countdown runs from these, so it
     /// survives the agent's process exiting.
@@ -172,13 +172,13 @@ final class Engine {
     /// The person chose "Keep Awake Anyway" below the battery limit. Lasts until the charger is connected.
     private(set) var floorOverride = false
 
-    /// True when the battery limit is what's stopping Ajar, so offering "Stay Awake" makes sense.
+    /// True when the battery limit is what's stopping Nocturnal, so offering "Stay Awake" makes sense.
     /// Something (mode, a hold, an agent) wants the Mac awake, before the safety limits are applied.
     private(set) var wantsHold = false
 
     var blockedByFloor: Bool {
         guard wantsHold, config.batteryFloor > 0, let b = battery, b.discharging || !b.onAC, !floorOverride else { return false }
-        // Same 3% band `evaluate` uses, so the button stays while the limit is still what's stopping Ajar.
+        // Same 3% band `evaluate` uses, so the button stays while the limit is still what's stopping Nocturnal.
         return b.percent <= config.batteryFloor + (floorLatched ? 3 : 0)
     }
 
@@ -194,7 +194,7 @@ final class Engine {
         previewOnly = passive
         if !passive {
             if let broken = Config.setAsideIfBroken() {
-                pendingNotes.append(("Settings file couldn't be read", "Ajar is using its defaults. Your file was kept as \(broken)."))
+                pendingNotes.append(("Settings file couldn't be read", "Nocturnal is using its defaults. Your file was kept as \(broken)."))
                 try? config.encoded().write(to: Config.url, options: .atomic)
             }
             if !FileManager.default.fileExists(atPath: Config.url.path) { try? config.encoded().write(to: Config.url, options: .atomic) }
@@ -252,7 +252,7 @@ final class Engine {
     /// Notes waiting to be shown (from startup, before notifications are wired).
     var pendingNotes: [(String, String)] = []
 
-    /// Undoes any loosening of the heat guard or battery limit that didn't come from Ajar's own UI.
+    /// Undoes any loosening of the heat guard or battery limit that didn't come from Nocturnal's own UI.
     private func enforceSafety() {
         guard !previewOnly else { return }
         let mine = Safety(heatGuard: config.heatGuard, batteryFloor: config.batteryFloor, onlyOnPower: config.onlyOnPower)
@@ -268,7 +268,7 @@ final class Engine {
         }
         config = c
         try? c.encoded().write(to: Config.url, options: .atomic)
-        let note = ("Settings file change ignored", "Safety settings can only be loosened in Ajar itself: " + undone.joined(separator: " and ") + ".")
+        let note = ("Settings file change ignored", "Safety settings can only be loosened in Nocturnal itself: " + undone.joined(separator: " and ") + ".")
         if let n = onNote { n(note.0, note.1) } else { pendingNotes.append(note) }
     }
 
@@ -315,7 +315,7 @@ final class Engine {
         if ticks % 150 == 3 { checkWatchdog() }
         if pendingRelease, Shell.pmsetRoot(["-a", "disablesleep", "0"]) {
             pendingRelease = false
-            if warning == "Couldn't switch sleep back on yet; Ajar keeps trying." { warning = nil }
+            if warning == "Couldn't switch sleep back on yet; Nocturnal keeps trying." { warning = nil }
             StateFiles.remove(StateFiles.hold)
         }
         if ticks % 5 == 0 { reloadConfigIfEdited() }
@@ -333,8 +333,8 @@ final class Engine {
         if lidClosed && setupReady { addHold(reason: "Scheduled wake", minutes: Double(minutes), pid: nil) }
     }
 
-    /// Sleep is Ajar's switch: Ajar's sudoers entry lets any program of this user run `pmset -a disablesleep 1`,
-    /// so an agent could keep the Mac up past the battery limit or the heat guard. Whenever Ajar isn't holding
+    /// Sleep is Nocturnal's switch: Nocturnal's sudoers entry lets any program of this user run `pmset -a disablesleep 1`,
+    /// so an agent could keep the Mac up past the battery limit or the heat guard. Whenever Nocturnal isn't holding
     /// (or checking in, or still settling a hold it adopted), sleep goes back on.
     private func reassertSleep() {
         guard !previewOnly, setupReady, !holding, checkInUntil == nil, adoptedHoldUntil == nil, !pendingRelease,
@@ -396,7 +396,7 @@ final class Engine {
     private var idlePending: [String: (since: Date, quietAt: Date)] = [:]
     private var finishedNames: [String: String] = [:]
     /// Called with (agent name, minutes it was busy, whether its process is gone) once an agent that was busy
-    /// for at least a minute has been quiet for 2 minutes. Ajar can't tell success from a crash or a question
+    /// for at least a minute has been quiet for 2 minutes. Nocturnal can't tell success from a crash or a question
     /// waiting for an answer, so this is "went idle", never "finished".
     var onFinished: ((String, Double, Bool) -> Void)?
 
@@ -527,7 +527,7 @@ final class Engine {
         var reason: String?
         switch config.mode {
         case .off:
-            // Holds are explicit requests (a timer, `ajar run`, a Shortcut), so they work even when Ajar is off.
+            // Holds are explicit requests (a timer, `nocturnal run`, a Shortcut), so they work even when Nocturnal is off.
             if let h = holds.last { want = true; reason = h.reason }
         case .on: want = true; reason = onUntil.map { "Awake until \($0.formatted(date: .omitted, time: .shortened))" } ?? "Always awake"
         case .auto:
@@ -591,7 +591,7 @@ final class Engine {
 
     func isWorking(_ s: AgentSession) -> Bool { Date().timeIntervalSince(s.lastActive) < 20 }
 
-    /// One line for tooltips, the notch and `ajar status`.
+    /// One line for tooltips, the notch and `nocturnal status`.
     var statusLine: String {
         if !setupReady { return "Needs a one-time setup" }
         if let b = blockedReason { return "\(b), sleeps when closed" }
@@ -628,7 +628,7 @@ final class Engine {
 
     // MARK: Savings
 
-    /// Remember what each app draws when Ajar isn't touching it, so savings are measured against reality.
+    /// Remember what each app draws when Nocturnal isn't touching it, so savings are measured against reality.
     private func updateBaseline() {
         for a in apps where targeted[a.id] == nil && a.id.hasSuffix(".app") {
             baseline[a.id] = baseline[a.id].map { $0 * 0.7 + a.watts * 0.3 } ?? a.watts
@@ -639,8 +639,8 @@ final class Engine {
         let now = Date()
         var rate = 0.0
         if let measured = powerEffects["total"], !targeted.isEmpty || lowPowerSet {
-            // What the power test measured Ajar's savings to be worth on this Mac, while they're applied. (Comparing
-            // with the lid-open draw would credit Ajar with the screen being off, which happens anyway.)
+            // What the power test measured Nocturnal's savings to be worth on this Mac, while they're applied. (Comparing
+            // with the lid-open draw would credit Nocturnal with the screen being off, which happens anyway.)
             rate = measured
         } else {
             for (id, _) in targeted {
@@ -798,9 +798,9 @@ final class Engine {
     private func startHold(reason: String?) {
         if previewOnly { holding = true; return }
         if let last = holdFailedAt, Date().timeIntervalSince(last) < 30 { return }   // don't spawn sudo every 2 s
-        // Marker first: if Ajar dies right after pmset, the watchdog knows to switch sleep back on.
+        // Marker first: if Nocturnal dies right after pmset, the watchdog knows to switch sleep back on.
         StateFiles.touch(StateFiles.hold)
-        guard StateFiles.exists(StateFiles.hold) else { setupError = "Ajar couldn't write to its folder, so it won't switch sleep off"; return }
+        guard StateFiles.exists(StateFiles.hold) else { setupError = "Nocturnal couldn't write to its folder, so it won't switch sleep off"; return }
         guard Shell.pmsetRoot(["-a", "disablesleep", "1"]) else {
             if !pendingRelease { StateFiles.remove(StateFiles.hold) }
             holdFailedAt = Date()
@@ -812,7 +812,7 @@ final class Engine {
         if holdFailedAt != nil { holdFailedAt = nil; warning = nil }
         holding = true
         pendingRelease = false
-        // Keep App Nap from stretching Ajar's 2-second loop while the lid is shut and nothing is on screen;
+        // Keep App Nap from stretching Nocturnal's 2-second loop while the lid is shut and nothing is on screen;
         // a late heartbeat would make the watchdog undo a hold that's still wanted.
         activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep],
                                                          reason: "Supervising a lid-closed session")
@@ -830,7 +830,7 @@ final class Engine {
         } else {
             // Keep the hold file so the watchdog also retries, and retry every tick ourselves.
             pendingRelease = true
-            warning = "Couldn't switch sleep back on yet; Ajar keeps trying."
+            warning = "Couldn't switch sleep back on yet; Nocturnal keeps trying."
         }
         holding = false
         if let a = activity { ProcessInfo.processInfo.endActivity(a); activity = nil }
@@ -942,7 +942,7 @@ final class Engine {
             var id: IOPMAssertionID = 0
             if IOPMAssertionCreateWithName(kIOPMAssertionTypePreventUserIdleDisplaySleep as CFString,
                                            IOPMAssertionLevel(kIOPMAssertionLevelOn),
-                                           "Ajar: lid-closed session (no lock screen on reopen)" as CFString, &id) == kIOReturnSuccess {
+                                           "Nocturnal: lid-closed session (no lock screen on reopen)" as CFString, &id) == kIOReturnSuccess {
                 displayAssertion = id
             }
         } else if !on, displayAssertion != 0 {
@@ -966,7 +966,7 @@ final class Engine {
     private(set) var screenOff = false
 
     /// Screen fully off without a sleep. On some Macs macOS locks the session anyway when its only display
-    /// goes off (its "require password after the display is turned off" rule). Ajar can't prevent that, so if
+    /// goes off (its "require password after the display is turned off" rule). Nocturnal can't prevent that, so if
     /// the session locks within a few seconds it puts the screen back, switches to the dark screen for good
     /// and says why, so it's at most one surprise password prompt.
     private func switchScreenOff() {
@@ -980,7 +980,7 @@ final class Engine {
                 self.screenOff = false
                 Brightness.dimForClosedLid()
                 self.update { $0.screenOffNoLock = false }
-                self.warning = "macOS locks this Mac when its screen is switched fully off, so Ajar went back to the dark screen (no lock screen)."
+                self.warning = "macOS locks this Mac when its screen is switched fully off, so Nocturnal went back to the dark screen (no lock screen)."
             }
         }
     }
@@ -999,7 +999,7 @@ final class Engine {
 
     // MARK: Low Power Mode
 
-    /// Ajar has Low Power Mode switched on right now (and will put the person's setting back).
+    /// Nocturnal has Low Power Mode switched on right now (and will put the person's setting back).
     private var lowPowerSet: Bool { StateFiles.exists(StateFiles.modeRestore) }
 
     private func setLowPower() {
@@ -1038,14 +1038,14 @@ final class Engine {
             || watcher.protectedBundles.contains(app.id) || !app.id.hasSuffix(".app") || isSystemApp(app.id)
     }
 
-    /// macOS internals Ajar never touches. Safari and other apps shipped in the app cryptex are user apps.
+    /// macOS internals Nocturnal never touches. Safari and other apps shipped in the app cryptex are user apps.
     private func isSystemApp(_ path: String) -> Bool {
         if path.contains("/Cryptexes/App/System/Applications/") || path.hasPrefix("/System/Applications/") { return false }
         return path.hasPrefix("/System/") || path.hasPrefix("/Library/Apple/")
     }
 
     /// Pids that must never be slowed: agents and their trees/ancestors (from the watcher), plus anything a
-    /// hold is tied to (`ajar run`, `ajar hold --pid`), its children and the apps above it.
+    /// hold is tied to (`nocturnal run`, `nocturnal hold --pid`), its children and the apps above it.
     private func protectedPidSet(allPids: [pid_t]) -> Set<pid_t> {
         var protect = watcher.protectedPids
         let holdPids = holds.compactMap(\.pid)
@@ -1071,7 +1071,7 @@ final class Engine {
 
     /// Everything that should be slowed or paused right now with the lid shut, by pid: other apps under the
     /// preset and per-app rules, plus booted simulators, Xcode previews and background audio holders. Never
-    /// agents, their process trees and ancestors, anything a hold is tied to, Ajar, or macOS itself.
+    /// agents, their process trees and ancestors, anything a hold is tied to, Nocturnal, or macOS itself.
     /// `skip` leaves a category out ("apps", "simulators", "audio"), for measuring what each one is worth.
     private func closedTargets(preset p: Preset, skip: Set<String> = []) -> [pid_t: ClosedTarget] {
         let mine = getpid()
@@ -1136,7 +1136,7 @@ final class Engine {
 
     /// Brings the slowed/paused set in line with `closedTargets`: puts back what no longer belongs, then journals and
     /// applies the rest. Journal first, in one durable write for the whole batch, and act only once it's on disk,
-    /// so a crash at any point leaves a record of every process Ajar changed.
+    /// so a crash at any point leaves a record of every process Nocturnal changed.
     private func applyClosedTargets(preset: Preset? = nil, skip: Set<String> = []) {
         let desired = closedTargets(preset: preset ?? effectivePreset, skip: skip)
         var keep: [Touched] = [], undo: [Touched] = []
@@ -1169,7 +1169,7 @@ final class Engine {
         liveSavingW = 0
     }
 
-    /// Apps Ajar changed and couldn't put back yet (shown in the panel with a retry).
+    /// Apps Nocturnal changed and couldn't put back yet (shown in the panel with a retry).
     var unrestored: [String] {
         guard !(lidClosed && holding) else { return [] }
         return touched.map { ($0.path as NSString).lastPathComponent }
@@ -1195,7 +1195,7 @@ final class Engine {
         }
     }
 
-    /// Set when Ajar starts and finds sleep still switched off by a previous run (a crash, a forced quit, an update).
+    /// Set when Nocturnal starts and finds sleep still switched off by a previous run (a crash, a forced quit, an update).
     /// Releasing that hold first and taking it again a moment later would let a Mac with its lid shut fall asleep
     /// in between, so the new run keeps it. If nothing wants it, it's released after 30 s (agents need a few
     /// samples to show up as working), or at once when a limit says sleep (battery, heat, setup, Off).
@@ -1225,7 +1225,7 @@ final class Engine {
         if Watchdog.systemChanges().isEmpty { StateFiles.remove(StateFiles.alive) }
     }
 
-    /// Apps a person would recognise (no macOS internals, not Ajar itself), most power-hungry first.
+    /// Apps a person would recognise (no macOS internals, not Nocturnal itself), most power-hungry first.
     var userApps: [AppUsage] {
         apps.filter { a in
             a.id.hasSuffix(".app") && a.bundleID != Bundle.main.bundleIdentifier
@@ -1262,7 +1262,7 @@ final class Engine {
         let busy = userApps.filter { !isProtected($0) && $0.watts > 0.2 }.prefix(6)
         suspects.append(["id": "apps", "active": !busy.isEmpty, "title": busy.isEmpty ? "No other app is busy" : "Busy apps: " + busy.map { "\($0.name) \(String(format: "%.1f", $0.watts)) W (\(rule(for: $0.bundleID).rawValue))" }.joined(separator: ", "),
                          "setting": "preset", "value": ["longest": "max_battery", "balanced": "balanced", "speed": "full_speed"][config.preset.rawValue] ?? "", "suggested_value": "max_battery",
-                         "per_app": "ajar rule <app> pause", "measured_saving_watts": r1(powerEffects["apps"])])
+                         "per_app": "nocturnal rule <app> pause", "measured_saving_watts": r1(powerEffects["apps"])])
         if Displays.externalConnected {
             suspects.append(["id": "external_display", "active": true, "title": "An external display is connected",
                              "why": "With a display attached the Mac keeps its graphics and display pipeline running, often several watts. Unplug it if nobody is using it."])
@@ -1280,14 +1280,14 @@ final class Engine {
             "power_test": powerTestRunning ? (powerTestProgress ?? "running") : powerTestAborted.map { "aborted: \($0)" } ?? (powerEffects.isEmpty && powerUnclear.isEmpty ? "not run yet" : "done"),
             "measured_total_saving_watts": powerUnclear.contains("total") ? "unclear (the Mac's own load moved too much; run it again when agents are quiet)" as Any : r1(powerEffects["total"]) as Any,
             "measured_closed_watts": ["with_savings": r1(powerEffects["closed_with"]), "without_savings": r1(powerEffects["closed_without"])],
-            "how_to_measure": "ajar power test (lid closed, about 3-4 minutes): all savings off, on, off, on, each read over a full 30 s update of the battery controller. --detailed adds each saving on its own (about 1.5 min each). --screen includes the screen (that locks the Mac).",
+            "how_to_measure": "nocturnal power test (lid closed, about 3-4 minutes): all savings off, on, off, on, each read over a full 30 s update of the battery controller. --detailed adds each saving on its own (about 1.5 min each). --screen includes the screen (that locks the Mac).",
         ]
     }
 
     /// With the lid closed, switches each saving off and back on and measures the whole-Mac difference, so the
     /// numbers shown are real for this Mac. About 30 s per step; agents keep running throughout.
     func startPowerTest(includeScreen: Bool, detailed: Bool = false) -> String? {
-        guard lidClosed && holding else { return "Close the lid first (with Ajar keeping the Mac awake): the test measures lid-closed savings" }
+        guard lidClosed && holding else { return "Close the lid first (with Nocturnal keeping the Mac awake): the test measures lid-closed savings" }
         guard !powerTestRunning else { return "A power test is already running" }
         guard PowerSensor.isMeasured else { return "This Mac doesn't report whole-system power, so savings can't be measured" }
         powerTestRunning = true
@@ -1359,7 +1359,7 @@ final class Engine {
         poll()
     }
 
-    /// Everything off, on, off, on: what Ajar's savings are worth together, with the lid shut. The smaller of the
+    /// Everything off, on, off, on: what Nocturnal's savings are worth together, with the lid shut. The smaller of the
     /// two differences counts; if the pairs disagree a lot (the Mac's own load moved), it's reported as unclear.
     private func runTotalTest(_ steps: [String], then detailed: [String]) {
         // The locking screen-off is only measured on its own (--detailed --screen): it's never on in the normal state.
@@ -1397,7 +1397,7 @@ final class Engine {
         next(0)
     }
 
-    /// Optional breakdown (ajar power test --detailed): each saving off, then on, one clean period each, with the
+    /// Optional breakdown (nocturnal power test --detailed): each saving off, then on, one clean period each, with the
     /// others left as they were.
     private func runDetailStep(_ steps: ArraySlice<String>, was: [String: Bool], done: Int, of total: Int) {
         guard let step = steps.first else { return endPowerTest(aborted: nil, was: was) }
@@ -1433,7 +1433,7 @@ final class Engine {
 
     /// Why a reading came back empty.
     private var abortReason: String {
-        !lidClosed ? "the lid was opened" : (!holding ? "Ajar stopped keeping the Mac awake" : "the battery controller stopped reporting power")
+        !lidClosed ? "the lid was opened" : (!holding ? "Nocturnal stopped keeping the Mac awake" : "the battery controller stopped reporting power")
     }
 
     private func endPowerTest(aborted: String?, was: [String: Bool]) {
@@ -1498,10 +1498,10 @@ final class Engine {
         _ = releaseHold(nil)
         shutdown()
         // The sudoers entry and the watchdog are the only ways to switch sleep back on without a password, so
-        // they're removed only once nothing Ajar changed is left.
+        // they're removed only once nothing Nocturnal changed is left.
         let left = Watchdog.outstanding()
         guard left.isEmpty else {
-            throw SetupError(message: "Not removed yet: \(left.joined(separator: ", ")). Ajar keeps its helper so it can keep trying; try again in a minute.")
+            throw SetupError(message: "Not removed yet: \(left.joined(separator: ", ")). Nocturnal keeps its helper so it can keep trying; try again in a minute.")
         }
         AIConnect.disconnectAll()
         try Setup.uninstall()
@@ -1511,10 +1511,10 @@ final class Engine {
     func runSetup() {
         holdFailedAt = nil
         // Run from Downloads or a disk image, macOS gives the app a temporary path that disappears; the
-        // `ajar` command and the Claude config would point at nothing.
+        // `nocturnal` command and the Claude config would point at nothing.
         let path = Bundle.main.bundlePath
         guard path.hasPrefix("/Applications/") || path.hasPrefix(NSHomeDirectory() + "/Applications/"), !path.contains("AppTranslocation") else {
-            setupError = "Move Ajar to your Applications folder first, then open it from there."
+            setupError = "Move Nocturnal to your Applications folder first, then open it from there."
             return
         }
         do { try Setup.install(); setupError = nil } catch { setupError = error.localizedDescription }
@@ -1533,7 +1533,7 @@ final class Engine {
         stayAwake(for: max(1, Int((date.timeIntervalSinceNow / 60).rounded())))
     }
 
-    /// macOS is about to sleep: if Ajar asked for it, that confirms the sleep (receipts and savings only count
+    /// macOS is about to sleep: if Nocturnal asked for it, that confirms the sleep (receipts and savings only count
     /// confirmed sleeps).
     private func macWillSleep() {
         if receipt?.sleepRequestedAt != nil, receipt?.sleptAt == nil { receipt?.sleptAt = Date() }
@@ -1567,7 +1567,7 @@ final class Engine {
         }
         guard config.checkInMinutes > 0 || config.wakeAt != nil, setupReady else { return }
         // Keep it up for a few seconds (the same switch a hold uses; the marker lets the watchdog undo it if
-        // Ajar dies), reconnect to the relay and read what the phone sent while it slept.
+        // Nocturnal dies), reconnect to the relay and read what the phone sent while it slept.
         StateFiles.touch(StateFiles.hold)
         guard Shell.pmsetRoot(["-a", "disablesleep", "1"]) else { StateFiles.remove(StateFiles.hold); return }
         let until = Date().addingTimeInterval(WakePlan.checkInSeconds)

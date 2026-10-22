@@ -1,42 +1,42 @@
-# Ajar
+# Nocturnal
 
-> Ajar keeps a laptop awake with the lid closed while AI agents (or apps the person picks) are working, cuts power use while the lid is shut, and lets the laptop sleep when the work stops. macOS (14+), Windows (10/11) and Linux (systemd). Free.
+> Nocturnal keeps a laptop awake with the lid closed while AI agents (or apps the person picks) are working, cuts power use while the lid is shut, and lets the laptop sleep when the work stops. macOS (14+), Windows (10/11) and Linux (systemd). Free.
 
-Ajar is built to be driven by agents. Everything below works from an MCP client (Claude Code, Codex, the Claude app, Gemini CLI...) or the `ajar` command line.
+Nocturnal is built to be driven by agents. Everything below works from an MCP client (Claude Code, Codex, the Claude app, Gemini CLI...) or the `nocturnal` command line.
 
 ## Connect
 
-- macOS: Ajar › Settings › Connect Your AI (one click per agent), or `ajar connect` in Terminal.
-- Windows / Linux: `ajar connect` (adds Ajar to Claude Code's ~/.claude.json and Codex's ~/.codex/config.toml, keeping everything else and saving a backup).
-- Any MCP client: command `ajar` (or the app binary with `cli mcp` on macOS), argument `mcp`, transport stdio.
-- The setup prompt: `ajar prompt`, the MCP tool `ajar_setup_prompt` (macOS) / `setup_prompt` (Windows, Linux), or https://12alexanderbell-graham.github.io/ajar/#ai-h
+- macOS: Nocturnal › Settings › Connect Your AI (one click per agent), or `nocturnal connect` in Terminal.
+- Windows / Linux: `nocturnal connect` (adds Nocturnal to Claude Code's ~/.claude.json and Codex's ~/.codex/config.toml, keeping everything else and saving a backup).
+- Any MCP client: command `nocturnal` (or the app binary with `cli mcp` on macOS), argument `mcp`, transport stdio.
+- The setup prompt: `nocturnal prompt`, the MCP tool `nocturnal_setup_prompt` (macOS) / `setup_prompt` (Windows, Linux), or https://nocturnal.tools/#ai-h
 
 ## MCP tools
 
-macOS names start with `ajar_`; Windows and Linux use the same names without the prefix.
+macOS names start with `nocturnal_`; Windows and Linux use the same names without the prefix.
 
-- `ajar_status` / `status`: whether closing the lid keeps the machine working and why, battery, hours left lid-closed, agents seen, holds, busiest apps.
-- `ajar_keep_awake` / `stay_awake`: keep awake (also lid closed) until released, for N minutes, or until this session ends. Call before long unattended work.
-- `ajar_release` / `release`: end this session's holds (never anyone else's).
-- `ajar_settings` / `settings`: every setting with value, allowed values, description and safety note. Read before changing anything.
-- `ajar_set_setting` / `set_setting`: change one setting by key.
-- `ajar_power` / `power`: power use now and a list of suspects, each with the setting that fixes it (`setting`, `suggested_value`) and, on macOS, the measured saving.
-- `ajar_power_test` (macOS): with the lid closed, switches each saving off and on twice (8 s each) and measures the whole-Mac difference (~4 min); savings the Mac's own load made unclear are reported as unclear. `screen: true` also measures turning the screen off, which locks the Mac; ask first.
-- `ajar_set_mode` / `set_mode`: off, auto (When Busy), always (optionally for N minutes).
-- `ajar_set_preset` / `set_preset`: max_battery, balanced, full_speed.
-- `ajar_set_app_rule` / `set_app_rule`: one app → leave, slow, pause, default.
-- `ajar_watch_app` / `watch_app`: an app that keeps the machine awake while busy (ffmpeg, Blender, Xcode...).
-- `ajar_energy` / `energy`: busiest apps and what closing the lid does to each.
+- `nocturnal_status` / `status`: whether closing the lid keeps the machine working and why, battery, hours left lid-closed, agents seen, holds, busiest apps.
+- `nocturnal_keep_awake` / `stay_awake`: keep awake (also lid closed) until released, for N minutes, or until this session ends. Call before long unattended work.
+- `nocturnal_release` / `release`: end this session's holds (never anyone else's).
+- `nocturnal_settings` / `settings`: every setting with value, allowed values, description and safety note. Read before changing anything.
+- `nocturnal_set_setting` / `set_setting`: change one setting by key.
+- `nocturnal_power` / `power`: power use now and a list of suspects, each with the setting that fixes it (`setting`, `suggested_value`) and, on macOS, the measured saving.
+- `nocturnal_power_test` (macOS): with the lid closed, switches each saving off and on twice (8 s each) and measures the whole-Mac difference (~4 min); savings the Mac's own load made unclear are reported as unclear. `screen: true` also measures turning the screen off, which locks the Mac; ask first.
+- `nocturnal_set_mode` / `set_mode`: off, auto (When Busy), always (optionally for N minutes).
+- `nocturnal_set_preset` / `set_preset`: max_battery, balanced, full_speed.
+- `nocturnal_set_app_rule` / `set_app_rule`: one app → leave, slow, pause, default.
+- `nocturnal_watch_app` / `watch_app`: an app that keeps the machine awake while busy (ffmpeg, Blender, Xcode...).
+- `nocturnal_energy` / `energy`: busiest apps and what closing the lid does to each.
 
 ## Command line
 
 ```
-ajar status [--json]          ajar settings [--json]        ajar power [--json]
-ajar power test [--screen]    ajar set <key> <value>        ajar rule <app> leave|slow|pause|default
-ajar watch <app>              ajar on [--for 2h] | auto | off
-ajar hold / release           ajar run -- <command>         ajar connect [claude|codex]
-ajar prompt                   ajar doctor                   ajar rescue
-ajar wake-at 07:00 | off      ajar check-in 0|15|30|60
+nocturnal status [--json]          nocturnal settings [--json]        nocturnal power [--json]
+nocturnal power test [--screen]    nocturnal set <key> <value>        nocturnal rule <app> leave|slow|pause|default
+nocturnal watch <app>              nocturnal on [--for 2h] | auto | off
+nocturnal hold / release           nocturnal run -- <command>         nocturnal connect [claude|codex]
+nocturnal prompt                   nocturnal doctor                   nocturnal rescue
+nocturnal wake-at 07:00 | off      nocturnal check-in 0|15|30|60
 ```
 
 ## Settings (keys for set / set_setting)
@@ -44,7 +44,7 @@ ajar wake-at 07:00 | off      ajar check-in 0|15|30|60
 - `mode`: auto | on/always | off.
 - `preset`: max_battery (pause other apps; music, calls and services agents use keep going) | balanced (slow them) | full_speed.
 - `pause_simulators` (macOS): freeze booted iOS simulators and Xcode previews while closed; skipped during tests.
-- `screen_off` (macOS, experimental, off by default): switch the built-in screen fully off while closed instead of keeping it dark. If macOS refuses or locks the Mac anyway (some Macs do), Ajar switches back to the dark screen and turns this off. Ask the person first.
+- `screen_off` (macOS, experimental, off by default): switch the built-in screen fully off while closed instead of keeping it dark. If macOS refuses or locks the Mac anyway (some Macs do), Nocturnal switches back to the dark screen and turns this off. Ask the person first.
 - `shut_down_simulators` (macOS): shut simulators down on close instead of pausing them (frees everything; they don't reopen).
 - `pause_background_audio` (macOS): freeze background processes holding the speakers open (keeps audio hardware powered).
 - `low_power`: Low Power Mode / power saver while closed (Windows also turns turbo off on battery; Linux with the optional helper turns turbo off and switches on kernel power saving).
@@ -61,14 +61,14 @@ The settings file (config.json) can also be edited directly and reloads instantl
 ## Rules agents should follow
 
 - Hold before long work, release when done. Holds from MCP end when the agent session ends.
-- Never try to turn off the heat guard, lower the battery limit or allow going below it. Ajar refuses; those are the person's calls in Ajar's own settings.
-- "Approve everything" (agents run without asking) can only be turned on by the person in Ajar's own window or tray menu, never by a command.
-- Ask before `lock_on_close on` or `ajar_power_test` with `screen: true`.
+- Never try to turn off the heat guard, lower the battery limit or allow going below it. Nocturnal refuses; those are the person's calls in Nocturnal's own settings.
+- "Approve everything" (agents run without asking) can only be turned on by the person in Nocturnal's own window or tray menu, never by a command.
+- Ask before `lock_on_close on` or `nocturnal_power_test` with `screen: true`.
 - Agents, their process trees and anything a hold is tied to are never slowed or paused.
 
 ## Recipes
 
-- Set Ajar up: follow the setup prompt.
+- Set Nocturnal up: follow the setup prompt.
 - "Why is my battery draining with the lid shut?": call power, apply the fixes for active suspects, then (macOS, lid closed) power test.
-- Long build or training run: `ajar run -- <command>`, or stay_awake with the process id.
+- Long build or training run: `nocturnal run -- <command>`, or stay_awake with the process id.
 - Keep a browser task alive: watch_app "Google Chrome", remove it after.

@@ -126,7 +126,7 @@ enum BackgroundWork {
     }
 }
 
-/// Calls back the moment the lid opens or closes (IOPMrootDomain's general-interest messages), so Ajar doesn't
+/// Calls back the moment the lid opens or closes (IOPMrootDomain's general-interest messages), so Nocturnal doesn't
 /// have to poll. Any message from the root domain triggers a re-read of the lid flag, which keeps this working
 /// even if the private clamshell message number ever changes; the main loop still checks every few seconds.
 final class LidWatcher {

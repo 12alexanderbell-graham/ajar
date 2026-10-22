@@ -4,12 +4,12 @@ import IOKit.pwr_mgt
 
 /// Waking a sleeping Mac on a schedule, and briefly while asleep to pick up a "wake" sent from the phone.
 ///
-/// A Mac that's asleep is offline, so the phone can't reach it directly. Instead, just before macOS sleeps, Ajar
+/// A Mac that's asleep is offline, so the phone can't reach it directly. Instead, just before macOS sleeps, Nocturnal
 /// asks for a wake a while later (`pmset relative wake <seconds>`). When that wake comes with the lid still shut,
-/// Ajar keeps the Mac up for a few seconds, reads any phone commands the relay held while it slept, and lets it
+/// Nocturnal keeps the Mac up for a few seconds, reads any phone commands the relay held while it slept, and lets it
 /// sleep again if nothing wants it awake. A fully shut-down Mac can't be woken this way (nothing is running).
 ///
-/// pmset only accepts these fixed lengths through Ajar's sudoers entry (no wildcards), so a wake at a clock time
+/// pmset only accepts these fixed lengths through Nocturnal's sudoers entry (no wildcards), so a wake at a clock time
 /// is reached in steps: each step is the longest that doesn't overshoot, and every step is also a check-in.
 enum WakePlan {
     static let steps = [3600, 1800, 900, 300, 60]
@@ -69,12 +69,12 @@ final class PowerEvents {
 }
 
 /// Pausing Time Machine's automatic backups while the lid is closed. Only if they were on; the marker file is the
-/// journal (written before the change, so the watchdog switches backups back on if Ajar dies).
+/// journal (written before the change, so the watchdog switches backups back on if Nocturnal dies).
 enum TimeMachine {
     static var marker: URL { StateFiles.dir.appendingPathComponent("timemachine-restore") }
     static var paused: Bool { StateFiles.exists(marker) }
 
-    /// Automatic backups are on. Unreadable counts as off: then Ajar leaves Time Machine alone.
+    /// Automatic backups are on. Unreadable counts as off: then Nocturnal leaves Time Machine alone.
     static var autoBackupOn: Bool {
         Shell.run("/usr/bin/defaults", ["read", "/Library/Preferences/com.apple.TimeMachine", "AutoBackup"]).out
             .trimmingCharacters(in: .whitespacesAndNewlines) == "1"

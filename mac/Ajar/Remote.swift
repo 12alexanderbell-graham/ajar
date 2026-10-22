@@ -9,7 +9,7 @@ import SwiftUI
 ///  • two unguessable topic names derived from the key: commands and replies
 ///  • every message AES-256-GCM encrypted with the topic name as associated data (nonce ‖ ciphertext ‖ tag,
 ///    base64url), carrying a timestamp and a random id: stale, future-dated and repeated commands are dropped
-/// Ajar only publishes when the phone asks, so normal use is a handful of messages a day. The phone can't
+/// Nocturnal only publishes when the phone asks, so normal use is a handful of messages a day. The phone can't
 /// loosen the battery limit or the heat guard (the same rules as agents and the settings file).
 struct RemoteSettings: Codable, Equatable {
     var enabled = false
@@ -17,9 +17,9 @@ struct RemoteSettings: Codable, Equatable {
     var server = "https://ntfy.sh"
     var panelUrl = ""
 
-    /// Where the phone page lives once the Ajar site is online. Empty until then: pairing shows the code to
+    /// Where the phone page lives once the Nocturnal site is online. Empty until then: pairing shows the code to
     /// paste into the page instead.
-    static let defaultPanelURL = "https://ajar.tools/remote/"
+    static let defaultPanelURL = "https://nocturnal.tools/remote/"
 
     static var url: URL { StateFiles.dir.appendingPathComponent("remote.json") }
     static func load() -> RemoteSettings {
@@ -99,9 +99,9 @@ enum RemoteCrypto {
     static func topics(_ key: Data) -> (String, String) {
         func t(_ label: String) -> String {
             let h = SHA256.hash(data: Data(label.utf8) + key)
-            return "ajar-" + h.map { String(format: "%02x", $0) }.joined().prefix(24)
+            return "nocturnal-" + h.map { String(format: "%02x", $0) }.joined().prefix(24)
         }
-        return (t("ajar/cmd/v1"), t("ajar/reply/v1"))
+        return (t("nocturnal/cmd/v1"), t("nocturnal/reply/v1"))
     }
 
     static func seal(_ key: Data, topic: String, _ text: String) -> String? {
@@ -119,7 +119,7 @@ enum RemoteCrypto {
 }
 
 /// Rejects stale, future-dated, repeated and too-frequent commands. The ids seen are saved, so a command copied
-/// off the relay can't be replayed after Ajar restarts either.
+/// off the relay can't be replayed after Nocturnal restarts either.
 struct RemoteGuard {
     private(set) var seen: [String: Date] = [:]
     private var recent: [Date] = []
@@ -300,7 +300,7 @@ struct PhoneControlSection: View {
     @State private var showPairing = false
 
     var body: some View {
-        let remote = AjarShared.remote
+        let remote = NocturnalShared.remote
         if let remote, remote.enabled {
             Section {
                 LabeledContent("Status") { Text(remote.status ?? "Starting…").foregroundStyle(.secondary) }
@@ -327,7 +327,7 @@ struct PhoneControlSection: View {
             Section {
                 VStack(spacing: 10) {
                     Image(systemName: "iphone.gen3").font(.system(size: 34, weight: .light)).foregroundStyle(Color.accentColor)
-                    Text("Use Ajar from your phone").font(.headline)
+                    Text("Use Nocturnal from your phone").font(.headline)
                     Text("See it working, wake it or let it sleep, from anywhere.")
                         .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     // A fresh key every time: phones paired before phone control was switched off don't come back.

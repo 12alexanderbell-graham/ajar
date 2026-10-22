@@ -592,7 +592,7 @@ mod tests {
 
     #[test]
     fn appends_inside_old_folders_are_seen() {
-        let root = std::env::temp_dir().join(format!("ajar-transcripts-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("nocturnal-transcripts-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let proj = root.join("old-project");
         std::fs::create_dir_all(&proj).unwrap();

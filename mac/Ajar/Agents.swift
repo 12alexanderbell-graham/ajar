@@ -206,7 +206,7 @@ final class AgentWatcher {
         var stale: [SleepBlocker] = []
         var seenKeys = Set<String>()
         for var r in Self.sleepRequests() where r.pid != getpid() && !protect.contains(r.pid) {
-            // A request with no start time is aged from when Ajar first saw it, not treated as new forever.
+            // A request with no start time is aged from when Nocturnal first saw it, not treated as new forever.
             let key = "\(r.pid)|\(r.name)"
             seenKeys.insert(key)
             if r.sinceUnknown {

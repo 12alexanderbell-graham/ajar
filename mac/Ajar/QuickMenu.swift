@@ -66,9 +66,9 @@ enum QuickMenu {
             }
         }
         m.addItem(.separator())
-        m.addItem(ActionItem("Open Ajar…", handler: openPanel))
+        m.addItem(ActionItem("Open Nocturnal…", handler: openPanel))
         m.addItem(ActionItem("Settings…", key: ",", handler: openSettings))
-        m.addItem(ActionItem("Quit Ajar", key: "q") { NSApp.terminate(nil) })
+        m.addItem(ActionItem("Quit Nocturnal", key: "q") { NSApp.terminate(nil) })
         return m
     }
 }
@@ -89,7 +89,7 @@ final class Hotkey {
                 return noErr
             }, 1, &spec, nil, &handler)
         }
-        let id = EventHotKeyID(signature: OSType(0x414A4152), id: 1) // 'AJAR'
+        let id = EventHotKeyID(signature: OSType(0x414A4152), id: 1) // 'NOCTURNAL'
         if RegisterEventHotKey(UInt32(kVK_ANSI_A), UInt32(cmdKey | optionKey | controlKey), id, GetApplicationEventTarget(), 0, &ref) != noErr {
             ref = nil   // another app owns the shortcut; stay unregistered rather than half-registered
         }

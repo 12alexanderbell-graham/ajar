@@ -1,41 +1,41 @@
-//! `ajar`: the command line for people, scripts and AI agents. Talks to the running tray app.
+//! `nocturnal`: the command line for people, scripts and AI agents. Talks to the running tray app.
 
-use ajar::engine::run_watchdog;
-use ajar::platform::{self, Platform};
-use ajar::{ipc, mcp, state};
+use nocturnal::engine::run_watchdog;
+use nocturnal::platform::{self, Platform};
+use nocturnal::{ipc, mcp, state};
 use serde_json::{json, Value};
 use std::process::ExitCode;
 use std::time::Duration;
 
-const HELP: &str = "ajar: keep the laptop awake with the lid closed while work runs
+const HELP: &str = "nocturnal: keep the laptop awake with the lid closed while work runs
 
-  ajar                          what Ajar is doing (add --json for machine-readable)
-  ajar run -- <command…>        keep awake while a command runs, then let it sleep
-  ajar on [minutes | --for 2h | until 7]   stay awake (for a while, or until 07:00)
-  ajar auto                     stay awake only while an agent is working (default)
-  ajar off                      never keep awake (holds from `run` and agents still work)
-  ajar hold [minutes] [reason]  keep awake until `ajar release` (or for N minutes)
-  ajar release [id]             end one hold, or all
-  ajar wake-at HH:MM [minutes]  wake from sleep then and stay awake a while (off cancels)
-  ajar check-in 0|15|30|60      while asleep with the lid shut, wake this often to pick up a wake from the phone
-  ajar preset max_battery | balanced | full_speed
-  ajar rule <app> leave | slow | pause | default
-  ajar watch <app> [--remove]   an app that keeps it awake while busy (blender, ffmpeg…)
-  ajar set <key> <value>        change any setting
-  ajar settings                 every setting, its value, allowed values and what it does
-  ajar power                    power use now and which setting would cut it
-  ajar energy                   apps using the most CPU, and what closing the lid does to each
-  ajar config                   where the settings file is
-  ajar sleep                    let it sleep now (agents wait until the lid opens again)
-  ajar mcp                      run as an MCP server (stdio) for Claude Code, Codex, Gemini…
-  ajar mcp-setup                print the commands that add Ajar to your agents
-  ajar connect [claude|codex]   add Ajar's MCP server to Claude Code and Codex
-  ajar prompt                   the prompt that has your agent set Ajar up with you
+  nocturnal                          what Nocturnal is doing (add --json for machine-readable)
+  nocturnal run -- <command…>        keep awake while a command runs, then let it sleep
+  nocturnal on [minutes | --for 2h | until 7]   stay awake (for a while, or until 07:00)
+  nocturnal auto                     stay awake only while an agent is working (default)
+  nocturnal off                      never keep awake (holds from `run` and agents still work)
+  nocturnal hold [minutes] [reason]  keep awake until `nocturnal release` (or for N minutes)
+  nocturnal release [id]             end one hold, or all
+  nocturnal wake-at HH:MM [minutes]  wake from sleep then and stay awake a while (off cancels)
+  nocturnal check-in 0|15|30|60      while asleep with the lid shut, wake this often to pick up a wake from the phone
+  nocturnal preset max_battery | balanced | full_speed
+  nocturnal rule <app> leave | slow | pause | default
+  nocturnal watch <app> [--remove]   an app that keeps it awake while busy (blender, ffmpeg…)
+  nocturnal set <key> <value>        change any setting
+  nocturnal settings                 every setting, its value, allowed values and what it does
+  nocturnal power                    power use now and which setting would cut it
+  nocturnal energy                   apps using the most CPU, and what closing the lid does to each
+  nocturnal config                   where the settings file is
+  nocturnal sleep                    let it sleep now (agents wait until the lid opens again)
+  nocturnal mcp                      run as an MCP server (stdio) for Claude Code, Codex, Gemini…
+  nocturnal mcp-setup                print the commands that add Nocturnal to your agents
+  nocturnal connect [claude|codex]   add Nocturnal's MCP server to Claude Code and Codex
+  nocturnal prompt                   the prompt that has your agent set Nocturnal up with you
 
-  ajar doctor                   health check: what Ajar has changed, watchdog, journals
-  ajar rescue                   put every app and setting Ajar changed back, even if the app is stuck
-  ajar install                  register the watchdog (done automatically on first launch)
-  ajar uninstall                put everything back, then remove the watchdog and login item
+  nocturnal doctor                   health check: what Nocturnal has changed, watchdog, journals
+  nocturnal rescue                   put every app and setting Nocturnal changed back, even if the app is stuck
+  nocturnal install                  register the watchdog (done automatically on first launch)
+  nocturnal uninstall                put everything back, then remove the watchdog and login item
 ";
 
 fn main() -> ExitCode {
@@ -52,7 +52,7 @@ fn main() -> ExitCode {
             return ExitCode::SUCCESS;
         }
         "-V" | "--version" | "version" => {
-            println!("ajar {}", env!("CARGO_PKG_VERSION"));
+            println!("nocturnal {}", env!("CARGO_PKG_VERSION"));
             return ExitCode::SUCCESS;
         }
         "mcp" => {
@@ -92,7 +92,7 @@ fn main() -> ExitCode {
                         .unwrap_or_default()
                 );
             }
-            println!("\nChange with: ajar set <key> <value>. Per-app rules: ajar rule <app> leave|slow|pause. File: {}", r["config_file"].as_str().unwrap_or(""));
+            println!("\nChange with: nocturnal set <key> <value>. Per-app rules: nocturnal rule <app> leave|slow|pause. File: {}", r["config_file"].as_str().unwrap_or(""));
             return ExitCode::SUCCESS;
         }
         "power" => {
@@ -117,7 +117,7 @@ fn main() -> ExitCode {
                 );
                 if active {
                     println!(
-                        "    fix: ajar set {} {}",
+                        "    fix: nocturnal set {} {}",
                         s["setting"].as_str().unwrap_or(""),
                         s["suggested_value"].as_str().unwrap_or("")
                     );
@@ -129,40 +129,40 @@ fn main() -> ExitCode {
             let which = rest.first().map(String::as_str).unwrap_or("all");
             let mut did = false;
             if matches!(which, "claude" | "claude-code")
-                || (which == "all" && ajar::ai::claude_code_config().exists())
+                || (which == "all" && nocturnal::ai::claude_code_config().exists())
             {
                 println!(
                     "Claude Code: {}",
-                    ajar::ai::connect_claude_code().unwrap_or_else(|e| e)
+                    nocturnal::ai::connect_claude_code().unwrap_or_else(|e| e)
                 );
                 did = true;
             }
             if which == "codex"
                 || (which == "all"
-                    && ajar::ai::codex_config()
+                    && nocturnal::ai::codex_config()
                         .parent()
                         .is_some_and(|d| d.exists()))
             {
-                println!("Codex: {}", ajar::ai::connect_codex().unwrap_or_else(|e| e));
+                println!("Codex: {}", nocturnal::ai::connect_codex().unwrap_or_else(|e| e));
                 did = true;
             }
             if !did {
-                println!("No agent found here. Use: ajar connect claude | codex");
+                println!("No agent found here. Use: nocturnal connect claude | codex");
                 return ExitCode::from(2);
             }
             return ExitCode::SUCCESS;
         }
         "prompt" => {
-            println!("{}", ajar::ai::SETUP_PROMPT);
+            println!("{}", nocturnal::ai::SETUP_PROMPT);
             return ExitCode::SUCCESS;
         }
         "mcp-setup" => {
             let exe = std::env::current_exe()
                 .map(|p| p.display().to_string())
-                .unwrap_or_else(|_| "ajar".into());
-            println!("Claude Code:  claude mcp add ajar -- \"{exe}\" mcp");
-            println!("Codex:        codex mcp add ajar -- \"{exe}\" mcp");
-            println!("Gemini CLI:   gemini mcp add ajar \"{exe}\" mcp");
+                .unwrap_or_else(|_| "nocturnal".into());
+            println!("Claude Code:  claude mcp add nocturnal -- \"{exe}\" mcp");
+            println!("Codex:        codex mcp add nocturnal -- \"{exe}\" mcp");
+            println!("Gemini CLI:   gemini mcp add nocturnal \"{exe}\" mcp");
             println!("\nAny other MCP client: command \"{exe}\", argument \"mcp\" (stdio).");
             return ExitCode::SUCCESS;
         }
@@ -212,36 +212,36 @@ fn main() -> ExitCode {
                 "wake_at",
                 json!({ "time": t, "minutes": rest.get(1).and_then(|m| m.parse::<f64>().ok()) }),
             ),
-            None => return fail("usage: ajar wake-at HH:MM [minutes] | off"),
+            None => return fail("usage: nocturnal wake-at HH:MM [minutes] | off"),
         },
         "check-in" | "check_in" => match rest.first() {
             Some(m) => (
                 "set",
                 json!({ "key": "check_in_minutes", "value": m.parse::<f64>().ok() }),
             ),
-            None => return fail("usage: ajar check-in 0 | 15 | 30 | 60"),
+            None => return fail("usage: nocturnal check-in 0 | 15 | 30 | 60"),
         },
         "preset" => match rest.first() {
             Some(p) => ("preset", json!({ "preset": p })),
-            None => return fail("usage: ajar preset max_battery | balanced | full_speed"),
+            None => return fail("usage: nocturnal preset max_battery | balanced | full_speed"),
         },
         "rule" => match (rest.first(), rest.get(1)) {
             (Some(a), Some(r)) => ("rule", json!({ "app": a, "rule": r })),
-            _ => return fail("usage: ajar rule <app> leave | slow | pause | default"),
+            _ => return fail("usage: nocturnal rule <app> leave | slow | pause | default"),
         },
         "watch" => match rest.iter().find(|a| !a.starts_with("--")) {
             Some(a) => (
                 "watch",
                 json!({ "app": a, "remove": rest.iter().any(|x| x == "--remove") }),
             ),
-            None => return fail("usage: ajar watch <app> [--remove]"),
+            None => return fail("usage: nocturnal watch <app> [--remove]"),
         },
         "set" => match (rest.first(), rest.get(1)) {
             (Some(k), Some(v)) => ("set", json!({ "key": k, "value": v })),
             (Some(k), None) if k == "ntfy_topic" => ("set", json!({ "key": k, "value": "" })),
-            _ => return fail("usage: ajar set <key> <value>"),
+            _ => return fail("usage: nocturnal set <key> <value>"),
         },
-        other => return fail(&format!("unknown command {other:?}. Try `ajar help`.")),
+        other => return fail(&format!("unknown command {other:?}. Try `nocturnal help`.")),
     };
 
     match ipc::call(&root, request.0, request.1, Duration::from_secs(10)) {
@@ -262,7 +262,7 @@ fn main() -> ExitCode {
 }
 
 fn fail(msg: &str) -> ExitCode {
-    eprintln!("ajar: {msg}");
+    eprintln!("nocturnal: {msg}");
     ExitCode::from(2)
 }
 
@@ -307,11 +307,11 @@ fn parse_on(rest: &[String]) -> Result<Option<f64>, String> {
                 .and_then(|x| x.parse().ok())
                 .filter(|h| *h < 24)
                 .ok_or("use an hour like 7 or 07:00")?;
-            let now = ajar::now();
-            let t = ajar::format::next_local_hour(now, hour);
+            let now = nocturnal::now();
+            let t = nocturnal::format::next_local_hour(now, hour);
             Ok(Some(((t - now) as f64 / 60.0).ceil()))
         }
-        _ => Err("usage: ajar on [minutes | --for 2h | until <hour>]".into()),
+        _ => Err("usage: nocturnal on [minutes | --for 2h | until <hour>]".into()),
     }
 }
 
@@ -330,7 +330,7 @@ fn print_human(cmd: &str, v: &Value) {
                 } else if let Some(h) = v["hours_left_closed"].as_f64() {
                     line.push_str(&format!(
                         " · ≈{} left with the lid closed",
-                        ajar::format::hm(h)
+                        nocturnal::format::hm(h)
                     ));
                 }
                 println!("{line}");
@@ -397,7 +397,7 @@ fn print_human(cmd: &str, v: &Value) {
 fn run(root: &std::path::Path, rest: &[String]) -> ExitCode {
     let cmdline: Vec<&String> = rest.iter().skip_while(|a| *a == "--").collect();
     let Some((prog, args)) = cmdline.split_first() else {
-        return fail("usage: ajar run -- <command> [args…]");
+        return fail("usage: nocturnal run -- <command> [args…]");
     };
     let reason = format!(
         "Running {}",
@@ -416,7 +416,7 @@ fn run(root: &std::path::Path, rest: &[String]) -> ExitCode {
         Duration::from_secs(5),
     );
     if let Err(e) = &bridge {
-        eprintln!("ajar: not keeping awake ({e}); running anyway");
+        eprintln!("nocturnal: not keeping awake ({e}); running anyway");
     }
     let mut child = match std::process::Command::new(prog).args(args).spawn() {
         Ok(c) => c,
@@ -501,31 +501,31 @@ fn journal_lines(root: &std::path::Path) -> Vec<String> {
         out.push(format!("processor boost on battery turned off (was {v})"));
     }
     if r.linux_tuned {
-        out.push("turbo and kernel power saving changed by Ajar's helper".into());
+        out.push("turbo and kernel power saving changed by Nocturnal's helper".into());
     }
     if root.join("hold").exists() {
         out.push("keep-awake hold marker present".into());
     }
-    if ajar::approve::is_on(&ajar::approve::Paths::new(root)) {
-        out.push("Approve everything is on: Claude Code and Codex run without asking (turn it off in the Ajar menu)".into());
+    if nocturnal::approve::is_on(&nocturnal::approve::Paths::new(root)) {
+        out.push("Approve everything is on: Claude Code and Codex run without asking (turn it off in the Nocturnal menu)".into());
     }
     out
 }
 
 fn doctor(root: &std::path::Path) -> ExitCode {
     let mut p = platform::native();
-    println!("Ajar folder: {}", root.display());
+    println!("Nocturnal folder: {}", root.display());
     match state::age_of(&root.join("alive")) {
         Some(a) if a < 15 => println!("App: running"),
         Some(a) => println!(
             "App: not running (last seen {})",
-            ajar::format::minutes(a as f64 / 60.0)
+            nocturnal::format::minutes(a as f64 / 60.0)
         ),
         None => println!("App: never ran here"),
     }
     match p.watchdog_installed() {
         Some(true) => println!("Watchdog: installed"),
-        Some(false) => println!("Watchdog: NOT installed (run `ajar install`)"),
+        Some(false) => println!("Watchdog: NOT installed (run `nocturnal install`)"),
         None => println!("Watchdog: can't tell"),
     }
     match p.ready() {
@@ -534,9 +534,9 @@ fn doctor(root: &std::path::Path) -> ExitCode {
     }
     let changes = journal_lines(root);
     if changes.is_empty() {
-        println!("Changes Ajar has made right now: none");
+        println!("Changes Nocturnal has made right now: none");
     } else {
-        println!("Changes Ajar has made right now (put back when the lid opens or work ends):");
+        println!("Changes Nocturnal has made right now (put back when the lid opens or work ends):");
         for c in changes {
             println!("  {c}");
         }
@@ -560,7 +560,7 @@ fn put_everything_back(root: &std::path::Path) -> Result<(), Vec<String>> {
     if ipc::app_running(root) {
         let _ = ipc::call(root, "quit", json!({}), Duration::from_secs(5));
         for _ in 0..50 {
-            if !ajar::state::heartbeat_process_alive(&root.join("alive")) {
+            if !nocturnal::state::heartbeat_process_alive(&root.join("alive")) {
                 break;
             }
             std::thread::sleep(Duration::from_millis(100));
@@ -580,7 +580,7 @@ fn put_everything_back(root: &std::path::Path) -> Result<(), Vec<String>> {
 fn rescue(root: &std::path::Path) -> ExitCode {
     match put_everything_back(root) {
         Ok(()) => {
-            println!("Everything Ajar changed is back to how it was. Ajar is stopped; start it again from your apps.");
+            println!("Everything Nocturnal changed is back to how it was. Nocturnal is stopped; start it again from your apps.");
             ExitCode::SUCCESS
         }
         Err(left) => {
@@ -596,11 +596,11 @@ fn rescue(root: &std::path::Path) -> ExitCode {
 
 fn uninstall(root: &std::path::Path) -> ExitCode {
     // Approve everything goes back first: it changes other apps' settings, and nobody would see it was still on.
-    if let Err(e) = ajar::approve::turn_off(&ajar::approve::Paths::new(root)) {
+    if let Err(e) = nocturnal::approve::turn_off(&nocturnal::approve::Paths::new(root)) {
         return fail(&format!("Couldn't turn off Approve everything: {e}"));
     }
-    ajar::ai::disconnect_all();
-    // The watchdog is the safety net for undoing Ajar's changes, so it's only removed once nothing is left.
+    nocturnal::ai::disconnect_all();
+    // The watchdog is the safety net for undoing Nocturnal's changes, so it's only removed once nothing is left.
     if let Err(left) = put_everything_back(root) {
         println!("Not uninstalling yet: these changes couldn't be undone, and the watchdog stays to keep retrying:");
         for l in &left {
@@ -612,7 +612,7 @@ fn uninstall(root: &std::path::Path) -> ExitCode {
     match p.uninstall() {
         Ok(()) => {
             state::remove(&root.join("installed"));
-            println!("Ajar's watchdog and login item are removed and nothing it changed is left. Delete the app and {} to finish.", root.display());
+            println!("Nocturnal's watchdog and login item are removed and nothing it changed is left. Delete the app and {} to finish.", root.display());
             ExitCode::SUCCESS
         }
         Err(e) => fail(&e),

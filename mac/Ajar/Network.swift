@@ -6,7 +6,7 @@ import Network
 /// Why the hotspot matters: an iPhone switches its hotspot off by itself after a while, and when that happens macOS
 /// only turns it back on without asking if System Settings › Wi-Fi › "Ask to join hotspots" is set to Automatic.
 /// On "Ask" it shows a prompt, which nobody can answer with the lid shut, so the Mac stays awake but offline until
-/// the lid opens. Ajar can't change that setting (there's no API for it), so it says so while you're on a hotspot.
+/// the lid opens. Nocturnal can't change that setting (there's no API for it), so it says so while you're on a hotspot.
 @MainActor
 final class NetWatch {
     private let monitor = NWPathMonitor()
@@ -24,7 +24,7 @@ final class NetWatch {
                 self.expensiveWiFi = pricey
             }
         }
-        monitor.start(queue: DispatchQueue(label: "ajar.netwatch"))
+        monitor.start(queue: DispatchQueue(label: "nocturnal.netwatch"))
     }
 
     /// On a phone's hotspot: macOS flags it as expensive, and an iPhone hotspot also hands out 172.20.10.0/28.

@@ -1,12 +1,12 @@
 import Foundation
 
-/// What Ajar has actually saved, kept in stats.json next to the config.
+/// What Nocturnal has actually saved, kept in stats.json next to the config.
 ///
 /// Two kinds of saving, counted separately and never mixed with guesses:
-///  • measured: apps Ajar slowed or paused while the lid was closed. Each app's power is measured by
+///  • measured: apps Nocturnal slowed or paused while the lid was closed. Each app's power is measured by
 ///    macOS's energy counters before (lid open, running normally) and while slowed, and the difference
 ///    is integrated over time.
-///  • slept: after the work finished Ajar put the Mac to sleep instead of letting it idle with the lid
+///  • slept: after the work finished Nocturnal put the Mac to sleep instead of letting it idle with the lid
 ///    shut. Valued at the power the Mac was drawing just before it slept.
 struct SavingsStats: Codable, Equatable {
     struct Session: Codable, Equatable {

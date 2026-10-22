@@ -1,6 +1,6 @@
 import Foundation
 
-/// Every setting Ajar has, described once. The `ajar settings` command, the MCP tools, `ajar set` and the docs for
+/// Every setting Nocturnal has, described once. The `nocturnal settings` command, the MCP tools, `nocturnal set` and the docs for
 /// AI agents all read this table, so an agent can discover, explain and change any setting without guessing.
 /// Safety rules live in the setters: commands can make the battery limit and heat guard stricter, never looser.
 struct SettingSpec {
@@ -47,7 +47,7 @@ enum SettingsSchema {
                     get: { ["longest": "max_battery", "balanced": "balanced", "speed": "full_speed"][$0.preset.rawValue] ?? "balanced" },
                     set: { c, v in guard let p = (v as? String).flatMap(CommandCenter.parsePreset) else { return "max_battery, balanced or full_speed" }; c.preset = p; return nil }),
         toggle("pause_simulators", "While the lid is closed", "Freeze booted iOS simulators and Xcode previews until the lid opens. Skipped while xcodebuild or UI tests run.", \.pauseSimulators),
-        toggle("screen_off", "While the lid is closed", "Switch the built-in screen fully off while the lid is closed without sleeping it, so there is no lock screen. Experimental: if macOS refuses, or locks the Mac anyway (some Macs do), Ajar switches back to the dark screen by itself and turns this off. Ignored when lock_on_close is on.", \.screenOffNoLock),
+        toggle("screen_off", "While the lid is closed", "Switch the built-in screen fully off while the lid is closed without sleeping it, so there is no lock screen. Experimental: if macOS refuses, or locks the Mac anyway (some Macs do), Nocturnal switches back to the dark screen by itself and turns this off. Ignored when lock_on_close is on.", \.screenOffNoLock),
         toggle("shut_down_simulators", "While the lid is closed", "Shut booted simulators down when the lid closes instead of pausing them. Frees all their memory and power; they don't come back by themselves. Skipped while tests run.", \.shutDownSimulators),
         toggle("pause_background_audio", "While the lid is closed", "Freeze background processes that hold the speakers open (keeps the audio hardware powered even when silent). Music and call apps are never touched.", \.pauseBackgroundAudio),
         SettingSpec(key: "check_in_minutes", type: "enum", allowed: ["0", "15", "30", "60"], category: "While asleep",
@@ -62,25 +62,25 @@ enum SettingsSchema {
                note: "Ask the person before turning this on: it changes what they see when they open the lid.", \.lockOnClose),
         SettingSpec(key: "battery_floor", type: "int", allowed: ["0-80"], category: "Safety",
                     description: "Sleep when the battery reaches this percent (0 = never stop for battery).",
-                    note: "Can only be raised from commands; lowering it is the person's call in Ajar's Settings.",
+                    note: "Can only be raised from commands; lowering it is the person's call in Nocturnal's Settings.",
                     get: { $0.batteryFloor }, set: { c, v in
                         guard let n = int(v) else { return "a number 0-80" }
                         let x = min(80, max(0, n))
-                        guard x >= c.batteryFloor else { return "to be lowered in Ajar itself (it can only be raised from here)" }
+                        guard x >= c.batteryFloor else { return "to be lowered in Nocturnal itself (it can only be raised from here)" }
                         c.batteryFloor = x; return nil }),
         SettingSpec(key: "heat_guard", type: "bool", allowed: ["on", "off"], category: "Safety",
                     description: "With the lid shut: strictest rules when the Mac gets hot, sleep if it stays hot for 5 minutes or gets critical.",
                     note: "Can only be turned on from commands.",
                     get: { $0.heatGuard }, set: { c, v in
                         guard let b = bool(v) else { return "on or off" }
-                        guard b else { return "to be turned off in Ajar's Settings (it can only be turned on from here)" }
+                        guard b else { return "to be turned off in Nocturnal's Settings (it can only be turned on from here)" }
                         c.heatGuard = true; return nil }),
         SettingSpec(key: "only_on_power", type: "bool", allowed: ["on", "off"], category: "Safety",
                     description: "Only stay awake while the charger is covering the load.",
                     note: "Can only be turned on from commands.",
                     get: { $0.onlyOnPower }, set: { c, v in
                         guard let b = bool(v) else { return "on or off" }
-                        guard b || !c.onlyOnPower else { return "to be turned off in Ajar's Settings (it can only be turned on from here)" }
+                        guard b || !c.onlyOnPower else { return "to be turned off in Nocturnal's Settings (it can only be turned on from here)" }
                         c.onlyOnPower = b; return nil }),
         SettingSpec(key: "quiet_minutes", type: "int", allowed: ["1-240"], category: "When to stay awake",
                     description: "In auto mode, sleep after an agent has been quiet this many minutes.",
@@ -94,15 +94,15 @@ enum SettingsSchema {
                     description: "ntfy.sh topic for phone alerts when work goes idle; empty turns them off.",
                     get: { $0.ntfyTopic }, set: { c, v in
                         let s = String(describing: v).trimmingCharacters(in: .whitespaces)
-                        // Alerts go wherever this topic points, so only Ajar's own Settings can set it; commands may turn it off.
-                        guard s.isEmpty else { return "to be set in Ajar's Settings (commands can only turn it off)" }
+                        // Alerts go wherever this topic points, so only Nocturnal's own Settings can set it; commands may turn it off.
+                        guard s.isEmpty else { return "to be set in Nocturnal's Settings (commands can only turn it off)" }
                         c.ntfyTopic = s; return nil }),
         SettingSpec(key: "menubar", type: "enum", allowed: MenuBarText.allCases.map(\.rawValue), category: "Appearance",
                     description: "Text next to the menu bar icon.",
                     get: { $0.menuBarText.rawValue }, set: { c, v in guard let m = (v as? String).flatMap(MenuBarText.init) else { return MenuBarText.allCases.map(\.rawValue).joined(separator: ", ") }; c.menuBarText = m; return nil }),
         toggle("live_lid_icon", "Appearance", "The menu bar icon's lid follows the real lid angle.", \.liveLidIcon),
         toggle("notch_island", "Appearance", "Short announcements in a notch island.", \.notchIsland),
-        toggle("show_in_dock", "Appearance", "Show Ajar in the Dock.", \.showInDock),
+        toggle("show_in_dock", "Appearance", "Show Nocturnal in the Dock.", \.showInDock),
         toggle("hotkey", "Appearance", "⌃⌥⌘A cycles the mode.", \.hotkey),
         SettingSpec(key: "appearance", type: "enum", allowed: AppearanceChoice.allCases.map(\.rawValue), category: "Appearance",
                     description: "Light, dark or match the system.",
@@ -111,9 +111,9 @@ enum SettingsSchema {
 
     /// Not plain settings: lists changed through their own commands.
     static let lists: [[String: String]] = [
-        ["name": "app_rules", "how": "ajar rule <app> leave|slow|pause|default  (MCP: ajar_set_app_rule)", "what": "Per-app override of the preset while the lid is closed."],
-        ["name": "watched_apps", "how": "ajar watch <app> / ajar unwatch <app>  (MCP: ajar_watch_app)", "what": "Apps or tools that keep the Mac awake while busy."],
-        ["name": "custom_agents", "how": "MCP: ajar_add_agent", "what": "Command-line agents Ajar doesn't know yet, by executable name."],
+        ["name": "app_rules", "how": "nocturnal rule <app> leave|slow|pause|default  (MCP: nocturnal_set_app_rule)", "what": "Per-app override of the preset while the lid is closed."],
+        ["name": "watched_apps", "how": "nocturnal watch <app> / nocturnal unwatch <app>  (MCP: nocturnal_watch_app)", "what": "Apps or tools that keep the Mac awake while busy."],
+        ["name": "custom_agents", "how": "MCP: nocturnal_add_agent", "what": "Command-line agents Nocturnal doesn't know yet, by executable name."],
         ["name": "track_only", "how": "phone panel or menu", "what": "Agents shown but not keeping the Mac awake."],
     ]
 
@@ -130,6 +130,6 @@ enum SettingsSchema {
             if let n = s.note { d["note"] = n }
             return d
         }, "lists": lists, "config_file": Config.url.path,
-         "how_to_change": "ajar set <key> <value>, MCP ajar_set_setting, or edit config.json (camelCase keys, reloads instantly)."]
+         "how_to_change": "nocturnal set <key> <value>, MCP nocturnal_set_setting, or edit config.json (camelCase keys, reloads instantly)."]
     }
 }

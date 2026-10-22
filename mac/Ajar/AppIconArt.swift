@@ -2,7 +2,7 @@ import AppKit
 
 /// The app icon, drawn in code so every size comes from one definition.
 ///
-/// The tile is Ajar's green: deep forest green in the lower left, opening to a mint glow in the upper right, with a
+/// The tile is Nocturnal's green: deep forest green in the lower left, opening to a mint glow in the upper right, with a
 /// fine film grain (the same look as the brand's banner). The mark is white: one thin bar (the laptop, shut) and a
 /// translucent fan above it (the arc the lid swept through as it closed).
 ///
