@@ -24,7 +24,11 @@ impl World {
         // A lock is released when its holder closes its end of the pipe (read returns 0 = EOF).
         self.inhibitors.retain_mut(|(_, _, f)| {
             let fd = f.as_raw_fd();
-            let mut pfd = libc::pollfd { fd, events: libc::POLLIN, revents: 0 };
+            let mut pfd = libc::pollfd {
+                fd,
+                events: libc::POLLIN,
+                revents: 0,
+            };
             let r = unsafe { libc::poll(&mut pfd, 1, 0) };
             if r > 0 && pfd.revents & (libc::POLLIN | libc::POLLHUP) != 0 {
                 let mut b = [0u8; 1];
@@ -45,7 +49,11 @@ impl Manager {
         let mut fds = [0; 2];
         unsafe { libc::pipe(fds.as_mut_ptr()) };
         let read = unsafe { std::fs::File::from_raw_fd(fds[0]) };
-        self.0.lock().unwrap().inhibitors.push((what.into(), who.into(), read));
+        self.0
+            .lock()
+            .unwrap()
+            .inhibitors
+            .push((what.into(), who.into(), read));
         ZFd::from(unsafe { OwnedFd::from_raw_fd(fds[1]) })
     }
     fn suspend(&self, _interactive: bool) {
@@ -91,14 +99,21 @@ impl Fake {
 }
 
 fn main() -> zbus::Result<()> {
-    let world = Arc::new(Mutex::new(World { profile: "balanced".into(), ..Default::default() }));
-    let addr = std::env::var("DBUS_SYSTEM_BUS_ADDRESS").expect("set DBUS_SYSTEM_BUS_ADDRESS to the private bus");
+    let world = Arc::new(Mutex::new(World {
+        profile: "balanced".into(),
+        ..Default::default()
+    }));
+    let addr = std::env::var("DBUS_SYSTEM_BUS_ADDRESS")
+        .expect("set DBUS_SYSTEM_BUS_ADDRESS to the private bus");
     let _conn = zbus::blocking::connection::Builder::address(addr.as_str())?
         .name("org.freedesktop.login1")?
         .name("org.freedesktop.UPower.PowerProfiles")?
         .name("test.Fake")?
         .serve_at("/org/freedesktop/login1", Manager(world.clone()))?
-        .serve_at("/org/freedesktop/UPower/PowerProfiles", Profiles(world.clone()))?
+        .serve_at(
+            "/org/freedesktop/UPower/PowerProfiles",
+            Profiles(world.clone()),
+        )?
         .serve_at("/test", Fake(world.clone()))?
         .build()?;
     eprintln!("fake-logind: ready");

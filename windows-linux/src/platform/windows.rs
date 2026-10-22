@@ -19,8 +19,12 @@ use std::sync::atomic::{AtomicI8, AtomicIsize, Ordering};
 use windows_sys::core::GUID;
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, HWND, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::System::Power::*;
-use windows_sys::Win32::System::Registry::{RegDeleteKeyValueW, RegDeleteTreeW, RegSetKeyValueW, HKEY_CURRENT_USER, REG_SZ};
-use windows_sys::Win32::System::SystemServices::{GUID_LIDCLOSE_ACTION, GUID_LIDSWITCH_STATE_CHANGE, GUID_SYSTEM_BUTTON_SUBGROUP};
+use windows_sys::Win32::System::Registry::{
+    RegDeleteKeyValueW, RegDeleteTreeW, RegSetKeyValueW, HKEY_CURRENT_USER, REG_SZ,
+};
+use windows_sys::Win32::System::SystemServices::{
+    GUID_LIDCLOSE_ACTION, GUID_LIDSWITCH_STATE_CHANGE, GUID_SYSTEM_BUTTON_SUBGROUP,
+};
 use windows_sys::Win32::System::Threading::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
@@ -49,7 +53,17 @@ pub fn same(a: &GUID, b: &GUID) -> bool {
 pub fn guid_string(g: &GUID) -> String {
     format!(
         "{:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-        g.data1, g.data2, g.data3, g.data4[0], g.data4[1], g.data4[2], g.data4[3], g.data4[4], g.data4[5], g.data4[6], g.data4[7]
+        g.data1,
+        g.data2,
+        g.data3,
+        g.data4[0],
+        g.data4[1],
+        g.data4[2],
+        g.data4[3],
+        g.data4[4],
+        g.data4[5],
+        g.data4[6],
+        g.data4[7]
     )
 }
 
@@ -69,11 +83,23 @@ struct Caps {
 fn caps() -> Caps {
     unsafe {
         let mut c: SYSTEM_POWER_CAPABILITIES = std::mem::zeroed();
-        let st = CallNtPowerInformation(SystemPowerCapabilities, std::ptr::null(), 0, &mut c as *mut _ as *mut _, std::mem::size_of::<SYSTEM_POWER_CAPABILITIES>() as u32);
+        let st = CallNtPowerInformation(
+            SystemPowerCapabilities,
+            std::ptr::null(),
+            0,
+            &mut c as *mut _ as *mut _,
+            std::mem::size_of::<SYSTEM_POWER_CAPABILITIES>() as u32,
+        );
         if st != 0 {
-            return Caps { lid: false, modern_standby: false };
+            return Caps {
+                lid: false,
+                modern_standby: false,
+            };
         }
-        Caps { lid: c.LidPresent, modern_standby: c.AoAc }
+        Caps {
+            lid: c.LidPresent,
+            modern_standby: c.AoAc,
+        }
     }
 }
 
@@ -92,16 +118,40 @@ fn active_scheme() -> Option<GUID> {
 fn read_lid_action(scheme: &GUID) -> Option<(u32, u32)> {
     unsafe {
         let (mut ac, mut dc) = (0u32, 0u32);
-        let a = PowerReadACValueIndex(std::ptr::null_mut(), scheme, &GUID_SYSTEM_BUTTON_SUBGROUP, &GUID_LIDCLOSE_ACTION, &mut ac);
-        let d = PowerReadDCValueIndex(std::ptr::null_mut(), scheme, &GUID_SYSTEM_BUTTON_SUBGROUP, &GUID_LIDCLOSE_ACTION, &mut dc);
+        let a = PowerReadACValueIndex(
+            std::ptr::null_mut(),
+            scheme,
+            &GUID_SYSTEM_BUTTON_SUBGROUP,
+            &GUID_LIDCLOSE_ACTION,
+            &mut ac,
+        );
+        let d = PowerReadDCValueIndex(
+            std::ptr::null_mut(),
+            scheme,
+            &GUID_SYSTEM_BUTTON_SUBGROUP,
+            &GUID_LIDCLOSE_ACTION,
+            &mut dc,
+        );
         (a == 0 && d == 0).then_some((ac, dc))
     }
 }
 
 fn write_lid_action(scheme: &GUID, ac: u32, dc: u32) -> bool {
     unsafe {
-        let a = PowerWriteACValueIndex(std::ptr::null_mut(), scheme, &GUID_SYSTEM_BUTTON_SUBGROUP, &GUID_LIDCLOSE_ACTION, ac);
-        let d = PowerWriteDCValueIndex(std::ptr::null_mut(), scheme, &GUID_SYSTEM_BUTTON_SUBGROUP, &GUID_LIDCLOSE_ACTION, dc);
+        let a = PowerWriteACValueIndex(
+            std::ptr::null_mut(),
+            scheme,
+            &GUID_SYSTEM_BUTTON_SUBGROUP,
+            &GUID_LIDCLOSE_ACTION,
+            ac,
+        );
+        let d = PowerWriteDCValueIndex(
+            std::ptr::null_mut(),
+            scheme,
+            &GUID_SYSTEM_BUTTON_SUBGROUP,
+            &GUID_LIDCLOSE_ACTION,
+            dc,
+        );
         // Re-applying the active plan makes the new values take effect immediately.
         if let Some(active) = active_scheme() {
             if same(&active, scheme) {
@@ -123,12 +173,27 @@ const PERF_BOOST_MODE: GUID = GUID::from_u128(0xbe337238_0d82_4146_a960_4f3749d4
 
 fn read_boost_dc(scheme: &GUID) -> Option<u32> {
     let mut v = 0u32;
-    (unsafe { PowerReadDCValueIndex(std::ptr::null_mut(), scheme, &PROCESSOR_SUBGROUP, &PERF_BOOST_MODE, &mut v) } == 0).then_some(v)
+    (unsafe {
+        PowerReadDCValueIndex(
+            std::ptr::null_mut(),
+            scheme,
+            &PROCESSOR_SUBGROUP,
+            &PERF_BOOST_MODE,
+            &mut v,
+        )
+    } == 0)
+        .then_some(v)
 }
 
 fn write_boost_dc(scheme: &GUID, v: u32) -> bool {
     unsafe {
-        let ok = PowerWriteDCValueIndex(std::ptr::null_mut(), scheme, &PROCESSOR_SUBGROUP, &PERF_BOOST_MODE, v) == 0;
+        let ok = PowerWriteDCValueIndex(
+            std::ptr::null_mut(),
+            scheme,
+            &PROCESSOR_SUBGROUP,
+            &PERF_BOOST_MODE,
+            v,
+        ) == 0;
         if let Some(active) = active_scheme() {
             if same(&active, scheme) {
                 PowerSetActiveScheme(std::ptr::null_mut(), scheme);
@@ -143,10 +208,34 @@ fn read_sleep_idle(scheme: &GUID) -> Option<[u32; 4]> {
     unsafe {
         let mut v = [0u32; 4];
         let r = [
-            PowerReadACValueIndex(std::ptr::null_mut(), scheme, &SLEEP_SUBGROUP, &STANDBY_TIMEOUT, &mut v[0]),
-            PowerReadDCValueIndex(std::ptr::null_mut(), scheme, &SLEEP_SUBGROUP, &STANDBY_TIMEOUT, &mut v[1]),
-            PowerReadACValueIndex(std::ptr::null_mut(), scheme, &SLEEP_SUBGROUP, &UNATTEND_SLEEP_TIMEOUT, &mut v[2]),
-            PowerReadDCValueIndex(std::ptr::null_mut(), scheme, &SLEEP_SUBGROUP, &UNATTEND_SLEEP_TIMEOUT, &mut v[3]),
+            PowerReadACValueIndex(
+                std::ptr::null_mut(),
+                scheme,
+                &SLEEP_SUBGROUP,
+                &STANDBY_TIMEOUT,
+                &mut v[0],
+            ),
+            PowerReadDCValueIndex(
+                std::ptr::null_mut(),
+                scheme,
+                &SLEEP_SUBGROUP,
+                &STANDBY_TIMEOUT,
+                &mut v[1],
+            ),
+            PowerReadACValueIndex(
+                std::ptr::null_mut(),
+                scheme,
+                &SLEEP_SUBGROUP,
+                &UNATTEND_SLEEP_TIMEOUT,
+                &mut v[2],
+            ),
+            PowerReadDCValueIndex(
+                std::ptr::null_mut(),
+                scheme,
+                &SLEEP_SUBGROUP,
+                &UNATTEND_SLEEP_TIMEOUT,
+                &mut v[3],
+            ),
         ];
         r.iter().all(|&e| e == 0).then_some(v)
     }
@@ -155,10 +244,34 @@ fn read_sleep_idle(scheme: &GUID) -> Option<[u32; 4]> {
 fn write_sleep_idle(scheme: &GUID, v: [u32; 4]) -> bool {
     unsafe {
         let r = [
-            PowerWriteACValueIndex(std::ptr::null_mut(), scheme, &SLEEP_SUBGROUP, &STANDBY_TIMEOUT, v[0]),
-            PowerWriteDCValueIndex(std::ptr::null_mut(), scheme, &SLEEP_SUBGROUP, &STANDBY_TIMEOUT, v[1]),
-            PowerWriteACValueIndex(std::ptr::null_mut(), scheme, &SLEEP_SUBGROUP, &UNATTEND_SLEEP_TIMEOUT, v[2]),
-            PowerWriteDCValueIndex(std::ptr::null_mut(), scheme, &SLEEP_SUBGROUP, &UNATTEND_SLEEP_TIMEOUT, v[3]),
+            PowerWriteACValueIndex(
+                std::ptr::null_mut(),
+                scheme,
+                &SLEEP_SUBGROUP,
+                &STANDBY_TIMEOUT,
+                v[0],
+            ),
+            PowerWriteDCValueIndex(
+                std::ptr::null_mut(),
+                scheme,
+                &SLEEP_SUBGROUP,
+                &STANDBY_TIMEOUT,
+                v[1],
+            ),
+            PowerWriteACValueIndex(
+                std::ptr::null_mut(),
+                scheme,
+                &SLEEP_SUBGROUP,
+                &UNATTEND_SLEEP_TIMEOUT,
+                v[2],
+            ),
+            PowerWriteDCValueIndex(
+                std::ptr::null_mut(),
+                scheme,
+                &SLEEP_SUBGROUP,
+                &UNATTEND_SLEEP_TIMEOUT,
+                v[3],
+            ),
         ];
         if let Some(active) = active_scheme() {
             if same(&active, scheme) {
@@ -171,9 +284,13 @@ fn write_sleep_idle(scheme: &GUID, v: [u32; 4]) -> bool {
 
 /// Puts the sleep timeouts back if they're still Ajar's "never" (someone may have set them deliberately since).
 fn put_back_sleep_idle(r: &mut Restore) -> bool {
-    let Some((s, prev)) = r.sleep_idle.clone() else { return true };
+    let Some((s, prev)) = r.sleep_idle.clone() else {
+        return true;
+    };
     let done = match parse_guid(&s) {
-        Some(g) => read_sleep_idle(&g).is_some_and(|cur| cur != [0; 4]) || write_sleep_idle(&g, prev),
+        Some(g) => {
+            read_sleep_idle(&g).is_some_and(|cur| cur != [0; 4]) || write_sleep_idle(&g, prev)
+        }
         None => true,
     };
     if done {
@@ -196,7 +313,10 @@ fn overlay_fns() -> Option<(GetOverlay, SetOverlay)> {
         let g = GetProcAddress(m, c"PowerGetActualOverlayScheme".as_ptr().cast())?;
         let s = GetProcAddress(m, c"PowerSetActiveOverlayScheme".as_ptr().cast())?;
         type Farproc = unsafe extern "system" fn() -> isize;
-        Some((std::mem::transmute::<Farproc, GetOverlay>(g), std::mem::transmute::<Farproc, SetOverlay>(s)))
+        Some((
+            std::mem::transmute::<Farproc, GetOverlay>(g),
+            std::mem::transmute::<Farproc, SetOverlay>(s),
+        ))
     }
 }
 
@@ -222,7 +342,13 @@ fn processor_limits() -> Vec<(u32, u32)> {
     }
     let mut buf = vec![ProcessorPowerInformation::default(); n];
     let status = unsafe {
-        CallNtPowerInformation(ProcessorInformation, std::ptr::null(), 0, buf.as_mut_ptr().cast(), (n * std::mem::size_of::<ProcessorPowerInformation>()) as u32)
+        CallNtPowerInformation(
+            ProcessorInformation,
+            std::ptr::null(),
+            0,
+            buf.as_mut_ptr().cast(),
+            (n * std::mem::size_of::<ProcessorPowerInformation>()) as u32,
+        )
     };
     if status != 0 {
         return vec![];
@@ -233,7 +359,11 @@ fn processor_limits() -> Vec<(u32, u32)> {
 /// Every processor must be held back (thermal throttling is package-wide; one slow core is something else):
 /// the least limited one under 70% of its maximum is serious, under 40% critical.
 pub fn thermal_from_limits(limits: &[(u32, u32)]) -> Thermal {
-    let least = limits.iter().filter(|(max, lim)| *max > 0 && *lim > 0).map(|(max, lim)| *lim as f64 / *max as f64).fold(f64::NEG_INFINITY, f64::max);
+    let least = limits
+        .iter()
+        .filter(|(max, lim)| *max > 0 && *lim > 0)
+        .map(|(max, lim)| *lim as f64 / *max as f64)
+        .fold(f64::NEG_INFINITY, f64::max);
     if !least.is_finite() {
         Thermal::Unknown
     } else if least < 0.4 {
@@ -247,7 +377,9 @@ pub fn thermal_from_limits(limits: &[(u32, u32)]) -> Thermal {
 
 /// Whether the "Power mode" is on "best power efficiency" (Ajar's low-power setting, or the person's own).
 fn efficiency_overlay_on() -> bool {
-    let Some((get, _)) = overlay_fns() else { return false };
+    let Some((get, _)) = overlay_fns() else {
+        return false;
+    };
     let mut cur: GUID = unsafe { std::mem::zeroed() };
     unsafe { get(&mut cur) == 0 && same(&cur, &OVERLAY_EFFICIENCY) }
 }
@@ -257,16 +389,22 @@ fn efficiency_overlay_on() -> bool {
 /// A plan whose write fails stays in the journal for the watchdog or the next start.
 pub fn restore_lid_from_journal() {
     let path = crate::state::file("restore.json");
-    let Some(mut r) = crate::state::load_json::<Restore>(&path) else { return };
+    let Some(mut r) = crate::state::load_json::<Restore>(&path) else {
+        return;
+    };
     // Done when it's back, or no longer Ajar's "Do nothing" (someone changed it deliberately).
     let put_back = |s: &str, ac: u32, dc: u32| match parse_guid(s) {
-        Some(g) => !read_lid_action(&g).is_none_or(|cur| cur == (0, 0)) || write_lid_action(&g, ac, dc),
+        Some(g) => {
+            !read_lid_action(&g).is_none_or(|cur| cur == (0, 0)) || write_lid_action(&g, ac, dc)
+        }
         None => true,
     };
     r.lid_more.retain(|(s, ac, dc)| !put_back(s, *ac, *dc));
     put_back_sleep_idle(&mut r);
     if let Some((s, prev)) = r.boost_dc.clone() {
-        if parse_guid(&s).is_none_or(|g| read_boost_dc(&g).is_some_and(|cur| cur != 0) || write_boost_dc(&g, prev)) {
+        if parse_guid(&s).is_none_or(|g| {
+            read_boost_dc(&g).is_some_and(|cur| cur != 0) || write_boost_dc(&g, prev)
+        }) {
             r.boost_dc = None;
         }
     }
@@ -284,7 +422,8 @@ pub fn restore_lid_from_journal() {
 fn handle_start(h: HANDLE) -> Option<u64> {
     use windows_sys::Win32::Foundation::FILETIME;
     unsafe {
-        let (mut c, mut e, mut k, mut u): (FILETIME, FILETIME, FILETIME, FILETIME) = std::mem::zeroed();
+        let (mut c, mut e, mut k, mut u): (FILETIME, FILETIME, FILETIME, FILETIME) =
+            std::mem::zeroed();
         if GetProcessTimes(h, &mut c, &mut e, &mut k, &mut u) == 0 {
             return None;
         }
@@ -295,15 +434,34 @@ fn handle_start(h: HANDLE) -> Option<u64> {
 /// Lets this process call SetSuspendState (it needs the shutdown privilege enabled, not just held).
 fn enable_shutdown_privilege() {
     use windows_sys::Win32::Foundation::LUID;
-    use windows_sys::Win32::Security::{AdjustTokenPrivileges, LookupPrivilegeValueW, LUID_AND_ATTRIBUTES, SE_PRIVILEGE_ENABLED, TOKEN_ADJUST_PRIVILEGES, TOKEN_PRIVILEGES, TOKEN_QUERY};
+    use windows_sys::Win32::Security::{
+        AdjustTokenPrivileges, LookupPrivilegeValueW, LUID_AND_ATTRIBUTES, SE_PRIVILEGE_ENABLED,
+        TOKEN_ADJUST_PRIVILEGES, TOKEN_PRIVILEGES, TOKEN_QUERY,
+    };
     unsafe {
         let mut tok: HANDLE = std::ptr::null_mut();
-        if OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &mut tok) == 0 {
+        if OpenProcessToken(
+            GetCurrentProcess(),
+            TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
+            &mut tok,
+        ) == 0
+        {
             return;
         }
         let mut luid: LUID = std::mem::zeroed();
-        if LookupPrivilegeValueW(std::ptr::null(), wide("SeShutdownPrivilege").as_ptr(), &mut luid) != 0 {
-            let tp = TOKEN_PRIVILEGES { PrivilegeCount: 1, Privileges: [LUID_AND_ATTRIBUTES { Luid: luid, Attributes: SE_PRIVILEGE_ENABLED }] };
+        if LookupPrivilegeValueW(
+            std::ptr::null(),
+            wide("SeShutdownPrivilege").as_ptr(),
+            &mut luid,
+        ) != 0
+        {
+            let tp = TOKEN_PRIVILEGES {
+                PrivilegeCount: 1,
+                Privileges: [LUID_AND_ATTRIBUTES {
+                    Luid: luid,
+                    Attributes: SE_PRIVILEGE_ENABLED,
+                }],
+            };
             AdjustTokenPrivileges(tok, 0, &tp, 0, std::ptr::null_mut(), std::ptr::null_mut());
         }
         CloseHandle(tok);
@@ -320,7 +478,15 @@ fn external_display_active() -> bool {
         }
         let mut paths: Vec<DISPLAYCONFIG_PATH_INFO> = vec![std::mem::zeroed(); np as usize];
         let mut modes: Vec<DISPLAYCONFIG_MODE_INFO> = vec![std::mem::zeroed(); nm as usize];
-        if QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &mut np, paths.as_mut_ptr(), &mut nm, modes.as_mut_ptr(), std::ptr::null_mut()) != 0 {
+        if QueryDisplayConfig(
+            QDC_ONLY_ACTIVE_PATHS,
+            &mut np,
+            paths.as_mut_ptr(),
+            &mut nm,
+            modes.as_mut_ptr(),
+            std::ptr::null_mut(),
+        ) != 0
+        {
             return false;
         }
         paths.truncate(np as usize);
@@ -362,15 +528,36 @@ fn start_power_window() {
         .name("ajar-power".into())
         .spawn(|| unsafe {
             let class = wide("AjarPowerWindow");
-            let wc = WNDCLASSW { lpfnWndProc: Some(wndproc), lpszClassName: class.as_ptr(), ..std::mem::zeroed() };
+            let wc = WNDCLASSW {
+                lpfnWndProc: Some(wndproc),
+                lpszClassName: class.as_ptr(),
+                ..std::mem::zeroed()
+            };
             RegisterClassW(&wc);
-            let hwnd = CreateWindowExW(0, class.as_ptr(), wide("Ajar").as_ptr(), 0, 0, 0, 0, 0, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null());
+            let hwnd = CreateWindowExW(
+                0,
+                class.as_ptr(),
+                wide("Ajar").as_ptr(),
+                0,
+                0,
+                0,
+                0,
+                0,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null(),
+            );
             if hwnd.is_null() {
                 return;
             }
             POWER_HWND.store(hwnd as isize, Ordering::SeqCst);
             // Windows sends the current state right after registering.
-            RegisterPowerSettingNotification(hwnd as HANDLE, &GUID_LIDSWITCH_STATE_CHANGE, DEVICE_NOTIFY_WINDOW_HANDLE);
+            RegisterPowerSettingNotification(
+                hwnd as HANDLE,
+                &GUID_LIDSWITCH_STATE_CHANGE,
+                DEVICE_NOTIFY_WINDOW_HANDLE,
+            );
             let mut msg: MSG = std::mem::zeroed();
             while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
                 DispatchMessageW(&msg);
@@ -399,7 +586,15 @@ const HEAT_SAMPLES: usize = 5;
 impl Win {
     pub fn new() -> Win {
         start_power_window();
-        Win { user_do_nothing: false, request: std::ptr::null_mut(), exec_state: false, reason: vec![], caps: caps(), heat: Default::default(), wake_timer: std::ptr::null_mut() }
+        Win {
+            user_do_nothing: false,
+            request: std::ptr::null_mut(),
+            exec_state: false,
+            reason: vec![],
+            caps: caps(),
+            heat: Default::default(),
+            wake_timer: std::ptr::null_mut(),
+        }
     }
 
     fn release_request(&mut self) {
@@ -470,17 +665,34 @@ impl Drop for Win {
 }
 
 fn run_hidden(cmd: &str, args: &[&str]) -> Result<String, String> {
-    let out = std::process::Command::new(cmd).args(args).creation_flags(CREATE_NO_WINDOW).output().map_err(|e| format!("{cmd}: {e}"))?;
+    let out = std::process::Command::new(cmd)
+        .args(args)
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| format!("{cmd}: {e}"))?;
     if out.status.success() {
         Ok(String::from_utf8_lossy(&out.stdout).to_string())
     } else {
-        Err(format!("{cmd}: {}{}", String::from_utf8_lossy(&out.stderr).trim(), String::from_utf8_lossy(&out.stdout).trim()))
+        Err(format!(
+            "{cmd}: {}{}",
+            String::from_utf8_lossy(&out.stderr).trim(),
+            String::from_utf8_lossy(&out.stdout).trim()
+        ))
     }
 }
 
 fn reg_set(subkey: &str, name: &str, value: &str) -> bool {
     let data = wide(value);
-    unsafe { RegSetKeyValueW(HKEY_CURRENT_USER, wide(subkey).as_ptr(), wide(name).as_ptr(), REG_SZ, data.as_ptr() as _, (data.len() * 2) as u32) == 0 }
+    unsafe {
+        RegSetKeyValueW(
+            HKEY_CURRENT_USER,
+            wide(subkey).as_ptr(),
+            wide(name).as_ptr(),
+            REG_SZ,
+            data.as_ptr() as _,
+            (data.len() * 2) as u32,
+        ) == 0
+    }
 }
 
 pub fn app_exe() -> Result<std::path::PathBuf, String> {
@@ -490,7 +702,11 @@ pub fn app_exe() -> Result<std::path::PathBuf, String> {
 }
 
 pub fn xml_escape(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;").replace('\'', "&apos;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
 }
 
 /// Task Scheduler definition: every minute, forever, on battery too (schtasks' own defaults stop on battery,
@@ -548,31 +764,45 @@ impl Platform for Win {
     fn battery(&mut self) -> Option<Battery> {
         unsafe {
             let mut s: SYSTEM_POWER_STATUS = std::mem::zeroed();
-            if GetSystemPowerStatus(&mut s) == 0 || s.BatteryFlag & 128 != 0 || s.BatteryFlag == 255 {
+            if GetSystemPowerStatus(&mut s) == 0 || s.BatteryFlag & 128 != 0 || s.BatteryFlag == 255
+            {
                 return None;
             }
             let mut b: SYSTEM_BATTERY_STATE = std::mem::zeroed();
-            let ok = CallNtPowerInformation(SystemBatteryState, std::ptr::null(), 0, &mut b as *mut _ as *mut _, std::mem::size_of::<SYSTEM_BATTERY_STATE>() as u32) == 0;
+            let ok = CallNtPowerInformation(
+                SystemBatteryState,
+                std::ptr::null(),
+                0,
+                &mut b as *mut _ as *mut _,
+                std::mem::size_of::<SYSTEM_BATTERY_STATE>() as u32,
+            ) == 0;
             if ok && !b.BatteryPresent {
                 return None;
             }
             let percent = if s.BatteryLifePercent <= 100 {
                 s.BatteryLifePercent as u32
             } else if ok && b.MaxCapacity > 0 {
-                (b.RemainingCapacity as f64 / b.MaxCapacity as f64 * 100.0).round().min(100.0) as u32
+                (b.RemainingCapacity as f64 / b.MaxCapacity as f64 * 100.0)
+                    .round()
+                    .min(100.0) as u32
             } else {
                 return None;
             };
             // Rate is mW, negative while discharging (the field is declared unsigned).
             let rate = b.Rate as i32;
             let charging = ok && b.Charging;
-            let watts = if ok && rate < 0 && rate != i32::MIN { -rate as f64 / 1000.0 } else { 0.0 };
+            let watts = if ok && rate < 0 && rate != i32::MIN {
+                -rate as f64 / 1000.0
+            } else {
+                0.0
+            };
             Some(Battery {
                 percent,
                 watts: if charging { 0.0 } else { watts },
                 on_ac: s.ACLineStatus == 1,
                 charging,
-                full_wh: (ok && b.MaxCapacity > 0 && b.MaxCapacity != u32::MAX).then(|| b.MaxCapacity as f64 / 1000.0),
+                full_wh: (ok && b.MaxCapacity > 0 && b.MaxCapacity != u32::MAX)
+                    .then(|| b.MaxCapacity as f64 / 1000.0),
             })
         }
     }
@@ -597,10 +827,13 @@ impl Platform for Win {
                 let ctx = REASON_CONTEXT {
                     Version: 0, // POWER_REQUEST_CONTEXT_VERSION
                     Flags: POWER_REQUEST_CONTEXT_SIMPLE_STRING,
-                    Reason: REASON_CONTEXT_0 { SimpleReasonString: self.reason.as_mut_ptr() },
+                    Reason: REASON_CONTEXT_0 {
+                        SimpleReasonString: self.reason.as_mut_ptr(),
+                    },
                 };
                 let h = PowerCreateRequest(&ctx);
-                let created = !h.is_null() && h != windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+                let created =
+                    !h.is_null() && h != windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
                 if created && PowerSetRequest(h, PowerRequestSystemRequired) != 0 {
                     PowerSetRequest(h, PowerRequestExecutionRequired);
                     if self.caps.modern_standby {
@@ -626,10 +859,12 @@ impl Platform for Win {
             }
         }
         if self.caps.lid && restore.lid_action.is_none() {
-            let result = active_scheme().ok_or_else(|| "Couldn't read the active power plan".to_string()).and_then(|scheme| {
-                self.user_do_nothing = read_lid_action(&scheme) == Some((0, 0));
-                Win::take_over_lid(&scheme, restore, true)
-            });
+            let result = active_scheme()
+                .ok_or_else(|| "Couldn't read the active power plan".to_string())
+                .and_then(|scheme| {
+                    self.user_do_nothing = read_lid_action(&scheme) == Some((0, 0));
+                    Win::take_over_lid(&scheme, restore, true)
+                });
             if let Err(e) = result {
                 // Don't leave the keep-awake request behind when the hold as a whole failed.
                 self.release_request();
@@ -673,7 +908,12 @@ impl Platform for Win {
             return Err("Couldn't put back what closing the lid does in every power plan".into());
         }
         if let Some((ac, dc)) = restore.lid_action {
-            let scheme = restore.lid_scheme.as_deref().and_then(parse_guid).or_else(active_scheme).ok_or("Couldn't find the power plan")?;
+            let scheme = restore
+                .lid_scheme
+                .as_deref()
+                .and_then(parse_guid)
+                .or_else(active_scheme)
+                .ok_or("Couldn't find the power plan")?;
             // Only undo Ajar's own change: if the value is no longer "Do nothing", someone set it deliberately.
             let still_ours = read_lid_action(&scheme).is_none_or(|cur| cur == (0, 0));
             if still_ours && !write_lid_action(&scheme, ac, dc) {
@@ -714,19 +954,25 @@ impl Platform for Win {
                 if let Some(scheme) = active_scheme() {
                     if let Some(cur) = read_boost_dc(&scheme).filter(|&v| v != 0) {
                         restore.boost_dc = Some((guid_string(&scheme), cur));
-                        if !crate::state::save_json(&crate::state::file("restore.json"), restore) || !write_boost_dc(&scheme, 0) {
+                        if !crate::state::save_json(&crate::state::file("restore.json"), restore)
+                            || !write_boost_dc(&scheme, 0)
+                        {
                             restore.boost_dc = None;
                         }
                     }
                 }
             }
         } else if let Some((s, prev)) = restore.boost_dc.clone() {
-            let done = parse_guid(&s).is_none_or(|g| read_boost_dc(&g).is_some_and(|cur| cur != 0) || write_boost_dc(&g, prev));
+            let done = parse_guid(&s).is_none_or(|g| {
+                read_boost_dc(&g).is_some_and(|cur| cur != 0) || write_boost_dc(&g, prev)
+            });
             if done {
                 restore.boost_dc = None;
             }
         }
-        let Some((get, set)) = overlay_fns() else { return false };
+        let Some((get, set)) = overlay_fns() else {
+            return false;
+        };
         unsafe {
             let mut cur: GUID = std::mem::zeroed();
             if get(&mut cur) != 0 {
@@ -743,7 +989,11 @@ impl Platform for Win {
             } else {
                 // Only if it's still Ajar's choice; the person may have moved the slider since. Kept for a retry
                 // if Windows refuses.
-                super::put_back(&mut restore.power_overlay, same(&cur, &OVERLAY_EFFICIENCY), |s| parse_guid(s).is_none_or(|prev| set(prev) == 0))
+                super::put_back(
+                    &mut restore.power_overlay,
+                    same(&cur, &OVERLAY_EFFICIENCY),
+                    |s| parse_guid(s).is_none_or(|prev| set(prev) == 0),
+                )
             }
         }
     }
@@ -752,16 +1002,29 @@ impl Platform for Win {
         let _ = self.end_hold(restore);
         self.set_low_power(false, restore);
         // Whatever couldn't be put back stays recorded, to be retried.
-        if restore.lid_action.is_none() && restore.lid_more.is_empty() && restore.power_overlay.is_none() && restore.sleep_idle.is_none() && restore.boost_dc.is_none() {
+        if restore.lid_action.is_none()
+            && restore.lid_more.is_empty()
+            && restore.power_overlay.is_none()
+            && restore.sleep_idle.is_none()
+            && restore.boost_dc.is_none()
+        {
             *restore = Restore::default();
         }
     }
 
-    fn slow(&mut self, pid: u32, start: u64, protected: &HashSet<u32>) -> Option<(i64, Option<String>)> {
+    fn slow(
+        &mut self,
+        pid: u32,
+        start: u64,
+        protected: &HashSet<u32>,
+    ) -> Option<(i64, Option<String>)> {
         if protected.contains(&pid) {
             return None;
         }
-        let h = Win::open(pid, PROCESS_SET_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION)?;
+        let h = Win::open(
+            pid,
+            PROCESS_SET_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION,
+        )?;
         unsafe {
             if handle_start(h) != Some(start) {
                 CloseHandle(h);
@@ -771,8 +1034,17 @@ impl Platform for Win {
             let ok = prev != 0 && SetPriorityClass(h, IDLE_PRIORITY_CLASS) != 0;
             if ok {
                 // Efficiency mode (EcoQoS): runs it on efficient cores at low clocks.
-                let s = PROCESS_POWER_THROTTLING_STATE { Version: PROCESS_POWER_THROTTLING_CURRENT_VERSION, ControlMask: PROCESS_POWER_THROTTLING_EXECUTION_SPEED, StateMask: PROCESS_POWER_THROTTLING_EXECUTION_SPEED };
-                SetProcessInformation(h, ProcessPowerThrottling, &s as *const _ as _, std::mem::size_of_val(&s) as u32);
+                let s = PROCESS_POWER_THROTTLING_STATE {
+                    Version: PROCESS_POWER_THROTTLING_CURRENT_VERSION,
+                    ControlMask: PROCESS_POWER_THROTTLING_EXECUTION_SPEED,
+                    StateMask: PROCESS_POWER_THROTTLING_EXECUTION_SPEED,
+                };
+                SetProcessInformation(
+                    h,
+                    ProcessPowerThrottling,
+                    &s as *const _ as _,
+                    std::mem::size_of_val(&s) as u32,
+                );
             }
             CloseHandle(h);
             ok.then_some((prev as i64, None))
@@ -780,17 +1052,35 @@ impl Platform for Win {
     }
 
     fn unslow(&mut self, t: &Touched) -> bool {
-        let Some(h) = Win::open(t.pid, PROCESS_SET_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION) else { return false };
+        let Some(h) = Win::open(
+            t.pid,
+            PROCESS_SET_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION,
+        ) else {
+            return false;
+        };
         unsafe {
             if handle_start(h) != Some(t.start) {
                 CloseHandle(h);
                 return false;
             }
-            let prev = if t.previous > 0 && t.previous <= u32::MAX as i64 { t.previous as u32 } else { NORMAL_PRIORITY_CLASS };
+            let prev = if t.previous > 0 && t.previous <= u32::MAX as i64 {
+                t.previous as u32
+            } else {
+                NORMAL_PRIORITY_CLASS
+            };
             let ok = SetPriorityClass(h, prev) != 0;
             // Hand throttling back to Windows' own heuristics.
-            let s = PROCESS_POWER_THROTTLING_STATE { Version: PROCESS_POWER_THROTTLING_CURRENT_VERSION, ControlMask: 0, StateMask: 0 };
-            SetProcessInformation(h, ProcessPowerThrottling, &s as *const _ as _, std::mem::size_of_val(&s) as u32);
+            let s = PROCESS_POWER_THROTTLING_STATE {
+                Version: PROCESS_POWER_THROTTLING_CURRENT_VERSION,
+                ControlMask: 0,
+                StateMask: 0,
+            };
+            SetProcessInformation(
+                h,
+                ProcessPowerThrottling,
+                &s as *const _ as _,
+                std::mem::size_of_val(&s) as u32,
+            );
             CloseHandle(h);
             ok
         }
@@ -809,7 +1099,12 @@ impl Platform for Win {
             return Err("Ajar lost its keep-awake request".into());
         }
         if restore.lid_action.is_some() {
-            let scheme = restore.lid_scheme.as_deref().and_then(parse_guid).or_else(active_scheme).ok_or("Couldn't read the power plan")?;
+            let scheme = restore
+                .lid_scheme
+                .as_deref()
+                .and_then(parse_guid)
+                .or_else(active_scheme)
+                .ok_or("Couldn't read the power plan")?;
             if let Some(cur) = read_lid_action(&scheme) {
                 if cur != (0, 0) {
                     // Something changed "When I close the lid" during the hold. Holding is the explicit intent,
@@ -837,13 +1132,22 @@ impl Platform for Win {
         if pid <= 4 || pid == std::process::id() {
             return false;
         }
-        let Some(h) = Win::open(pid, PROCESS_SUSPEND_RESUME | PROCESS_QUERY_LIMITED_INFORMATION) else { return false };
+        let Some(h) = Win::open(
+            pid,
+            PROCESS_SUSPEND_RESUME | PROCESS_QUERY_LIMITED_INFORMATION,
+        ) else {
+            return false;
+        };
         let st = unsafe {
             if handle_start(h) != Some(start) {
                 CloseHandle(h);
                 return false;
             }
-            if on { NtSuspendProcess(h) } else { NtResumeProcess(h) }
+            if on {
+                NtSuspendProcess(h)
+            } else {
+                NtResumeProcess(h)
+            }
         };
         unsafe { CloseHandle(h) };
         st >= 0
@@ -863,7 +1167,8 @@ impl Platform for Win {
             windows_sys::Win32::Foundation::SetLastError(0);
             let ok = SetWaitableTimer(self.wake_timer, &due, 0, None, std::ptr::null(), 1) != 0;
             // ERROR_NOT_SUPPORTED: the timer is set, but this machine can't be woken by it.
-            ok && windows_sys::Win32::Foundation::GetLastError() != windows_sys::Win32::Foundation::ERROR_NOT_SUPPORTED
+            ok && windows_sys::Win32::Foundation::GetLastError()
+                != windows_sys::Win32::Foundation::ERROR_NOT_SUPPORTED
         }
     }
 
@@ -882,7 +1187,11 @@ impl Platform for Win {
         let key = format!("Software\\Classes\\AppUserModelId\\{AUMID}");
         reg_set(&key, "DisplayName", "Ajar");
         reg_set(&key, "IconUri", &icon.to_string_lossy());
-        let _ = notify_rust::Notification::new().app_id(AUMID).summary(title).body(body).show();
+        let _ = notify_rust::Notification::new()
+            .app_id(AUMID)
+            .summary(title)
+            .body(body)
+            .show();
     }
 
     fn set_open_at_login(&mut self, on: bool) -> Result<(), String> {
@@ -895,7 +1204,9 @@ impl Platform for Win {
                 Err("Couldn't add Ajar to startup apps".into())
             }
         } else {
-            unsafe { RegDeleteKeyValueW(HKEY_CURRENT_USER, wide(run).as_ptr(), wide("Ajar").as_ptr()) };
+            unsafe {
+                RegDeleteKeyValueW(HKEY_CURRENT_USER, wide(run).as_ptr(), wide("Ajar").as_ptr())
+            };
             Ok(())
         }
     }
@@ -909,14 +1220,29 @@ impl Platform for Win {
             bytes.extend(u.to_le_bytes());
         }
         std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
-        let r = run_hidden("schtasks.exe", &["/Create", "/F", "/TN", TASK, "/XML", &path.to_string_lossy()]);
+        let r = run_hidden(
+            "schtasks.exe",
+            &[
+                "/Create",
+                "/F",
+                "/TN",
+                TASK,
+                "/XML",
+                &path.to_string_lossy(),
+            ],
+        );
         let _ = std::fs::remove_file(&path);
         r.map(|_| ())
     }
 
     fn uninstall(&mut self) -> Result<(), String> {
         let _ = run_hidden("schtasks.exe", &["/Delete", "/F", "/TN", TASK]);
-        unsafe { RegDeleteTreeW(HKEY_CURRENT_USER, wide(&format!("Software\\Classes\\AppUserModelId\\{AUMID}")).as_ptr()) };
+        unsafe {
+            RegDeleteTreeW(
+                HKEY_CURRENT_USER,
+                wide(&format!("Software\\Classes\\AppUserModelId\\{AUMID}")).as_ptr(),
+            )
+        };
         self.set_open_at_login(false)
     }
 }
@@ -927,12 +1253,34 @@ mod tests {
     fn throttle_limit_maps_to_heat() {
         use super::{thermal_from_limits, Thermal};
         assert_eq!(thermal_from_limits(&[]), Thermal::Unknown);
-        assert_eq!(thermal_from_limits(&[(3000, 3000), (3000, 3000)]), Thermal::Normal);
-        assert_eq!(thermal_from_limits(&[(3000, 3000), (3000, 1800)]), Thermal::Normal, "one limited core isn't heat");
-        assert_eq!(thermal_from_limits(&[(3000, 1800), (3000, 1900)]), Thermal::Serious, "every core held back");
-        assert_eq!(thermal_from_limits(&[(3000, 900), (3000, 1000)]), Thermal::Critical);
-        assert_eq!(thermal_from_limits(&[(3000, 900), (3000, 1800)]), Thermal::Serious, "the least limited core decides");
-        assert_eq!(thermal_from_limits(&[(0, 0)]), Thermal::Unknown, "no data is not normal");
+        assert_eq!(
+            thermal_from_limits(&[(3000, 3000), (3000, 3000)]),
+            Thermal::Normal
+        );
+        assert_eq!(
+            thermal_from_limits(&[(3000, 3000), (3000, 1800)]),
+            Thermal::Normal,
+            "one limited core isn't heat"
+        );
+        assert_eq!(
+            thermal_from_limits(&[(3000, 1800), (3000, 1900)]),
+            Thermal::Serious,
+            "every core held back"
+        );
+        assert_eq!(
+            thermal_from_limits(&[(3000, 900), (3000, 1000)]),
+            Thermal::Critical
+        );
+        assert_eq!(
+            thermal_from_limits(&[(3000, 900), (3000, 1800)]),
+            Thermal::Serious,
+            "the least limited core decides"
+        );
+        assert_eq!(
+            thermal_from_limits(&[(0, 0)]),
+            Thermal::Unknown,
+            "no data is not normal"
+        );
     }
 
     use super::*;
@@ -942,7 +1290,10 @@ mod tests {
         let s = guid_string(&OVERLAY_EFFICIENCY);
         assert_eq!(s, "961cc777-2547-4f9d-8174-7d86181b8a7a");
         assert!(same(&parse_guid(&s).unwrap(), &OVERLAY_EFFICIENCY));
-        assert!(same(&parse_guid("{961CC777-2547-4F9D-8174-7D86181B8A7A}").unwrap(), &OVERLAY_EFFICIENCY));
+        assert!(same(
+            &parse_guid("{961CC777-2547-4F9D-8174-7D86181B8A7A}").unwrap(),
+            &OVERLAY_EFFICIENCY
+        ));
         assert!(parse_guid("nope").is_none());
     }
 

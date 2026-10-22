@@ -60,21 +60,46 @@ fn main() -> ExitCode {
             return ExitCode::SUCCESS;
         }
         "settings" | "schema" => {
-            let r = match ipc::call(&root, "schema", json!({}), Duration::from_secs(10)) { Ok(v) => v, Err(e) => return fail(&e) };
+            let r = match ipc::call(&root, "schema", json!({}), Duration::from_secs(10)) {
+                Ok(v) => v,
+                Err(e) => return fail(&e),
+            };
             if json_out {
                 println!("{}", serde_json::to_string_pretty(&r).unwrap_or_default());
                 return ExitCode::SUCCESS;
             }
             for s in r["settings"].as_array().cloned().unwrap_or_default() {
-                let allowed: Vec<String> = s["allowed"].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_default();
-                println!("{} = {}   [{}]", s["key"].as_str().unwrap_or(""), s["value"], allowed.join("|"));
-                println!("    {}{}", s["description"].as_str().unwrap_or(""), s["note"].as_str().map(|n| format!(" ({n})")).unwrap_or_default());
+                let allowed: Vec<String> = s["allowed"]
+                    .as_array()
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|x| x.as_str().map(str::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                println!(
+                    "{} = {}   [{}]",
+                    s["key"].as_str().unwrap_or(""),
+                    s["value"],
+                    allowed.join("|")
+                );
+                println!(
+                    "    {}{}",
+                    s["description"].as_str().unwrap_or(""),
+                    s["note"]
+                        .as_str()
+                        .map(|n| format!(" ({n})"))
+                        .unwrap_or_default()
+                );
             }
             println!("\nChange with: ajar set <key> <value>. Per-app rules: ajar rule <app> leave|slow|pause. File: {}", r["config_file"].as_str().unwrap_or(""));
             return ExitCode::SUCCESS;
         }
         "power" => {
-            let r = match ipc::call(&root, "power", json!({}), Duration::from_secs(10)) { Ok(v) => v, Err(e) => return fail(&e) };
+            let r = match ipc::call(&root, "power", json!({}), Duration::from_secs(10)) {
+                Ok(v) => v,
+                Err(e) => return fail(&e),
+            };
             if json_out {
                 println!("{}", serde_json::to_string_pretty(&r).unwrap_or_default());
                 return ExitCode::SUCCESS;
@@ -85,9 +110,17 @@ fn main() -> ExitCode {
             }
             for s in r["suspects"].as_array().cloned().unwrap_or_default() {
                 let active = s["active"].as_bool() == Some(true);
-                println!("{} {}", if active { "•" } else { "✓" }, s["title"].as_str().unwrap_or(""));
+                println!(
+                    "{} {}",
+                    if active { "•" } else { "✓" },
+                    s["title"].as_str().unwrap_or("")
+                );
                 if active {
-                    println!("    fix: ajar set {} {}", s["setting"].as_str().unwrap_or(""), s["suggested_value"].as_str().unwrap_or(""));
+                    println!(
+                        "    fix: ajar set {} {}",
+                        s["setting"].as_str().unwrap_or(""),
+                        s["suggested_value"].as_str().unwrap_or("")
+                    );
                 }
             }
             return ExitCode::SUCCESS;
@@ -95,11 +128,21 @@ fn main() -> ExitCode {
         "connect" => {
             let which = rest.first().map(String::as_str).unwrap_or("all");
             let mut did = false;
-            if matches!(which, "claude" | "claude-code") || (which == "all" && ajar::ai::claude_code_config().exists()) {
-                println!("Claude Code: {}", ajar::ai::connect_claude_code().unwrap_or_else(|e| e));
+            if matches!(which, "claude" | "claude-code")
+                || (which == "all" && ajar::ai::claude_code_config().exists())
+            {
+                println!(
+                    "Claude Code: {}",
+                    ajar::ai::connect_claude_code().unwrap_or_else(|e| e)
+                );
                 did = true;
             }
-            if which == "codex" || (which == "all" && ajar::ai::codex_config().parent().is_some_and(|d| d.exists())) {
+            if which == "codex"
+                || (which == "all"
+                    && ajar::ai::codex_config()
+                        .parent()
+                        .is_some_and(|d| d.exists()))
+            {
                 println!("Codex: {}", ajar::ai::connect_codex().unwrap_or_else(|e| e));
                 did = true;
             }
@@ -114,7 +157,9 @@ fn main() -> ExitCode {
             return ExitCode::SUCCESS;
         }
         "mcp-setup" => {
-            let exe = std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_else(|_| "ajar".into());
+            let exe = std::env::current_exe()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|_| "ajar".into());
             println!("Claude Code:  claude mcp add ajar -- \"{exe}\" mcp");
             println!("Codex:        codex mcp add ajar -- \"{exe}\" mcp");
             println!("Gemini CLI:   gemini mcp add ajar \"{exe}\" mcp");
@@ -151,16 +196,26 @@ fn main() -> ExitCode {
                 Some(m) => (Some(m), rest[1..].join(" ")),
                 None => (None, rest.join(" ")),
             };
-            let reason = if reason.trim().is_empty() { "Held from the command line".to_string() } else { reason };
+            let reason = if reason.trim().is_empty() {
+                "Held from the command line".to_string()
+            } else {
+                reason
+            };
             ("hold", json!({ "minutes": minutes, "reason": reason }))
         }
         "release" => ("release", json!({ "id": rest.first() })),
         "wake-at" | "wake_at" => match rest.first() {
-            Some(t) => ("wake_at", json!({ "time": t, "minutes": rest.get(1).and_then(|m| m.parse::<f64>().ok()) })),
+            Some(t) => (
+                "wake_at",
+                json!({ "time": t, "minutes": rest.get(1).and_then(|m| m.parse::<f64>().ok()) }),
+            ),
             None => return fail("usage: ajar wake-at HH:MM [minutes] | off"),
         },
         "check-in" | "check_in" => match rest.first() {
-            Some(m) => ("set", json!({ "key": "check_in_minutes", "value": m.parse::<f64>().ok() })),
+            Some(m) => (
+                "set",
+                json!({ "key": "check_in_minutes", "value": m.parse::<f64>().ok() }),
+            ),
             None => return fail("usage: ajar check-in 0 | 15 | 30 | 60"),
         },
         "preset" => match rest.first() {
@@ -172,7 +227,10 @@ fn main() -> ExitCode {
             _ => return fail("usage: ajar rule <app> leave | slow | pause | default"),
         },
         "watch" => match rest.iter().find(|a| !a.starts_with("--")) {
-            Some(a) => ("watch", json!({ "app": a, "remove": rest.iter().any(|x| x == "--remove") })),
+            Some(a) => (
+                "watch",
+                json!({ "app": a, "remove": rest.iter().any(|x| x == "--remove") }),
+            ),
             None => return fail("usage: ajar watch <app> [--remove]"),
         },
         "set" => match (rest.first(), rest.get(1)) {
@@ -209,9 +267,19 @@ fn fail(msg: &str) -> ExitCode {
 fn parse_on(rest: &[String]) -> Result<Option<f64>, String> {
     match rest {
         [] => Ok(None),
-        [m] => m.parse::<f64>().ok().filter(|m| m.is_finite() && *m > 0.0).map(Some).ok_or_else(|| format!("{m:?} isn't a number of minutes")),
+        [m] => m
+            .parse::<f64>()
+            .ok()
+            .filter(|m| m.is_finite() && *m > 0.0)
+            .map(Some)
+            .ok_or_else(|| format!("{m:?} isn't a number of minutes")),
         [u, h] if u == "until" => {
-            let hour: u32 = h.split(':').next().and_then(|x| x.parse().ok()).filter(|h| *h < 24).ok_or("use an hour like 7 or 07:00")?;
+            let hour: u32 = h
+                .split(':')
+                .next()
+                .and_then(|x| x.parse().ok())
+                .filter(|h| *h < 24)
+                .ok_or("use an hour like 7 or 07:00")?;
             let now = ajar::now();
             let t = ajar::format::next_local_hour(now, hour);
             Ok(Some(((t - now) as f64 / 60.0).ceil()))
@@ -233,7 +301,10 @@ fn print_human(cmd: &str, v: &Value) {
                 if b["on_power"] == json!(true) {
                     line.push_str(" · plugged in");
                 } else if let Some(h) = v["hours_left_closed"].as_f64() {
-                    line.push_str(&format!(" · ≈{} left with the lid closed", ajar::format::hm(h)));
+                    line.push_str(&format!(
+                        " · ≈{} left with the lid closed",
+                        ajar::format::hm(h)
+                    ));
                 }
                 println!("{line}");
             }
@@ -241,23 +312,55 @@ fn print_human(cmd: &str, v: &Value) {
                 println!("Note: {w}");
             }
             for a in v["watching"].as_array().into_iter().flatten() {
-                let state = if a["working"] == json!(true) { format!("working ({}% CPU)", a["cpu_percent"]) } else { "idle".into() };
-                let project = a["project"].as_str().filter(|p| !p.is_empty()).map(|p| format!(" in {p}")).unwrap_or_default();
-                let track = if a["keeps_awake"] == json!(false) { " · tracked only" } else { "" };
-                println!("  {}{project}: {state}{track}", a["name"].as_str().unwrap_or(""));
+                let state = if a["working"] == json!(true) {
+                    format!("working ({}% CPU)", a["cpu_percent"])
+                } else {
+                    "idle".into()
+                };
+                let project = a["project"]
+                    .as_str()
+                    .filter(|p| !p.is_empty())
+                    .map(|p| format!(" in {p}"))
+                    .unwrap_or_default();
+                let track = if a["keeps_awake"] == json!(false) {
+                    " · tracked only"
+                } else {
+                    ""
+                };
+                println!(
+                    "  {}{project}: {state}{track}",
+                    a["name"].as_str().unwrap_or("")
+                );
             }
             for h in v["holds"].as_array().into_iter().flatten() {
-                println!("  hold {}: {}", h["id"].as_str().unwrap_or(""), h["reason"].as_str().unwrap_or(""));
+                println!(
+                    "  hold {}: {}",
+                    h["id"].as_str().unwrap_or(""),
+                    h["reason"].as_str().unwrap_or("")
+                );
             }
         }
         "energy" => {
             for a in v["apps"].as_array().into_iter().flatten() {
-                println!("{:>6.1}%  {:<24} lid closed: {}", a["cpu_percent"].as_f64().unwrap_or(0.0), a["name"].as_str().unwrap_or(""), a["while_closed"].as_str().unwrap_or(""));
+                println!(
+                    "{:>6.1}%  {:<24} lid closed: {}",
+                    a["cpu_percent"].as_f64().unwrap_or(0.0),
+                    a["name"].as_str().unwrap_or(""),
+                    a["while_closed"].as_str().unwrap_or("")
+                );
             }
         }
         "config" => println!("{}", v["path"].as_str().unwrap_or("")),
-        "hold" => println!("Holding (id {}). {}", v["hold"]["id"].as_str().unwrap_or("?"), v["status"].as_str().unwrap_or("")),
-        "release" => println!("Released {}. {}", v["released"], v["status"].as_str().unwrap_or("")),
+        "hold" => println!(
+            "Holding (id {}). {}",
+            v["hold"]["id"].as_str().unwrap_or("?"),
+            v["status"].as_str().unwrap_or("")
+        ),
+        "release" => println!(
+            "Released {}. {}",
+            v["released"],
+            v["status"].as_str().unwrap_or("")
+        ),
         _ => println!("{}", v["status"].as_str().unwrap_or("Done")),
     }
 }
@@ -266,12 +369,25 @@ fn print_human(cmd: &str, v: &Value) {
 /// it ends even if this wrapper is killed.
 fn run(root: &std::path::Path, rest: &[String]) -> ExitCode {
     let cmdline: Vec<&String> = rest.iter().skip_while(|a| *a == "--").collect();
-    let Some((prog, args)) = cmdline.split_first() else { return fail("usage: ajar run -- <command> [args…]") };
-    let reason = format!("Running {}", std::path::Path::new(prog.as_str()).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| prog.to_string()));
+    let Some((prog, args)) = cmdline.split_first() else {
+        return fail("usage: ajar run -- <command> [args…]");
+    };
+    let reason = format!(
+        "Running {}",
+        std::path::Path::new(prog.as_str())
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| prog.to_string())
+    );
     // Hold first, tied to this wrapper (a short bridge so nothing runs unprotected), then re-tie it to the
     // command once it has started. If this wrapper is killed, the hold ends with it.
     let me = std::process::id();
-    let bridge = ipc::call(root, "hold", json!({ "reason": reason, "pid": me }), Duration::from_secs(5));
+    let bridge = ipc::call(
+        root,
+        "hold",
+        json!({ "reason": reason, "pid": me }),
+        Duration::from_secs(5),
+    );
     if let Err(e) = &bridge {
         eprintln!("ajar: not keeping awake ({e}); running anyway");
     }
@@ -282,7 +398,16 @@ fn run(root: &std::path::Path, rest: &[String]) -> ExitCode {
             return fail(&format!("couldn't start {prog}: {e}"));
         }
     };
-    let hold = if bridge.is_ok() { ipc::call(root, "hold", json!({ "reason": reason, "pid": child.id() }), Duration::from_secs(5)) } else { Err(String::new()) };
+    let hold = if bridge.is_ok() {
+        ipc::call(
+            root,
+            "hold",
+            json!({ "reason": reason, "pid": child.id() }),
+            Duration::from_secs(5),
+        )
+    } else {
+        Err(String::new())
+    };
     release(root, &bridge);
     let status = child.wait();
     release(root, &hold);
@@ -317,9 +442,15 @@ fn exit_code(s: &std::process::ExitStatus) -> u8 {
 
 fn journal_lines(root: &std::path::Path) -> Vec<String> {
     let mut out = vec![];
-    let touched: Vec<state::Touched> = state::load_json(&root.join("touched.json")).unwrap_or_default();
+    let touched: Vec<state::Touched> =
+        state::load_json(&root.join("touched.json")).unwrap_or_default();
     for t in touched {
-        out.push(format!("{} {} (pid {})", if t.paused { "paused" } else { "slowed" }, t.exe, t.pid));
+        out.push(format!(
+            "{} {} (pid {})",
+            if t.paused { "paused" } else { "slowed" },
+            t.exe,
+            t.pid
+        ));
     }
     let r: state::Restore = state::load_json(&root.join("restore.json")).unwrap_or_default();
     if let Some(p) = r.power_profile {
@@ -329,7 +460,9 @@ fn journal_lines(root: &std::path::Path) -> Vec<String> {
         out.push(format!("power mode switched to best efficiency (was {o})"));
     }
     if let Some((ac, dc)) = r.lid_action {
-        out.push(format!("lid-close action set to Do nothing (was {ac} plugged in, {dc} on battery)"));
+        out.push(format!(
+            "lid-close action set to Do nothing (was {ac} plugged in, {dc} on battery)"
+        ));
     }
     out
 }
@@ -339,7 +472,10 @@ fn doctor(root: &std::path::Path) -> ExitCode {
     println!("Ajar folder: {}", root.display());
     match state::age_of(&root.join("alive")) {
         Some(a) if a < 15 => println!("App: running"),
-        Some(a) => println!("App: not running (last seen {})", ajar::format::minutes(a as f64 / 60.0)),
+        Some(a) => println!(
+            "App: not running (last seen {})",
+            ajar::format::minutes(a as f64 / 60.0)
+        ),
         None => println!("App: never ran here"),
     }
     match p.watchdog_installed() {
@@ -388,7 +524,11 @@ fn put_everything_back(root: &std::path::Path) -> Result<(), Vec<String>> {
     let mut p = platform::native();
     let r = run_watchdog(&mut p, root, true);
     let left = journal_lines(root);
-    if r == "restored" && left.is_empty() { Ok(()) } else { Err(left) }
+    if r == "restored" && left.is_empty() {
+        Ok(())
+    } else {
+        Err(left)
+    }
 }
 
 fn rescue(root: &std::path::Path) -> ExitCode {

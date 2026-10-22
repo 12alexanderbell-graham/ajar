@@ -63,7 +63,10 @@ pub fn to_command(name: &str, args: &Value, server_pid: u32) -> Option<(&'static
         "status" => ("status", a),
         "energy" => ("energy", a),
         "stay_awake" => {
-            if a.get("reason").and_then(Value::as_str).is_none_or(|r| r.trim().is_empty()) {
+            if a.get("reason")
+                .and_then(Value::as_str)
+                .is_none_or(|r| r.trim().is_empty())
+            {
                 a["reason"] = json!("Asked by an agent");
             }
             a["pid"] = json!(server_pid);
@@ -87,14 +90,21 @@ pub fn to_command(name: &str, args: &Value, server_pid: u32) -> Option<(&'static
 }
 
 /// One JSON-RPC message in, at most one out. `run` executes an Ajar command.
-pub fn handle(msg: &Value, server_pid: u32, run: &mut dyn FnMut(&str, Value) -> Result<Value, String>) -> Option<Value> {
+pub fn handle(
+    msg: &Value,
+    server_pid: u32,
+    run: &mut dyn FnMut(&str, Value) -> Result<Value, String>,
+) -> Option<Value> {
     let id = msg.get("id").cloned();
     let method = msg.get("method").and_then(Value::as_str).unwrap_or("");
     // Notifications (no id) never get a reply.
     let id = id?;
     let result = match method {
         "initialize" => {
-            let asked = msg.pointer("/params/protocolVersion").and_then(Value::as_str).unwrap_or(PROTOCOL);
+            let asked = msg
+                .pointer("/params/protocolVersion")
+                .and_then(Value::as_str)
+                .unwrap_or(PROTOCOL);
             json!({
                 "protocolVersion": asked,
                 "capabilities": { "tools": {} },
@@ -105,23 +115,41 @@ pub fn handle(msg: &Value, server_pid: u32, run: &mut dyn FnMut(&str, Value) -> 
         "ping" => json!({}),
         "tools/list" => json!({ "tools": tools() }),
         "tools/call" => {
-            let name = msg.pointer("/params/name").and_then(Value::as_str).unwrap_or("");
-            let args = msg.pointer("/params/arguments").cloned().unwrap_or_else(|| json!({}));
+            let name = msg
+                .pointer("/params/name")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let args = msg
+                .pointer("/params/arguments")
+                .cloned()
+                .unwrap_or_else(|| json!({}));
             if name == "setup_prompt" {
-                return Some(json!({ "jsonrpc": "2.0", "id": id, "result": { "content": [{ "type": "text", "text": crate::ai::SETUP_PROMPT }], "isError": false } }));
+                return Some(
+                    json!({ "jsonrpc": "2.0", "id": id, "result": { "content": [{ "type": "text", "text": crate::ai::SETUP_PROMPT }], "isError": false } }),
+                );
             }
             match to_command(name, &args, server_pid) {
-                None => return Some(json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32602, "message": format!("Unknown tool {name}") } })),
+                None => {
+                    return Some(
+                        json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32602, "message": format!("Unknown tool {name}") } }),
+                    )
+                }
                 Some((cmd, a)) => match run(cmd, a) {
                     Ok(v) => {
                         let failed = v.get("ok") == Some(&json!(false));
                         json!({ "content": [{ "type": "text", "text": serde_json::to_string_pretty(&v).unwrap_or_default() }], "isError": failed })
                     }
-                    Err(e) => json!({ "content": [{ "type": "text", "text": e }], "isError": true }),
+                    Err(e) => {
+                        json!({ "content": [{ "type": "text", "text": e }], "isError": true })
+                    }
                 },
             }
         }
-        _ => return Some(json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32601, "message": format!("Method not found: {method}") } })),
+        _ => {
+            return Some(
+                json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32601, "message": format!("Method not found: {method}") } }),
+            )
+        }
     };
     Some(json!({ "jsonrpc": "2.0", "id": id, "result": result }))
 }
@@ -131,7 +159,9 @@ pub fn serve(root: &std::path::Path) {
     let pid = std::process::id();
     let stdin = std::io::stdin();
     let mut out = std::io::stdout();
-    let mut run = |cmd: &str, args: Value| crate::ipc::call(root, cmd, args, std::time::Duration::from_secs(10));
+    let mut run = |cmd: &str, args: Value| {
+        crate::ipc::call(root, cmd, args, std::time::Duration::from_secs(10))
+    };
     for line in stdin.lock().lines() {
         let Ok(line) = line else { break };
         if line.trim().is_empty() {
@@ -139,11 +169,16 @@ pub fn serve(root: &std::path::Path) {
         }
         let reply = match serde_json::from_str::<Value>(&line) {
             Ok(Value::Array(batch)) => {
-                let replies: Vec<Value> = batch.iter().filter_map(|m| handle(m, pid, &mut run)).collect();
+                let replies: Vec<Value> = batch
+                    .iter()
+                    .filter_map(|m| handle(m, pid, &mut run))
+                    .collect();
                 (!replies.is_empty()).then_some(Value::Array(replies))
             }
             Ok(msg) => handle(&msg, pid, &mut run),
-            Err(_) => Some(json!({ "jsonrpc": "2.0", "id": null, "error": { "code": -32700, "message": "Parse error" } })),
+            Err(_) => Some(
+                json!({ "jsonrpc": "2.0", "id": null, "error": { "code": -32700, "message": "Parse error" } }),
+            ),
         };
         if let Some(r) = reply {
             if writeln!(out, "{r}").and_then(|_| out.flush()).is_err() {
@@ -152,7 +187,12 @@ pub fn serve(root: &std::path::Path) {
         }
     }
     // Session over: drop any hold this server made (the app also notices the pid is gone).
-    let _ = crate::ipc::call(root, "release_pid", json!({ "pid": pid }), std::time::Duration::from_secs(2));
+    let _ = crate::ipc::call(
+        root,
+        "release_pid",
+        json!({ "pid": pid }),
+        std::time::Duration::from_secs(2),
+    );
 }
 
 #[cfg(test)]
@@ -164,9 +204,19 @@ mod tests {
         let mut run = |_: &str, _: Value| Ok(json!({}));
         let r = handle(&json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}), 9, &mut run).unwrap();
         assert_eq!(r["result"]["protocolVersion"], "2025-03-26");
-        let r = handle(&json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}), 9, &mut run).unwrap();
+        let r = handle(
+            &json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}),
+            9,
+            &mut run,
+        )
+        .unwrap();
         assert!(r["result"]["tools"].as_array().unwrap().len() >= 9);
-        assert!(handle(&json!({"jsonrpc":"2.0","method":"notifications/initialized"}), 9, &mut run).is_none());
+        assert!(handle(
+            &json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
+            9,
+            &mut run
+        )
+        .is_none());
     }
 
     #[test]
@@ -186,18 +236,39 @@ mod tests {
 
     #[test]
     fn release_only_covers_this_session() {
-        assert_eq!(to_command("release", &json!({}), 77).unwrap(), ("release_pid", json!({ "pid": 77 })));
-        assert_eq!(to_command("release", &json!({ "id": "ab" }), 77).unwrap(), ("release_own", json!({ "id": "ab", "pid": 77 })));
+        assert_eq!(
+            to_command("release", &json!({}), 77).unwrap(),
+            ("release_pid", json!({ "pid": 77 }))
+        );
+        assert_eq!(
+            to_command("release", &json!({ "id": "ab" }), 77).unwrap(),
+            ("release_own", json!({ "id": "ab", "pid": 77 }))
+        );
     }
 
     #[test]
     fn errors_are_reported_not_thrown() {
         let mut run = |_: &str, _: Value| Err("Ajar isn't running".to_string());
-        let r = handle(&json!({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"status"}}), 1, &mut run).unwrap();
+        let r = handle(
+            &json!({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"status"}}),
+            1,
+            &mut run,
+        )
+        .unwrap();
         assert_eq!(r["result"]["isError"], true);
-        let r = handle(&json!({"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"rm_rf"}}), 1, &mut run).unwrap();
+        let r = handle(
+            &json!({"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"rm_rf"}}),
+            1,
+            &mut run,
+        )
+        .unwrap();
         assert_eq!(r["error"]["code"], -32602);
-        let r = handle(&json!({"jsonrpc":"2.0","id":6,"method":"nope"}), 1, &mut run).unwrap();
+        let r = handle(
+            &json!({"jsonrpc":"2.0","id":6,"method":"nope"}),
+            1,
+            &mut run,
+        )
+        .unwrap();
         assert_eq!(r["error"]["code"], -32601);
     }
 }

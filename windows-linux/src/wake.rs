@@ -24,7 +24,13 @@ pub fn next_step(until_wake: Option<i64>, check_in_minutes: u32) -> Option<u64> 
         target = Some(target.map_or(w, |t| t.min(w)));
     }
     let t = target?;
-    Some(STEPS.iter().copied().find(|&s| (s as i64) <= t + 30).unwrap_or(60))
+    Some(
+        STEPS
+            .iter()
+            .copied()
+            .find(|&s| (s as i64) <= t + 30)
+            .unwrap_or(60),
+    )
 }
 
 #[cfg(test)]
@@ -41,6 +47,10 @@ mod tests {
         assert_eq!(next_step(Some(25 * 60), 0), Some(900));
         assert_eq!(next_step(Some(25 * 60), 15), Some(900));
         assert_eq!(next_step(Some(100), 30), Some(60));
-        assert_eq!(next_step(Some(-500), 0), Some(60), "overdue wakes come as soon as possible");
+        assert_eq!(
+            next_step(Some(-500), 0),
+            Some(60),
+            "overdue wakes come as soon as possible"
+        );
     }
 }

@@ -158,13 +158,22 @@ impl Default for Config {
 
 /// Executable name as Ajar compares it: file name only, lowercase, `.exe` removed.
 pub fn exe_key(name: &str) -> String {
-    let base = name.rsplit(['/', '\\']).next().unwrap_or(name).to_lowercase();
-    base.strip_suffix(".exe").map(str::to_string).unwrap_or(base)
+    let base = name
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(name)
+        .to_lowercase();
+    base.strip_suffix(".exe")
+        .map(str::to_string)
+        .unwrap_or(base)
 }
 
 /// Topic names are public on ntfy.sh; only letters, digits, - and _ are allowed.
 pub fn valid_topic(t: &str) -> bool {
-    !t.is_empty() && t.len() <= 64 && t.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    !t.is_empty()
+        && t.len() <= 64
+        && t.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 impl Config {
@@ -173,11 +182,19 @@ impl Config {
         let d = Config::default();
         let b = |k: &str, def: bool| v.get(k).and_then(Value::as_bool).unwrap_or(def);
         let u = |k: &str, def: u32, lo: u32, hi: u32| {
-            v.get(k).and_then(Value::as_f64).filter(|x| x.is_finite()).map(|x| (x.max(0.0) as u32).clamp(lo, hi)).unwrap_or(def)
+            v.get(k)
+                .and_then(Value::as_f64)
+                .filter(|x| x.is_finite())
+                .map(|x| (x.max(0.0) as u32).clamp(lo, hi))
+                .unwrap_or(def)
         };
         let s = |k: &str| v.get(k).and_then(Value::as_str);
         let strings = |k: &str| -> Option<Vec<String>> {
-            v.get(k)?.as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+            v.get(k)?.as_array().map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(str::to_string))
+                    .collect()
+            })
         };
         Config {
             mode: s("mode").and_then(Mode::parse).unwrap_or(d.mode),
@@ -199,7 +216,11 @@ impl Config {
                             if id.is_empty() {
                                 return None;
                             }
-                            let name = w.get("name").and_then(Value::as_str).unwrap_or(&id).to_string();
+                            let name = w
+                                .get("name")
+                                .and_then(Value::as_str)
+                                .unwrap_or(&id)
+                                .to_string();
                             Some(WatchedApp { id, name })
                         })
                         .collect()
@@ -208,7 +229,11 @@ impl Config {
             app_rules: v
                 .get("appRules")
                 .and_then(Value::as_object)
-                .map(|o| o.iter().filter_map(|(k, r)| Some((exe_key(k), AppRule::parse(r.as_str()?)?))).collect())
+                .map(|o| {
+                    o.iter()
+                        .filter_map(|(k, r)| Some((exe_key(k), AppRule::parse(r.as_str()?)?)))
+                        .collect()
+                })
                 .unwrap_or_default(),
             custom_agents: v
                 .get("customAgents")
@@ -216,7 +241,12 @@ impl Config {
                 .map(|a| {
                     a.iter()
                         .filter_map(|c| {
-                            let name = c.get("name")?.as_str()?.chars().take(64).collect::<String>();
+                            let name = c
+                                .get("name")?
+                                .as_str()?
+                                .chars()
+                                .take(64)
+                                .collect::<String>();
                             let executables: Vec<String> = c
                                 .get("executables")?
                                 .as_array()?
@@ -227,26 +257,51 @@ impl Config {
                             if name.is_empty() || executables.is_empty() {
                                 return None;
                             }
-                            let idle_cpu = c.get("idleCpu").and_then(Value::as_f64).filter(|x| x.is_finite() && *x >= 0.0);
-                            Some(CustomAgent { name, executables, idle_cpu })
+                            let idle_cpu = c
+                                .get("idleCpu")
+                                .and_then(Value::as_f64)
+                                .filter(|x| x.is_finite() && *x >= 0.0);
+                            Some(CustomAgent {
+                                name,
+                                executables,
+                                idle_cpu,
+                            })
                         })
                         .collect()
                 })
                 .unwrap_or_default(),
             notify_done: b("notifyDone", d.notify_done),
-            ntfy_topic: s("ntfyTopic").filter(|t| t.is_empty() || valid_topic(t)).unwrap_or("").to_string(),
+            ntfy_topic: s("ntfyTopic")
+                .filter(|t| t.is_empty() || valid_topic(t))
+                .unwrap_or("")
+                .to_string(),
             track_only: strings("trackOnly").unwrap_or_default(),
             open_at_login: b("openAtLogin", d.open_at_login),
-            always_until: v.get("alwaysUntil").and_then(Value::as_f64).filter(|x| x.is_finite() && *x > 0.0).map(|x| x as u64),
-            mode_before_always: s("modeBeforeAlways").and_then(Mode::parse).filter(|m| *m != Mode::On),
-            check_in_minutes: Some(u("checkInMinutes", d.check_in_minutes, 0, 60)).filter(|m| crate::wake::CHECK_IN_CHOICES.contains(m)).unwrap_or(0),
-            wake_at: v.get("wakeAt").and_then(Value::as_f64).filter(|x| x.is_finite() && *x > 0.0).map(|x| x as u64),
+            always_until: v
+                .get("alwaysUntil")
+                .and_then(Value::as_f64)
+                .filter(|x| x.is_finite() && *x > 0.0)
+                .map(|x| x as u64),
+            mode_before_always: s("modeBeforeAlways")
+                .and_then(Mode::parse)
+                .filter(|m| *m != Mode::On),
+            check_in_minutes: Some(u("checkInMinutes", d.check_in_minutes, 0, 60))
+                .filter(|m| crate::wake::CHECK_IN_CHOICES.contains(m))
+                .unwrap_or(0),
+            wake_at: v
+                .get("wakeAt")
+                .and_then(Value::as_f64)
+                .filter(|x| x.is_finite() && *x > 0.0)
+                .map(|x| x as u64),
             wake_for_minutes: u("wakeForMinutes", d.wake_for_minutes, 5, 24 * 60),
         }
     }
 
     pub fn parse(text: &str) -> Option<Config> {
-        serde_json::from_str::<Value>(text).ok().filter(Value::is_object).map(|v| Config::from_value(&v))
+        serde_json::from_str::<Value>(text)
+            .ok()
+            .filter(Value::is_object)
+            .map(|v| Config::from_value(&v))
     }
 
     pub fn to_json(&self) -> String {
@@ -262,7 +317,9 @@ impl Config {
         match preset {
             Preset::Speed => AppRule::Leave,
             Preset::Balanced => {
-                if SLOW_BY_DEFAULT.contains(&key.as_str()) || PAUSE_SUGGESTIONS.contains(&key.as_str()) {
+                if SLOW_BY_DEFAULT.contains(&key.as_str())
+                    || PAUSE_SUGGESTIONS.contains(&key.as_str())
+                {
                     AppRule::Slow
                 } else {
                     AppRule::Leave
@@ -272,7 +329,9 @@ impl Config {
                 if MEDIA_AND_CALLS.contains(&key.as_str()) {
                     // Music or a call in headphones may be going on with the lid shut.
                     AppRule::Leave
-                } else if PAUSE_SUGGESTIONS.contains(&key.as_str()) || PAUSE_ON_MAX.contains(&key.as_str()) {
+                } else if PAUSE_SUGGESTIONS.contains(&key.as_str())
+                    || PAUSE_ON_MAX.contains(&key.as_str())
+                {
                     AppRule::Pause
                 } else if SLOW_BY_DEFAULT.contains(&key.as_str()) {
                     AppRule::Slow
@@ -288,10 +347,39 @@ impl Config {
 /// Windows and Linux presets only touch apps on these lists, so nothing in the desktop shell is ever slowed
 /// or frozen by accident. Anything else can still be given a rule by name.
 pub const SLOW_BY_DEFAULT: &[&str] = &[
-    "chrome", "msedge", "firefox", "brave", "opera", "vivaldi", "chromium", "chromium-browser", "google-chrome",
-    "thunderbird", "outlook", "olk", "winword", "excel", "powerpnt", "onenote", "obsidian", "notion", "figma",
-    "figma-linux", "steam", "steamwebhelper", "epicgameslauncher", "dropbox", "onedrive", "googledrivefs",
-    "spotify", "vlc", "music.ui", "teams", "ms-teams", "zoom", "skype",
+    "chrome",
+    "msedge",
+    "firefox",
+    "brave",
+    "opera",
+    "vivaldi",
+    "chromium",
+    "chromium-browser",
+    "google-chrome",
+    "thunderbird",
+    "outlook",
+    "olk",
+    "winword",
+    "excel",
+    "powerpnt",
+    "onenote",
+    "obsidian",
+    "notion",
+    "figma",
+    "figma-linux",
+    "steam",
+    "steamwebhelper",
+    "epicgameslauncher",
+    "dropbox",
+    "onedrive",
+    "googledrivefs",
+    "spotify",
+    "vlc",
+    "music.ui",
+    "teams",
+    "ms-teams",
+    "zoom",
+    "skype",
 ];
 
 /// Messaging apps: paused (frozen until the lid opens) under Max Battery only. They reconnect and catch up when
@@ -300,15 +388,39 @@ pub const SLOW_BY_DEFAULT: &[&str] = &[
 /// Max Battery also pauses these (documents, launchers, sync clients); they catch up when the lid opens.
 /// Browsers stay slowed rather than paused because an agent may be driving one.
 pub const PAUSE_ON_MAX: &[&str] = &[
-    "thunderbird", "outlook", "olk", "winword", "excel", "powerpnt", "onenote", "obsidian", "notion", "figma", "figma-linux",
-    "steam", "steamwebhelper", "epicgameslauncher", "dropbox", "onedrive", "googledrivefs",
+    "thunderbird",
+    "outlook",
+    "olk",
+    "winword",
+    "excel",
+    "powerpnt",
+    "onenote",
+    "obsidian",
+    "notion",
+    "figma",
+    "figma-linux",
+    "steam",
+    "steamwebhelper",
+    "epicgameslauncher",
+    "dropbox",
+    "onedrive",
+    "googledrivefs",
 ];
 
 /// Left running even on Max Battery.
-pub const MEDIA_AND_CALLS: &[&str] = &["spotify", "vlc", "music.ui", "teams", "ms-teams", "zoom", "skype"];
+pub const MEDIA_AND_CALLS: &[&str] = &[
+    "spotify", "vlc", "music.ui", "teams", "ms-teams", "zoom", "skype",
+];
 
 pub const PAUSE_SUGGESTIONS: &[&str] = &[
-    "slack", "discord", "whatsapp", "telegram", "telegram-desktop", "signal", "signal-desktop", "element",
+    "slack",
+    "discord",
+    "whatsapp",
+    "telegram",
+    "telegram-desktop",
+    "signal",
+    "signal-desktop",
+    "element",
 ];
 
 #[cfg(test)]
@@ -317,7 +429,10 @@ mod tests {
 
     #[test]
     fn missing_and_wrong_keys_keep_defaults() {
-        let c = Config::parse(r#"{"mode":"always","quietMinutes":"ten","batteryFloor":-5,"heatGuard":3}"#).unwrap();
+        let c = Config::parse(
+            r#"{"mode":"always","quietMinutes":"ten","batteryFloor":-5,"heatGuard":3}"#,
+        )
+        .unwrap();
         assert_eq!(c.mode, Mode::On);
         assert_eq!(c.quiet_minutes, 5);
         assert_eq!(c.battery_floor, 0);
@@ -326,7 +441,8 @@ mod tests {
 
     #[test]
     fn clamps_and_rejects_bad_values() {
-        let c = Config::parse(r#"{"quietMinutes":1e9,"batteryFloor":999,"ntfyTopic":"../etc"}"#).unwrap();
+        let c = Config::parse(r#"{"quietMinutes":1e9,"batteryFloor":999,"ntfyTopic":"../etc"}"#)
+            .unwrap();
         assert_eq!(c.quiet_minutes, 240);
         assert_eq!(c.battery_floor, 80);
         assert_eq!(c.ntfy_topic, "");
@@ -342,14 +458,20 @@ mod tests {
     fn round_trips_through_json() {
         let mut c = Config::default();
         c.app_rules.insert("chrome".into(), AppRule::Pause);
-        c.watched_apps.push(WatchedApp { id: "blender".into(), name: "Blender".into() });
+        c.watched_apps.push(WatchedApp {
+            id: "blender".into(),
+            name: "Blender".into(),
+        });
         let back = Config::parse(&c.to_json()).unwrap();
         assert_eq!(back, c);
     }
 
     #[test]
     fn exe_keys_ignore_path_case_and_extension() {
-        assert_eq!(exe_key(r"C:\Program Files\Google\Chrome\Application\Chrome.EXE"), "chrome");
+        assert_eq!(
+            exe_key(r"C:\Program Files\Google\Chrome\Application\Chrome.EXE"),
+            "chrome"
+        );
         assert_eq!(exe_key("/usr/bin/firefox"), "firefox");
     }
 
@@ -360,10 +482,22 @@ mod tests {
         assert_eq!(c.rule_for("explorer.exe", Preset::Longest), AppRule::Leave);
         assert_eq!(c.rule_for("Slack.exe", Preset::Longest), AppRule::Pause);
         assert_eq!(c.rule_for("slack", Preset::Balanced), AppRule::Slow);
-        assert_eq!(c.rule_for("Spotify.exe", Preset::Longest), AppRule::Leave, "music may be playing");
-        assert_eq!(c.rule_for("zoom", Preset::Longest), AppRule::Leave, "a call may be going on");
+        assert_eq!(
+            c.rule_for("Spotify.exe", Preset::Longest),
+            AppRule::Leave,
+            "music may be playing"
+        );
+        assert_eq!(
+            c.rule_for("zoom", Preset::Longest),
+            AppRule::Leave,
+            "a call may be going on"
+        );
         assert_eq!(c.rule_for("WINWORD.EXE", Preset::Longest), AppRule::Pause);
-        assert_eq!(c.rule_for("chrome", Preset::Longest), AppRule::Slow, "an agent may be driving the browser");
+        assert_eq!(
+            c.rule_for("chrome", Preset::Longest),
+            AppRule::Slow,
+            "an agent may be driving the browser"
+        );
         assert_eq!(c.rule_for("chrome", Preset::Speed), AppRule::Leave);
     }
 

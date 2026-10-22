@@ -18,11 +18,26 @@ fn engine(name: &str, m: Mock) -> Engine<Mock> {
 
 fn agent(e: &mut Engine<Mock>, last_active: u64) {
     let kind = known().into_iter().find(|k| k.id == "claude-code").unwrap();
-    e.watcher.sessions = vec![Session { kind, pid: 4242, cpu: 40.0, last_active, project: None, tool_running: false, instances: 1 }];
+    e.watcher.sessions = vec![Session {
+        kind,
+        pid: 4242,
+        cpu: 40.0,
+        last_active,
+        project: None,
+        tool_running: false,
+        instances: 1,
+    }];
 }
 
 fn proc(pid: u32, ppid: u32, name: &str, start: u64) -> Proc {
-    Proc { pid, ppid, name: name.into(), start, mine: true, ..Default::default() }
+    Proc {
+        pid,
+        ppid,
+        name: name.into(),
+        start,
+        mine: true,
+        ..Default::default()
+    }
 }
 
 /// A child process that idles for ~30 s (Windows has no `sleep` command outside Git Bash).
@@ -39,11 +54,19 @@ fn sleeper() -> Child {
         c.arg("30");
         c
     };
-    c.stdout(std::process::Stdio::null()).spawn().expect("spawn a sleeping child")
+    c.stdout(std::process::Stdio::null())
+        .spawn()
+        .expect("spawn a sleeping child")
 }
 
 fn battery(percent: u32, on_ac: bool) -> Option<Battery> {
-    Some(Battery { percent, watts: if on_ac { 0.0 } else { 8.0 }, on_ac, charging: false, full_wh: Some(60.0) })
+    Some(Battery {
+        percent,
+        watts: if on_ac { 0.0 } else { 8.0 },
+        on_ac,
+        charging: false,
+        full_wh: Some(60.0),
+    })
 }
 
 #[test]
@@ -55,11 +78,17 @@ fn working_agent_holds_and_finished_agent_sleeps_a_closed_laptop() {
     assert!(e.holding && e.platform.holding);
     e.platform.lid = true;
     e.tick(now + 2, None);
-    assert!(e.receipt.is_some(), "closing while holding starts a receipt");
+    assert!(
+        e.receipt.is_some(),
+        "closing while holding starts a receipt"
+    );
     // Agent quiet for longer than the 5-minute window.
     e.tick(now + 6 * 60 + 2, None);
     assert!(!e.holding && !e.platform.holding);
-    assert_eq!(e.platform.slept, 1, "a closed laptop is put to sleep exactly once");
+    assert_eq!(
+        e.platform.slept, 1,
+        "a closed laptop is put to sleep exactly once"
+    );
     e.tick(now + 6 * 60 + 4, None);
     assert_eq!(e.platform.slept, 1, "no repeat sleeps on later ticks");
 }
@@ -114,7 +143,13 @@ fn floor_zero_never_stops_and_override_works_until_charging() {
     assert!(!e.holding);
     e.override_floor(true);
     assert!(e.holding, "override lets it continue below the limit");
-    e.platform.battery = Some(Battery { percent: 4, watts: 0.0, on_ac: true, charging: true, full_wh: None });
+    e.platform.battery = Some(Battery {
+        percent: 4,
+        watts: 0.0,
+        on_ac: true,
+        charging: true,
+        full_wh: None,
+    });
     e.tick(now + 2, None);
     assert!(!e.floor_override, "plugging in clears the override");
     e.update(|c| c.battery_floor = 0);
@@ -141,17 +176,29 @@ fn heat_forces_max_battery_then_restores_and_critical_stops() {
     e.platform.thermal = Some(Thermal::Serious);
     agent(&mut e, now + 2);
     e.tick(now + 2, None);
-    assert!(e.platform.paused.contains(&sp), "hot: Max Battery pauses it");
-    assert!(!e.platform.slowed.contains(&sp), "and the slow is undone first");
+    assert!(
+        e.platform.paused.contains(&sp),
+        "hot: Max Battery pauses it"
+    );
+    assert!(
+        !e.platform.slowed.contains(&sp),
+        "and the slow is undone first"
+    );
     e.platform.thermal = Some(Thermal::Normal);
     agent(&mut e, now + 4);
     e.tick(now + 4, None);
-    assert!(!e.platform.paused.contains(&sp) && e.platform.slowed.contains(&sp), "cooled: back to Balanced");
+    assert!(
+        !e.platform.paused.contains(&sp) && e.platform.slowed.contains(&sp),
+        "cooled: back to Balanced"
+    );
     e.platform.thermal = Some(Thermal::Critical);
     agent(&mut e, now + 6);
     e.tick(now + 6, None);
     assert!(!e.holding, "critical heat stops holding");
-    assert!(e.platform.slowed.is_empty() && e.platform.paused.is_empty(), "everything put back");
+    assert!(
+        e.platform.slowed.is_empty() && e.platform.paused.is_empty(),
+        "everything put back"
+    );
     assert_eq!(e.platform.slept, 1);
     drop(spotify);
 }
@@ -195,7 +242,10 @@ fn reused_pid_is_never_touched_on_restore() {
     e.touched[0].start = start + 1;
     e.platform.lid = false;
     e.tick(now + 2, None);
-    assert!(e.platform.paused.contains(&pid), "a different process with the reused pid is left alone");
+    assert!(
+        e.platform.paused.contains(&pid),
+        "a different process with the reused pid is left alone"
+    );
     drop(child);
 }
 
@@ -205,13 +255,20 @@ fn agents_their_ancestors_and_hold_targets_are_never_paused() {
     let now = crate::now();
     e.update(|c| c.preset = Preset::Longest);
     // slack (the agent's ancestor) and discord (unrelated).
-    e.procs = vec![proc(500, 1, "slack", 1), proc(501, 500, "claude", 1), proc(600, 1, "discord", 1)];
+    e.procs = vec![
+        proc(500, 1, "slack", 1),
+        proc(501, 500, "claude", 1),
+        proc(600, 1, "discord", 1),
+    ];
     e.watcher.protected = [500, 501].into_iter().collect();
     agent(&mut e, now);
     e.tick(now, None);
     e.platform.lid = true;
     e.tick(now, None);
-    assert!(!e.platform.paused.contains(&500), "agent's ancestor kept running");
+    assert!(
+        !e.platform.paused.contains(&500),
+        "agent's ancestor kept running"
+    );
     assert!(e.platform.paused.contains(&600));
 }
 
@@ -243,7 +300,10 @@ fn failed_release_is_retried_every_tick() {
     assert!(e.pending_release, "still failing");
     e.platform.fail_end = false;
     e.tick(now + 4, None);
-    assert!(!e.pending_release && !e.platform.holding, "released once the platform allows it");
+    assert!(
+        !e.pending_release && !e.platform.holding,
+        "released once the platform allows it"
+    );
 }
 
 #[test]
@@ -257,7 +317,10 @@ fn failed_begin_reports_and_does_not_pretend() {
     assert!(!e.holding);
     assert!(e.setup_error.is_some());
     let (keeps, _, _) = e.outcome();
-    assert!(!keeps, "never claims the lid is safe to close when the hold failed");
+    assert!(
+        !keeps,
+        "never claims the lid is safe to close when the hold failed"
+    );
 }
 
 #[test]
@@ -309,7 +372,10 @@ fn holds_work_in_off_mode_and_end_with_their_process() {
     child.wait().unwrap();
     e.tick(crate::now(), None);
     assert!(!e.holding, "hold {} ended with its process", h.id);
-    assert!(e.add_hold("x", None, Some(child.id())).is_err(), "can't tie a hold to a dead pid");
+    assert!(
+        e.add_hold("x", None, Some(child.id())).is_err(),
+        "can't tie a hold to a dead pid"
+    );
 }
 
 #[test]
@@ -358,11 +424,34 @@ fn crash_recovery_resumes_paused_apps_and_restores_settings() {
     let child = sleeper();
     let pid = child.id();
     let start = procs::start_time(pid).unwrap();
-    state::save_json(&r.join("touched.json"), &vec![
-        Touched { pid, exe: procs::name_of(pid).unwrap_or_default(), start, paused: true, previous: 0, unit: None },
-        Touched { pid: 999_999, exe: "gone".into(), start: 1, paused: true, previous: 0, unit: None },
-    ]);
-    state::save_json(&r.join("restore.json"), &Restore { power_profile: Some("balanced".into()), ..Default::default() });
+    state::save_json(
+        &r.join("touched.json"),
+        &vec![
+            Touched {
+                pid,
+                exe: procs::name_of(pid).unwrap_or_default(),
+                start,
+                paused: true,
+                previous: 0,
+                unit: None,
+            },
+            Touched {
+                pid: 999_999,
+                exe: "gone".into(),
+                start: 1,
+                paused: true,
+                previous: 0,
+                unit: None,
+            },
+        ],
+    );
+    state::save_json(
+        &r.join("restore.json"),
+        &Restore {
+            power_profile: Some("balanced".into()),
+            ..Default::default()
+        },
+    );
     let mut m = Mock::laptop();
     m.paused = vec![pid];
     m.low_power = true;
@@ -379,23 +468,47 @@ fn watchdog_waits_while_alive_and_restores_when_dead() {
     std::fs::create_dir_all(&r).unwrap();
     let mut m = Mock::laptop();
     state::touch(&r.join("alive"));
-    state::save_json(&r.join("restore.json"), &Restore { power_profile: Some("balanced".into()), ..Default::default() });
+    state::save_json(
+        &r.join("restore.json"),
+        &Restore {
+            power_profile: Some("balanced".into()),
+            ..Default::default()
+        },
+    );
     m.low_power = true;
     assert_eq!(run_watchdog(&mut m, &r, false), "alive");
     assert!(m.low_power);
     // Old heartbeat from a process that is still running (machine just woke up): wait.
     let me = std::process::id();
     let my_start = procs::start_time(me).unwrap();
-    std::fs::write(r.join("alive"), format!("{} {me} {my_start}", crate::now() - 300)).unwrap();
+    std::fs::write(
+        r.join("alive"),
+        format!("{} {me} {my_start}", crate::now() - 300),
+    )
+    .unwrap();
     assert_eq!(run_watchdog(&mut m, &r, false), "alive");
     // Same age, but the process is gone (or the pid now belongs to something else): restore.
-    std::fs::write(r.join("alive"), format!("{} {me} {}", crate::now() - 300, my_start + 1)).unwrap();
+    std::fs::write(
+        r.join("alive"),
+        format!("{} {me} {}", crate::now() - 300, my_start + 1),
+    )
+    .unwrap();
     assert_eq!(run_watchdog(&mut m, &r, false), "restored");
     assert!(!m.low_power);
     // A hung app (same process, 20 minutes silent) is restored too.
-    state::save_json(&r.join("restore.json"), &Restore { power_profile: Some("balanced".into()), ..Default::default() });
+    state::save_json(
+        &r.join("restore.json"),
+        &Restore {
+            power_profile: Some("balanced".into()),
+            ..Default::default()
+        },
+    );
     m.low_power = true;
-    std::fs::write(r.join("alive"), format!("{} {me} {my_start}", crate::now() - 1200)).unwrap();
+    std::fs::write(
+        r.join("alive"),
+        format!("{} {me} {my_start}", crate::now() - 1200),
+    )
+    .unwrap();
     assert_eq!(run_watchdog(&mut m, &r, false), "restored");
 }
 
@@ -407,8 +520,12 @@ fn hand_edited_config_is_picked_up() {
     c.battery_floor = 40;
     std::fs::write(e.path("config.json"), c.to_json()).unwrap();
     // mtime resolution can be coarse; nudge it forward.
-    let f = std::fs::File::options().write(true).open(e.path("config.json")).unwrap();
-    f.set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(2)).unwrap();
+    let f = std::fs::File::options()
+        .write(true)
+        .open(e.path("config.json"))
+        .unwrap();
+    f.set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(2))
+        .unwrap();
     for i in 0..5 {
         e.tick(crate::now() + i, None);
     }
@@ -419,7 +536,14 @@ fn hand_edited_config_is_picked_up() {
 fn corrupt_files_never_crash_startup() {
     let r = root("corrupt");
     std::fs::create_dir_all(&r).unwrap();
-    for f in ["config.json", "runtime.json", "stats.json", "touched.json", "restore.json", "learned.json"] {
+    for f in [
+        "config.json",
+        "runtime.json",
+        "stats.json",
+        "touched.json",
+        "restore.json",
+        "learned.json",
+    ] {
         std::fs::write(r.join(f), "{not json").unwrap();
     }
     let e = Engine::new(Mock::laptop(), r, vec![]);
@@ -457,7 +581,10 @@ fn ajar_sleeps_the_machine_when_the_desktop_leaves_it_to_ajar() {
     e.update(|c| c.mode = Mode::Auto);
     e.platform.lid = true;
     e.tick(now, None);
-    assert_eq!(e.platform.slept, 1, "nothing working: closing the lid sleeps");
+    assert_eq!(
+        e.platform.slept, 1,
+        "nothing working: closing the lid sleeps"
+    );
     e.platform.lid = false;
     e.tick(now + 2, None);
     agent(&mut e, now + 4);
@@ -470,11 +597,20 @@ fn ajar_sleeps_the_machine_when_the_desktop_leaves_it_to_ajar() {
 #[test]
 fn infinity_on_charger_with_unplugged_estimate() {
     let mut m = Mock::laptop();
-    m.battery = Some(Battery { percent: 90, watts: 0.0, on_ac: true, charging: false, full_wh: Some(60.0) });
+    m.battery = Some(Battery {
+        percent: 90,
+        watts: 0.0,
+        on_ac: true,
+        charging: false,
+        full_wh: Some(60.0),
+    });
     let mut e = engine("infinity", m);
     e.tick(crate::now(), None);
     let line = e.battery_line().unwrap();
-    assert!(line.contains('∞') && line.contains("if unplugged"), "{line}");
+    assert!(
+        line.contains('∞') && line.contains("if unplugged"),
+        "{line}"
+    );
 }
 
 #[test]
@@ -490,25 +626,70 @@ fn hours_left_respects_the_floor() {
 #[test]
 fn commands_validate_their_input() {
     let mut e = engine("commands", Mock::laptop());
-    assert_eq!(e.handle("set", &json!({ "key": "heat_guard", "value": false }))["ok"], false, "heat guard can't be turned off remotely");
+    assert_eq!(
+        e.handle("set", &json!({ "key": "heat_guard", "value": false }))["ok"],
+        false,
+        "heat guard can't be turned off remotely"
+    );
     assert!(e.cfg.heat_guard);
-    assert_eq!(e.handle("set", &json!({ "key": "battery_floor", "value": "abc" }))["ok"], false);
-    assert_eq!(e.handle("set", &json!({ "key": "battery_floor", "value": 500 }))["ok"], true);
+    assert_eq!(
+        e.handle("set", &json!({ "key": "battery_floor", "value": "abc" }))["ok"],
+        false
+    );
+    assert_eq!(
+        e.handle("set", &json!({ "key": "battery_floor", "value": 500 }))["ok"],
+        true
+    );
     assert_eq!(e.cfg.battery_floor, 80, "clamped");
-    assert_eq!(e.handle("set", &json!({ "key": "battery_floor", "value": 10 }))["ok"], false, "commands can't lower the limit");
-    assert_eq!(e.handle("override_floor", &json!({}))["ok"], false, "commands can't go below the limit");
-    assert_eq!(e.handle("override_floor", &json!({ "on": false }))["ok"], true);
-    assert_eq!(e.handle("set", &json!({ "key": "ntfy_topic", "value": "../../x" }))["ok"], false);
-    assert_eq!(e.handle("mode", &json!({ "mode": "sideways" }))["ok"], false);
-    assert_eq!(e.handle("mode", &json!({ "mode": "always", "minutes": "nan" }))["ok"], true);
-    assert!(e.on_until().is_none(), "unparseable minutes = no limit, never a NaN timer");
+    assert_eq!(
+        e.handle("set", &json!({ "key": "battery_floor", "value": 10 }))["ok"],
+        false,
+        "commands can't lower the limit"
+    );
+    assert_eq!(
+        e.handle("override_floor", &json!({}))["ok"],
+        false,
+        "commands can't go below the limit"
+    );
+    assert_eq!(
+        e.handle("override_floor", &json!({ "on": false }))["ok"],
+        true
+    );
+    assert_eq!(
+        e.handle("set", &json!({ "key": "ntfy_topic", "value": "../../x" }))["ok"],
+        false
+    );
+    assert_eq!(
+        e.handle("mode", &json!({ "mode": "sideways" }))["ok"],
+        false
+    );
+    assert_eq!(
+        e.handle("mode", &json!({ "mode": "always", "minutes": "nan" }))["ok"],
+        true
+    );
+    assert!(
+        e.on_until().is_none(),
+        "unparseable minutes = no limit, never a NaN timer"
+    );
     assert_eq!(e.handle("hold", &json!({ "pid": -5 }))["ok"], false);
     assert_eq!(e.handle("hold", &json!({ "minutes": 1e300 }))["ok"], true);
     let h = e.holds.last().unwrap().clone();
-    assert!(h.until.unwrap() <= crate::now() + 7 * 24 * 3600 + 1, "capped at 7 days");
+    assert!(
+        h.until.unwrap() <= crate::now() + 7 * 24 * 3600 + 1,
+        "capped at 7 days"
+    );
     assert_eq!(e.handle("release", &json!({}))["released"], 1);
-    assert_eq!(e.handle("rule", &json!({ "app": "C:\\Apps\\Spotify.exe", "rule": "pause" }))["app"], "spotify");
-    assert_eq!(e.handle("rule", &json!({ "app": "spotify", "rule": "default" }))["ok"], true);
+    assert_eq!(
+        e.handle(
+            "rule",
+            &json!({ "app": "C:\\Apps\\Spotify.exe", "rule": "pause" })
+        )["app"],
+        "spotify"
+    );
+    assert_eq!(
+        e.handle("rule", &json!({ "app": "spotify", "rule": "default" }))["ok"],
+        true
+    );
     assert!(e.cfg.app_rules.is_empty());
     assert_eq!(e.handle("nonsense", &json!({}))["ok"], false);
     let s = e.handle("status", &json!({}));
@@ -520,25 +701,44 @@ fn commands_validate_their_input() {
 fn idle_notice_waits_two_minutes_and_never_says_finished() {
     let mut e = engine("done", Mock::laptop());
     let now = crate::now();
-    e.working_since.insert("claude-code".into(), (now - 30, "Claude Code".into()));
+    e.working_since
+        .insert("claude-code".into(), (now - 30, "Claude Code".into()));
     e.watcher.sessions.clear();
     e.detect_finished(now);
     e.detect_finished(now + 130);
-    assert!(e.outbox.is_empty(), "30 s of work isn't worth a notification");
-    e.working_since.insert("claude-code".into(), (now - 600, "Claude Code".into()));
+    assert!(
+        e.outbox.is_empty(),
+        "30 s of work isn't worth a notification"
+    );
+    e.working_since
+        .insert("claude-code".into(), (now - 600, "Claude Code".into()));
     e.detect_finished(now);
-    assert!(e.outbox.is_empty(), "not announced the moment it goes quiet");
+    assert!(
+        e.outbox.is_empty(),
+        "not announced the moment it goes quiet"
+    );
     // Busy again within 2 minutes: same stretch of work, nothing announced.
     agent(&mut e, now + 60);
     e.detect_finished(now + 60);
     assert!(e.outbox.is_empty());
-    assert_eq!(e.working_since["claude-code"].0, now - 600, "keeps the original start");
+    assert_eq!(
+        e.working_since["claude-code"].0,
+        now - 600,
+        "keeps the original start"
+    );
     e.watcher.sessions.clear();
     e.detect_finished(now + 80);
     e.detect_finished(now + 210);
     assert_eq!(e.outbox.len(), 1);
-    assert_eq!(e.outbox[0].title, "Claude Code closed", "process gone: says closed, not finished");
-    assert!(e.outbox[0].body.starts_with("Busy for 11 min"), "{}", e.outbox[0].body);
+    assert_eq!(
+        e.outbox[0].title, "Claude Code closed",
+        "process gone: says closed, not finished"
+    );
+    assert!(
+        e.outbox[0].body.starts_with("Busy for 11 min"),
+        "{}",
+        e.outbox[0].body
+    );
 }
 
 #[test]
@@ -548,8 +748,18 @@ fn quiet_countdown_survives_the_agent_exiting() {
     e.last_work = Some((now, "Claude Code".into()));
     e.watcher.sessions.clear();
     e.tick(now + 10, None);
-    assert!(e.holding, "agent exited 10 s after working: still inside the 5 min window");
-    assert!(e.hold_reason.as_deref().unwrap().contains("sleeps in 5 min"), "{:?}", e.hold_reason);
+    assert!(
+        e.holding,
+        "agent exited 10 s after working: still inside the 5 min window"
+    );
+    assert!(
+        e.hold_reason
+            .as_deref()
+            .unwrap()
+            .contains("sleeps in 5 min"),
+        "{:?}",
+        e.hold_reason
+    );
     e.tick(now + 301, None);
     assert!(!e.holding, "window over");
 }
@@ -573,7 +783,10 @@ fn failed_restores_stay_journaled_and_are_retried() {
     e.tick(now + 2, None);
     assert!(e.platform.paused.contains(&pid), "resume refused");
     assert_eq!(e.unrestored().len(), 1, "kept and shown, not forgotten");
-    assert!(e.path("touched.json").exists(), "still on disk for the watchdog");
+    assert!(
+        e.path("touched.json").exists(),
+        "still on disk for the watchdog"
+    );
     e.platform.fail_restore = false;
     e.tick(now + 4, None);
     assert!(!e.platform.paused.contains(&pid), "retried and resumed");
@@ -607,7 +820,10 @@ fn changing_preset_while_closed_only_touches_what_changes() {
     let (a, b) = (sleeper(), sleeper());
     let (pa, pb) = (a.id(), b.id());
     e.update(|c| c.preset = Preset::Longest);
-    e.procs = vec![proc(pa, 1, "slack", procs::start_time(pa).unwrap()), proc(pb, 1, "chrome", procs::start_time(pb).unwrap())];
+    e.procs = vec![
+        proc(pa, 1, "slack", procs::start_time(pa).unwrap()),
+        proc(pb, 1, "chrome", procs::start_time(pb).unwrap()),
+    ];
     agent(&mut e, now);
     e.tick(now, None);
     e.platform.lid = true;
@@ -618,7 +834,11 @@ fn changing_preset_while_closed_only_touches_what_changes() {
         c.app_rules.insert("slack".into(), AppRule::Pause); // same as before for slack
     });
     assert!(e.platform.paused.contains(&pa));
-    assert!(!e.platform.log.iter().any(|l| l.starts_with("resume")), "slack wasn't woken and frozen again: {:?}", e.platform.log);
+    assert!(
+        !e.platform.log.iter().any(|l| l.starts_with("resume")),
+        "slack wasn't woken and frozen again: {:?}",
+        e.platform.log
+    );
     assert_eq!(e.platform.slowed, slowed_before, "chrome untouched");
     drop((a, b));
 }
@@ -636,9 +856,15 @@ fn sleep_is_only_recorded_once_it_happens() {
         e.tick(t, None);
         t += 20;
     }
-    assert_eq!(e.platform.slept, 1, "agent quiet past the window: Ajar asks to sleep");
+    assert_eq!(
+        e.platform.slept, 1,
+        "agent quiet past the window: Ajar asks to sleep"
+    );
     let asked = e.receipt.as_ref().unwrap().sleep_requested_at.unwrap();
-    assert!(e.receipt.as_ref().unwrap().slept_at.is_none(), "asked, not confirmed");
+    assert!(
+        e.receipt.as_ref().unwrap().slept_at.is_none(),
+        "asked, not confirmed"
+    );
     while t <= asked + 62 {
         e.tick(t, None);
         t += 20;
@@ -647,7 +873,10 @@ fn sleep_is_only_recorded_once_it_happens() {
     // Machine actually slept: next tick comes 2 h later.
     e.platform.lid = false;
     e.tick(t + 7200, None);
-    assert!(e.stats.sessions.last().unwrap().slept, "confirmed by the gap");
+    assert!(
+        e.stats.sessions.last().unwrap().slept,
+        "confirmed by the gap"
+    );
 }
 
 #[test]
@@ -658,8 +887,12 @@ fn settings_file_cannot_weaken_safety() {
     c.battery_floor = 0;
     c.preset = Preset::Speed; // a harmless change in the same edit still applies
     std::fs::write(e.path("config.json"), c.to_json()).unwrap();
-    let f = std::fs::File::options().write(true).open(e.path("config.json")).unwrap();
-    f.set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(5)).unwrap();
+    let f = std::fs::File::options()
+        .write(true)
+        .open(e.path("config.json"))
+        .unwrap();
+    f.set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(5))
+        .unwrap();
     for i in 0..5 {
         e.tick(crate::now() + i, None);
     }
@@ -679,8 +912,14 @@ fn corrupt_settings_are_kept_aside_not_overwritten() {
     std::fs::create_dir_all(&r).unwrap();
     std::fs::write(r.join("config.json"), "{\"mode\": \"always\",").unwrap();
     let e = Engine::new(Mock::laptop(), r.clone(), vec![]);
-    assert!(std::fs::read_dir(&r).unwrap().flatten().any(|f| f.file_name().to_string_lossy().starts_with("config.broken-")));
-    assert!(e.outbox.iter().any(|a| a.title.contains("couldn't be read")));
+    assert!(std::fs::read_dir(&r).unwrap().flatten().any(|f| f
+        .file_name()
+        .to_string_lossy()
+        .starts_with("config.broken-")));
+    assert!(e
+        .outbox
+        .iter()
+        .any(|a| a.title.contains("couldn't be read")));
 }
 
 #[test]
@@ -709,7 +948,10 @@ fn docked_with_the_lid_shut_counts_as_open() {
     e.platform.lid = true;
     e.tick(now + 2, None);
     assert!(!e.lid_closed, "external display in use");
-    assert!(e.platform.paused.is_empty(), "nothing paused under someone using the machine");
+    assert!(
+        e.platform.paused.is_empty(),
+        "nothing paused under someone using the machine"
+    );
     e.update(|c| c.mode = Mode::Off);
     assert_eq!(e.platform.slept, 0, "never put to sleep while docked");
     drop(child);
@@ -751,10 +993,20 @@ fn an_agent_can_only_release_its_own_holds() {
     let mine = e.add_hold("mine", None, Some(me)).unwrap();
     e.add_hold("the person's", None, None).unwrap();
     let other = e.holds[1].id.clone();
-    assert_eq!(e.handle("release_own", &json!({ "id": other, "pid": me }))["ok"], false);
-    assert_eq!(e.handle("release_own", &json!({ "id": mine.id, "pid": me }))["ok"], true);
+    assert_eq!(
+        e.handle("release_own", &json!({ "id": other, "pid": me }))["ok"],
+        false
+    );
+    assert_eq!(
+        e.handle("release_own", &json!({ "id": mine.id, "pid": me }))["ok"],
+        true
+    );
     assert_eq!(e.holds.len(), 1);
-    assert_eq!(e.handle("release_pid", &json!({ "pid": me }))["released"], 0, "release-all from an agent only covers its own");
+    assert_eq!(
+        e.handle("release_pid", &json!({ "pid": me }))["released"],
+        0,
+        "release-all from an agent only covers its own"
+    );
     assert!(e.holding);
 }
 
@@ -764,7 +1016,10 @@ fn phone_track_sets_what_it_asks_and_old_pages_still_toggle() {
     agent(&mut e, crate::now());
     let track_only = |e: &Engine<Mock>| e.cfg.track_only.contains(&"claude-code".to_string());
     for _ in 0..2 {
-        assert_eq!(e.handle("track", &json!({ "agent": "claude-code", "keeps": false }))["ok"], true);
+        assert_eq!(
+            e.handle("track", &json!({ "agent": "claude-code", "keeps": false }))["ok"],
+            true
+        );
         assert!(track_only(&e), "keeps:false is a value, not a toggle");
     }
     for _ in 0..2 {
@@ -775,24 +1030,59 @@ fn phone_track_sets_what_it_asks_and_old_pages_still_toggle() {
     assert!(track_only(&e), "without keeps it toggles");
     e.handle("track", &json!({ "agent": "claude-code" }));
     assert!(!track_only(&e));
-    assert_eq!(e.cfg.track_only.iter().filter(|x| *x == "claude-code").count(), 0);
+    assert_eq!(
+        e.cfg
+            .track_only
+            .iter()
+            .filter(|x| *x == "claude-code")
+            .count(),
+        0
+    );
 }
 
 #[test]
 fn watching_from_the_phone_keeps_the_display_name() {
     let mut e = engine("watch-name", Mock::laptop());
-    e.update(|c| c.watched_apps.push(crate::config::WatchedApp { id: "chrome".into(), name: "Google Chrome".into() }));
+    e.update(|c| {
+        c.watched_apps.push(crate::config::WatchedApp {
+            id: "chrome".into(),
+            name: "Google Chrome".into(),
+        })
+    });
     e.watch_offer = vec![("spotify".into(), "Spotify".into())];
     e.handle("watch", &json!({ "app": "spotify" }));
     e.handle("watch", &json!({ "app": "chrome", "remove": true }));
     e.handle("watch", &json!({ "app": "chrome" }));
-    let names: Vec<(String, String)> = e.cfg.watched_apps.iter().map(|w| (w.id.clone(), w.name.clone())).collect();
-    assert!(names.contains(&("spotify".into(), "Spotify".into())), "{names:?}");
-    e.update(|c| c.watched_apps.push(crate::config::WatchedApp { id: "code".into(), name: "Visual Studio Code".into() }));
+    let names: Vec<(String, String)> = e
+        .cfg
+        .watched_apps
+        .iter()
+        .map(|w| (w.id.clone(), w.name.clone()))
+        .collect();
+    assert!(
+        names.contains(&("spotify".into(), "Spotify".into())),
+        "{names:?}"
+    );
+    e.update(|c| {
+        c.watched_apps.push(crate::config::WatchedApp {
+            id: "code".into(),
+            name: "Visual Studio Code".into(),
+        })
+    });
     e.handle("watch", &json!({ "app": "code" }));
-    assert!(e.cfg.watched_apps.iter().any(|w| w.id == "code" && w.name == "Visual Studio Code"));
+    assert!(e
+        .cfg
+        .watched_apps
+        .iter()
+        .any(|w| w.id == "code" && w.name == "Visual Studio Code"));
     e.handle("watch", &json!({ "app": "newapp" }));
-    assert!(e.cfg.watched_apps.iter().any(|w| w.id == "newapp" && w.name == "newapp"), "unknown apps fall back to what was sent");
+    assert!(
+        e.cfg
+            .watched_apps
+            .iter()
+            .any(|w| w.id == "newapp" && w.name == "newapp"),
+        "unknown apps fall back to what was sent"
+    );
 }
 
 #[test]
@@ -801,7 +1091,10 @@ fn measuring_from_the_phone_is_answered_as_mac_only() {
     let r = e.handle("power_test", &json!({}));
     assert_eq!(r["ok"], false);
     assert_eq!(r["error"], "Measuring savings is Mac-only for now");
-    assert!(e.panel_json(crate::now()).get("canMeasure").is_none(), "the Measure button stays hidden");
+    assert!(
+        e.panel_json(crate::now()).get("canMeasure").is_none(),
+        "the Measure button stays hidden"
+    );
 }
 
 #[test]
@@ -816,14 +1109,23 @@ fn a_power_profile_that_failed_to_go_back_stays_recorded_and_is_retried() {
     e.platform.fail_low_power_off = true;
     e.platform.lid = false;
     e.tick(now + 4, None);
-    assert!(e.restore.power_profile.is_some(), "kept after a failed restore");
-    assert!(e.root.join("restore.json").exists(), "and on disk, for the next start and the watchdog");
+    assert!(
+        e.restore.power_profile.is_some(),
+        "kept after a failed restore"
+    );
+    assert!(
+        e.root.join("restore.json").exists(),
+        "and on disk, for the next start and the watchdog"
+    );
     e.platform.fail_low_power_off = false;
     for i in 0..15 {
         agent(&mut e, now + 6 + i * 2);
         e.tick(now + 6 + i * 2, None);
     }
-    assert!(e.restore.power_profile.is_none() && !e.platform.low_power, "retried once it works");
+    assert!(
+        e.restore.power_profile.is_none() && !e.platform.low_power,
+        "retried once it works"
+    );
     assert!(!e.root.join("restore.json").exists());
 }
 
@@ -835,22 +1137,40 @@ fn check_ins_arm_a_wake_only_with_the_lid_shut_and_read_the_phone_on_a_lid_close
     e.update(|c| c.check_in_minutes = 30);
     let now = crate::now();
     e.tick(now, None);
-    assert_eq!(e.platform.wake_armed, None, "lid open: no check-in wake (it would light the screen)");
+    assert_eq!(
+        e.platform.wake_armed, None,
+        "lid open: no check-in wake (it would light the screen)"
+    );
     e.platform.lid = true;
     e.tick(now + 2, None);
-    assert_eq!(e.platform.wake_armed, Some(1800), "lid shut and asleep soon: wake in 30 min");
+    assert_eq!(
+        e.platform.wake_armed,
+        Some(1800),
+        "lid shut and asleep soon: wake in 30 min"
+    );
     // Asleep for half an hour, then the timer wakes it with the lid still shut.
     let woke = now + 2 + 1800;
     e.tick(woke, None);
-    assert!(e.platform.holding, "kept up while the phone's commands are read");
-    assert!(e.platform.log.iter().any(|l| l == "begin Checking for phone commands"));
+    assert!(
+        e.platform.holding,
+        "kept up while the phone's commands are read"
+    );
+    assert!(e
+        .platform
+        .log
+        .iter()
+        .any(|l| l == "begin Checking for phone commands"));
     let slept = e.platform.slept;
     e.tick(woke + 10, None);
     assert!(e.platform.holding, "still within the check-in");
     e.tick(woke + 26, None);
     assert!(!e.platform.holding, "nothing asked for it: let go");
     assert_eq!(e.platform.slept, slept + 1, "and back to sleep");
-    assert_eq!(e.platform.wake_armed, Some(1800), "with the next check-in pending");
+    assert_eq!(
+        e.platform.wake_armed,
+        Some(1800),
+        "with the next check-in pending"
+    );
 }
 
 #[test]
@@ -867,7 +1187,10 @@ fn a_wake_from_the_phone_during_a_check_in_keeps_it_awake() {
     assert_eq!(r["ok"], true);
     e.tick(now + 930, None);
     assert!(e.holding && e.platform.holding, "the phone's wake holds it");
-    assert_eq!(e.platform.wake_armed, None, "no wake timer while it's awake anyway");
+    assert_eq!(
+        e.platform.wake_armed, None,
+        "no wake timer while it's awake anyway"
+    );
 }
 
 #[test]
@@ -894,8 +1217,15 @@ fn old_commands_are_dropped_but_a_wake_waits_up_to_three_hours() {
     let mut g = crate::remote::Guard::default();
     let now = crate::now();
     assert!(g.check_aged(now - 400, "a", now, 300).is_err());
-    assert!(g.check_aged(now - 2 * 3600, "b", now, crate::wake::WAKE_MAX_AGE).is_ok());
-    assert!(g.check_aged(now - 2 * 3600, "b", now, crate::wake::WAKE_MAX_AGE).is_err(), "never twice");
-    assert!(crate::format::parse_wake_time("07:30", now).is_some_and(|t| t > now && t <= now + 86_400 + 3600));
+    assert!(g
+        .check_aged(now - 2 * 3600, "b", now, crate::wake::WAKE_MAX_AGE)
+        .is_ok());
+    assert!(
+        g.check_aged(now - 2 * 3600, "b", now, crate::wake::WAKE_MAX_AGE)
+            .is_err(),
+        "never twice"
+    );
+    assert!(crate::format::parse_wake_time("07:30", now)
+        .is_some_and(|t| t > now && t <= now + 86_400 + 3600));
     assert!(crate::format::parse_wake_time("25:00", now).is_none());
 }

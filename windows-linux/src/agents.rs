@@ -24,7 +24,14 @@ pub struct Kind {
 }
 
 impl Kind {
-    fn new(id: &str, name: &str, exes: &[&str], hints: &[&str], transcripts: &[&str], idle_cpu: f64) -> Kind {
+    fn new(
+        id: &str,
+        name: &str,
+        exes: &[&str],
+        hints: &[&str],
+        transcripts: &[&str],
+        idle_cpu: f64,
+    ) -> Kind {
         Kind {
             id: id.into(),
             name: name.into(),
@@ -44,13 +51,62 @@ impl Kind {
 
 pub fn known() -> Vec<Kind> {
     vec![
-        Kind::new("claude-code", "Claude Code", &["claude"], &["@anthropic-ai/claude-code", "claude-code"], &[".claude/projects"], 1.0),
-        Kind::new("codex", "Codex", &["codex"], &["@openai/codex"], &[".codex/sessions"], 1.0),
-        Kind::new("gemini", "Gemini CLI", &["gemini"], &["@google/gemini-cli"], &[".gemini/tmp"], 1.0),
-        Kind::new("cursor-agent", "Cursor Agent", &["cursor-agent"], &["cursor-agent"], &[], 1.0),
-        Kind::new("opencode", "OpenCode", &["opencode"], &["opencode-ai"], &[], 1.0),
-        Kind::new("aider", "Aider", &["aider"], &["aider-chat", "/bin/aider"], &[], 1.0),
-        Kind::new("copilot", "Copilot CLI", &[], &["@github/copilot"], &[], 1.0),
+        Kind::new(
+            "claude-code",
+            "Claude Code",
+            &["claude"],
+            &["@anthropic-ai/claude-code", "claude-code"],
+            &[".claude/projects"],
+            1.0,
+        ),
+        Kind::new(
+            "codex",
+            "Codex",
+            &["codex"],
+            &["@openai/codex"],
+            &[".codex/sessions"],
+            1.0,
+        ),
+        Kind::new(
+            "gemini",
+            "Gemini CLI",
+            &["gemini"],
+            &["@google/gemini-cli"],
+            &[".gemini/tmp"],
+            1.0,
+        ),
+        Kind::new(
+            "cursor-agent",
+            "Cursor Agent",
+            &["cursor-agent"],
+            &["cursor-agent"],
+            &[],
+            1.0,
+        ),
+        Kind::new(
+            "opencode",
+            "OpenCode",
+            &["opencode"],
+            &["opencode-ai"],
+            &[],
+            1.0,
+        ),
+        Kind::new(
+            "aider",
+            "Aider",
+            &["aider"],
+            &["aider-chat", "/bin/aider"],
+            &[],
+            1.0,
+        ),
+        Kind::new(
+            "copilot",
+            "Copilot CLI",
+            &[],
+            &["@github/copilot"],
+            &[],
+            1.0,
+        ),
         Kind::new("amp", "Amp", &[], &["@sourcegraph/amp"], &[], 1.0),
         Kind::new("goose", "Goose", &["goose"], &[], &[], 1.0),
         Kind::new("ollama", "Ollama", &["ollama", "ollama app"], &[], &[], 8.0),
@@ -64,8 +120,15 @@ fn claude_app() -> Kind {
 /// The Claude desktop app shares the `claude` executable name with Claude Code on Windows; its install path
 /// tells them apart.
 fn is_claude_desktop(p: &Proc) -> bool {
-    let exe = p.exe.as_deref().unwrap_or("").to_lowercase().replace('\\', "/");
-    exe.contains("/anthropicclaude/") || exe.contains("/claude-desktop") || exe.contains("/claude desktop/")
+    let exe = p
+        .exe
+        .as_deref()
+        .unwrap_or("")
+        .to_lowercase()
+        .replace('\\', "/");
+    exe.contains("/anthropicclaude/")
+        || exe.contains("/claude-desktop")
+        || exe.contains("/claude desktop/")
 }
 
 const INTERPRETERS: &[&str] = &["node", "bun", "deno", "python", "python3", "pythonw"];
@@ -117,7 +180,10 @@ pub struct Watcher {
 
 impl Watcher {
     pub fn sample(&mut self, procs: &[Proc], cfg: &Config, now: u64) {
-        let dt = self.last_sample.map(|t| t.elapsed().as_secs_f64()).unwrap_or(0.0);
+        let dt = self
+            .last_sample
+            .map(|t| t.elapsed().as_secs_f64())
+            .unwrap_or(0.0);
         self.last_sample = Some(std::time::Instant::now());
 
         // CPU % per pid since the last sample (100 = one full core). A pid whose start time changed was reused.
@@ -170,17 +236,31 @@ impl Watcher {
             });
         }
         for w in &cfg.watched_apps {
-            kinds.push(Kind { id: format!("app:{}", w.id), name: w.name.clone(), executables: vec![w.id.clone()], hints: vec![], transcripts: vec![], idle_cpu: 2.0 });
+            kinds.push(Kind {
+                id: format!("app:{}", w.id),
+                name: w.name.clone(),
+                executables: vec![w.id.clone()],
+                hints: vec![],
+                transcripts: vec![],
+                idle_cpu: 2.0,
+            });
         }
         let mut found: Vec<(u32, Kind)> = vec![];
         for p in procs.iter().filter(|p| p.mine) {
             let k = if is_claude_desktop(p) {
-                if cfg.count_claude_app { Some(claude_app()) } else { None }
+                if cfg.count_claude_app {
+                    Some(claude_app())
+                } else {
+                    None
+                }
             } else if let Some(k) = kinds.iter().find(|k| k.executables.contains(&p.name)) {
                 Some(k.clone())
             } else if INTERPRETERS.contains(&p.name.as_str()) {
                 let args = p.cmd.iter().take(4).cloned().collect::<Vec<_>>().join(" ");
-                kinds.iter().find(|k| k.hints.iter().any(|h| args.contains(h.as_str()))).cloned()
+                kinds
+                    .iter()
+                    .find(|k| k.hints.iter().any(|h| args.contains(h.as_str())))
+                    .cloned()
             } else {
                 None
             };
@@ -231,11 +311,19 @@ impl Watcher {
             let tree_cpu: f64 = members.iter().filter_map(|m| cpu.get(m)).sum();
             let fresh = self.transcripts_changed(&home, &kind);
             let tool_running = match (clock, by_pid.get(&root)) {
-                (Some(c), Some(r)) => members.iter().filter(|m| **m != root).filter_map(|m| by_pid.get(m)).any(|p| {
-                    let started_after = crate::procs::age_secs(r.start, c).zip(crate::procs::age_secs(p.start, c)).map(|(ra, pa)| ra.saturating_sub(pa));
-                    let age = crate::procs::age_secs(p.start, c);
-                    started_after.is_some_and(|d| d > HELPER_WINDOW) && age.is_some_and(|a| a < TOOL_MAX_AGE) && kind_of.get(&p.pid) != Some(&kind.id)
-                }),
+                (Some(c), Some(r)) => members
+                    .iter()
+                    .filter(|m| **m != root)
+                    .filter_map(|m| by_pid.get(m))
+                    .any(|p| {
+                        let started_after = crate::procs::age_secs(r.start, c)
+                            .zip(crate::procs::age_secs(p.start, c))
+                            .map(|(ra, pa)| ra.saturating_sub(pa));
+                        let age = crate::procs::age_secs(p.start, c);
+                        started_after.is_some_and(|d| d > HELPER_WINDOW)
+                            && age.is_some_and(|a| a < TOOL_MAX_AGE)
+                            && kind_of.get(&p.pid) != Some(&kind.id)
+                    }),
                 _ => false,
             };
             if tree_cpu > kind.idle_cpu || fresh || tool_running {
@@ -247,7 +335,15 @@ impl Watcher {
                 s.tool_running |= tool_running;
                 s.instances += 1;
             } else {
-                merged.push(Session { project: crate::procs::cwd_name(root), kind, pid: root, cpu: tree_cpu, last_active, tool_running, instances: 1 });
+                merged.push(Session {
+                    project: crate::procs::cwd_name(root),
+                    kind,
+                    pid: root,
+                    cpu: tree_cpu,
+                    last_active,
+                    tool_running,
+                    instances: 1,
+                });
             }
         }
         merged.sort_by_key(|s| std::cmp::Reverse(s.last_active));
@@ -331,14 +427,28 @@ mod tests {
     use super::*;
 
     fn p(pid: u32, ppid: u32, name: &str, cpu_ns: u64) -> Proc {
-        Proc { pid, ppid, name: name.into(), cpu_ns, start: 1, mine: true, ..Default::default() }
+        Proc {
+            pid,
+            ppid,
+            name: name.into(),
+            cpu_ns,
+            start: 1,
+            mine: true,
+            ..Default::default()
+        }
     }
 
     #[test]
     fn agent_and_its_helpers_count_once_and_ancestors_are_protected() {
         let mut w = Watcher::default();
         let cfg = Config::default();
-        let procs = vec![p(10, 1, "terminal", 0), p(20, 10, "zsh", 0), p(30, 20, "claude", 0), p(31, 30, "claude", 0), p(32, 30, "rg", 0)];
+        let procs = vec![
+            p(10, 1, "terminal", 0),
+            p(20, 10, "zsh", 0),
+            p(30, 20, "claude", 0),
+            p(31, 30, "claude", 0),
+            p(32, 30, "rg", 0),
+        ];
         w.sample(&procs, &cfg, 1000);
         assert_eq!(w.sessions.len(), 1);
         assert_eq!(w.sessions[0].kind.id, "claude-code");
@@ -351,9 +461,15 @@ mod tests {
     fn node_scripts_are_recognised_by_command_line() {
         let mut w = Watcher::default();
         let mut node = p(40, 1, "node", 0);
-        node.cmd = vec!["node".into(), "/usr/lib/node_modules/@openai/codex/bin/codex.js".into()];
+        node.cmd = vec![
+            "node".into(),
+            "/usr/lib/node_modules/@openai/codex/bin/codex.js".into(),
+        ];
         w.sample(&[node], &Config::default(), 1000);
-        assert_eq!(w.sessions.first().map(|s| s.kind.id.as_str()), Some("codex"));
+        assert_eq!(
+            w.sessions.first().map(|s| s.kind.id.as_str()),
+            Some("codex")
+        );
     }
 
     #[test]
@@ -390,7 +506,10 @@ mod tests {
         app.exe = Some(r"C:\Users\a\AppData\Local\AnthropicClaude\app-1.0\claude.exe".into());
         w.sample(&[app.clone()], &Config::default(), 1000);
         assert_eq!(w.sessions[0].kind.id, "claude-app");
-        let cfg = Config { count_claude_app: false, ..Default::default() };
+        let cfg = Config {
+            count_claude_app: false,
+            ..Default::default()
+        };
         let mut w2 = Watcher::default();
         w2.sample(&[app], &cfg, 1000);
         assert!(w2.sessions.is_empty());
@@ -400,25 +519,58 @@ mod tests {
     fn parent_cycles_do_not_hang() {
         let mut w = Watcher::default();
         // Corrupt snapshot: 80 and 81 claim each other as parents.
-        w.sample(&[p(80, 81, "claude", 0), p(81, 80, "zsh", 0)], &Config::default(), 1000);
+        w.sample(
+            &[p(80, 81, "claude", 0), p(81, 80, "zsh", 0)],
+            &Config::default(),
+            1000,
+        );
         assert_eq!(w.sessions.len(), 1);
     }
 
     #[test]
     fn a_running_command_counts_as_work_but_helpers_and_old_servers_do_not() {
         // Clock: now = 10 000 s, 1 unit per second. Agent started at 1000.
-        let mk = |pid, ppid, name: &str, start| Proc { pid, ppid, name: name.to_string(), start, mine: true, ..Default::default() };
+        let mk = |pid, ppid, name: &str, start| Proc {
+            pid,
+            ppid,
+            name: name.to_string(),
+            start,
+            mine: true,
+            ..Default::default()
+        };
         let cfg = Config::default();
-        let mut w = Watcher { clock: Some((10_000, 1)), ..Default::default() };
+        let mut w = Watcher {
+            clock: Some((10_000, 1)),
+            ..Default::default()
+        };
         // An MCP server started 5 s after the agent: a helper, not work.
-        w.sample(&[mk(10, 1, "claude", 1000), mk(11, 10, "node", 1005)], &cfg, 50);
+        w.sample(
+            &[mk(10, 1, "claude", 1000), mk(11, 10, "node", 1005)],
+            &cfg,
+            50,
+        );
         assert!(!w.sessions[0].tool_running);
         // `npm test` started 5 minutes ago: work, even at 0% CPU.
-        w.sample(&[mk(10, 1, "claude", 1000), mk(11, 10, "node", 1005), mk(12, 10, "npm", 9_700)], &cfg, 60);
+        w.sample(
+            &[
+                mk(10, 1, "claude", 1000),
+                mk(11, 10, "node", 1005),
+                mk(12, 10, "npm", 9_700),
+            ],
+            &cfg,
+            60,
+        );
         assert!(w.sessions[0].tool_running && w.sessions[0].working(60));
         // A dev server started 2 hours ago: no longer counts.
-        let mut w2 = Watcher { clock: Some((10_000, 1)), ..Default::default() };
-        w2.sample(&[mk(10, 1, "claude", 1000), mk(13, 10, "vite", 2_000)], &cfg, 70);
+        let mut w2 = Watcher {
+            clock: Some((10_000, 1)),
+            ..Default::default()
+        };
+        w2.sample(
+            &[mk(10, 1, "claude", 1000), mk(13, 10, "vite", 2_000)],
+            &cfg,
+            70,
+        );
         assert!(!w2.sessions[0].tool_running);
     }
 
@@ -427,7 +579,11 @@ mod tests {
         #[cfg(windows)]
         let f = {
             use std::os::windows::fs::OpenOptionsExt;
-            std::fs::File::options().write(true).custom_flags(0x0200_0000).open(dir).unwrap()
+            std::fs::File::options()
+                .write(true)
+                .custom_flags(0x0200_0000)
+                .open(dir)
+                .unwrap()
         };
         #[cfg(not(windows))]
         let f = std::fs::File::open(dir).unwrap();
@@ -443,22 +599,39 @@ mod tests {
         let f = proj.join("session.jsonl");
         std::fs::write(&f, "{}\n").unwrap();
         let old = SystemTime::now() - std::time::Duration::from_secs(48 * 3600);
-        std::fs::File::options().write(true).open(&f).unwrap().set_modified(old).unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&f)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
         set_dir_mtime(&proj, old);
         let before = newest_mtime(&root, 3).unwrap();
         // Append to the file: the folder's own time doesn't change.
         use std::io::Write;
-        std::fs::File::options().append(true).open(&f).unwrap().write_all(b"{}\n").unwrap();
+        std::fs::File::options()
+            .append(true)
+            .open(&f)
+            .unwrap()
+            .write_all(b"{}\n")
+            .unwrap();
         set_dir_mtime(&proj, old);
         let after = newest_mtime(&root, 3).unwrap();
-        assert!(after > before, "append in a 2-day-old folder must be noticed");
+        assert!(
+            after > before,
+            "append in a 2-day-old folder must be noticed"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
     fn two_instances_are_counted() {
         let mut w = Watcher::default();
-        w.sample(&[p(90, 1, "codex", 0), p(91, 1, "codex", 0)], &Config::default(), 1000);
+        w.sample(
+            &[p(90, 1, "codex", 0), p(91, 1, "codex", 0)],
+            &Config::default(),
+            1000,
+        );
         assert_eq!(w.sessions.len(), 1);
         assert_eq!(w.sessions[0].instances, 2);
     }

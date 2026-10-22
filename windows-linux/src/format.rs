@@ -87,7 +87,9 @@ pub fn url_encode(s: &str) -> String {
     let mut out = String::new();
     for b in s.bytes() {
         match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
             _ => out.push_str(&format!("%{b:02X}")),
         }
     }
@@ -110,14 +112,21 @@ pub fn local_offset(t: u64) -> i64 {
 #[cfg(windows)]
 pub fn local_offset(t: u64) -> i64 {
     use windows_sys::Win32::Foundation::{FILETIME, SYSTEMTIME};
-    use windows_sys::Win32::System::Time::{FileTimeToSystemTime, SystemTimeToTzSpecificLocalTime, SystemTimeToFileTime};
+    use windows_sys::Win32::System::Time::{
+        FileTimeToSystemTime, SystemTimeToFileTime, SystemTimeToTzSpecificLocalTime,
+    };
     // Unix seconds → FILETIME (100 ns ticks since 1601), → local SYSTEMTIME via the current zone's rules.
     let ticks = (t + 11_644_473_600) * 10_000_000;
-    let ft = FILETIME { dwLowDateTime: ticks as u32, dwHighDateTime: (ticks >> 32) as u32 };
+    let ft = FILETIME {
+        dwLowDateTime: ticks as u32,
+        dwHighDateTime: (ticks >> 32) as u32,
+    };
     unsafe {
         let mut utc: SYSTEMTIME = std::mem::zeroed();
         let mut local: SYSTEMTIME = std::mem::zeroed();
-        if FileTimeToSystemTime(&ft, &mut utc) == 0 || SystemTimeToTzSpecificLocalTime(std::ptr::null(), &utc, &mut local) == 0 {
+        if FileTimeToSystemTime(&ft, &mut utc) == 0
+            || SystemTimeToTzSpecificLocalTime(std::ptr::null(), &utc, &mut local) == 0
+        {
             return 0;
         }
         let mut lft: FILETIME = std::mem::zeroed();
@@ -161,7 +170,10 @@ mod tests {
         assert!(when(now, now).starts_with("Today"));
         assert!(when(now - 86_400, now).starts_with("Yesterday"));
         assert_eq!(when(now - 5 * 86_400, now), "5 days ago");
-        assert_eq!(url_encode("Claude Code · done"), "Claude%20Code%20%C2%B7%20done");
+        assert_eq!(
+            url_encode("Claude Code · done"),
+            "Claude%20Code%20%C2%B7%20done"
+        );
     }
 
     #[test]

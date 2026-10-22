@@ -5,9 +5,9 @@ use std::collections::HashSet;
 
 #[cfg(target_os = "linux")]
 pub mod linux;
+pub mod mock;
 #[cfg(windows)]
 pub mod windows;
-pub mod mock;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Battery {
@@ -63,7 +63,12 @@ pub trait Platform {
     /// Slow a process (efficiency mode / lowest priority), but only if `pid` still has start time `start`.
     /// Returns its previous priority and, on Linux, the systemd unit used. Never acts on anything in
     /// `protected` (on Linux a unit shared with a protected process is refused).
-    fn slow(&mut self, pid: u32, start: u64, protected: &HashSet<u32>) -> Option<(i64, Option<String>)>;
+    fn slow(
+        &mut self,
+        pid: u32,
+        start: u64,
+        protected: &HashSet<u32>,
+    ) -> Option<(i64, Option<String>)>;
     /// Put a slowed process back. False if the OS refused (the journal entry is kept and retried).
     fn unslow(&mut self, t: &Touched) -> bool;
     /// Pause or resume, only if `pid` is still the process that started at `start` (checked on the same
@@ -143,7 +148,11 @@ impl<const N: usize> Sustained<N> {
         }
         self.last.push_back(t);
         let coolest = self.last.iter().copied().min().unwrap_or(Thermal::Unknown);
-        if self.last.len() < N { coolest.min(Thermal::Normal) } else { coolest }
+        if self.last.len() < N {
+            coolest.min(Thermal::Normal)
+        } else {
+            coolest
+        }
     }
     pub fn clear(&mut self) {
         self.last.clear();
@@ -168,7 +177,11 @@ mod tests {
     fn a_record_is_kept_until_its_restore_works() {
         let mut r = Some("balanced".to_string());
         assert!(!put_back(&mut r, true, |_| false));
-        assert_eq!(r.as_deref(), Some("balanced"), "a failed restore keeps the record for a retry");
+        assert_eq!(
+            r.as_deref(),
+            Some("balanced"),
+            "a failed restore keeps the record for a retry"
+        );
         let mut asked = None;
         assert!(put_back(&mut r, true, |p| {
             asked = Some(p.clone());
@@ -176,9 +189,14 @@ mod tests {
         }));
         assert_eq!((r, asked.as_deref()), (None, Some("balanced")));
         let mut changed = Some("balanced".to_string());
-        assert!(put_back(&mut changed, false, |_| panic!("not Ajar's setting any more: left alone")));
+        assert!(put_back(&mut changed, false, |_| panic!(
+            "not Ajar's setting any more: left alone"
+        )));
         assert!(changed.is_none());
-        assert!(put_back(&mut None::<String>, true, |_| false), "nothing recorded: nothing to do");
+        assert!(
+            put_back(&mut None::<String>, true, |_| false),
+            "nothing recorded: nothing to do"
+        );
     }
 
     #[test]
@@ -189,7 +207,11 @@ mod tests {
         assert_eq!(h.feed(Thermal::Critical), Thermal::Critical);
         assert_eq!(h.feed(Thermal::Serious), Thermal::Serious);
         assert_eq!(h.feed(Thermal::Normal), Thermal::Normal);
-        assert_eq!(h.feed(Thermal::Critical), Thermal::Normal, "one hot sample among cool ones isn't heat");
+        assert_eq!(
+            h.feed(Thermal::Critical),
+            Thermal::Normal,
+            "one hot sample among cool ones isn't heat"
+        );
         assert_eq!(h.feed(Thermal::Unknown), Thermal::Unknown);
         h.clear();
         assert_eq!(h.feed(Thermal::Unknown), Thermal::Unknown);

@@ -24,13 +24,6 @@ enum AppRule: String, CaseIterable, Codable {
     var menuTitle: String {
         switch self { case .leave: "Leave Running"; case .slow: "Slow Down"; case .pause: "Pause Until Opened" }
     }
-    var explanation: String {
-        switch self {
-        case .leave: "Runs normally"
-        case .slow: "Efficiency cores only, about a quarter of the power"
-        case .pause: "Frozen until you open the lid, uses nothing"
-        }
-    }
 }
 
 enum MenuBarText: String, CaseIterable, Codable {
@@ -119,6 +112,8 @@ struct Config: Codable, Equatable {
     var slowBuildsWhileClosed = false
     /// Pause Time Machine's automatic backups while the lid is closed (an agent's file changes trigger them).
     var pauseTimeMachine = true
+    /// The person says Wi-Fi › "Ask to join hotspots" is on Automatic, so Ajar stops reminding them on a hotspot.
+    var hotspotAutomatic = false
 
     init() {}
 
@@ -161,6 +156,7 @@ struct Config: Codable, Equatable {
         wakeAt = (try? c.decodeIfPresent(Double.self, forKey: .wakeAt)).flatMap { $0.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } }
         slowBuildsWhileClosed = (try? c.decodeIfPresent(Bool.self, forKey: .slowBuildsWhileClosed)) ?? d.slowBuildsWhileClosed
         pauseTimeMachine = (try? c.decodeIfPresent(Bool.self, forKey: .pauseTimeMachine)) ?? d.pauseTimeMachine
+        hotspotAutomatic = (try? c.decodeIfPresent(Bool.self, forKey: .hotspotAutomatic)) ?? d.hotspotAutomatic
         wakeForMinutes = min(24 * 60, max(5, (try? c.decodeIfPresent(Int.self, forKey: .wakeForMinutes)) ?? d.wakeForMinutes))
     }
 

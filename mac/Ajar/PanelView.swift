@@ -16,22 +16,6 @@ extension View {
     }
 }
 
-/// The app's mark inside an accent circle, glowing when it's holding the Mac awake.
-struct GlyphBadge: View {
-    var holding: Bool
-    var on: Bool
-    var size: CGFloat = 32
-
-    var body: some View {
-        LidMark(open: on ? 1 : 0.1, light: holding ? 1 : 0, lineWidth: size * 0.075, color: on ? .white : .primary)
-            .frame(width: size * 0.62, height: size * 0.5)
-            .frame(width: size, height: size)
-            .background(Circle().fill(on ? Color.accentColor : Color.primary.opacity(0.1)))
-            .animation(.spring(duration: 0.5, bounce: 0.3), value: holding)
-            .animation(.spring(duration: 0.5, bounce: 0.3), value: on)
-    }
-}
-
 /// A real NSSegmentedControl with equal-width segments that fills the row, so every segmented control
 /// in the panel shares the same edges (SwiftUI's segmented Picker sizes to its labels on macOS).
 struct EqualSegments<T: Hashable>: NSViewRepresentable {
@@ -186,7 +170,7 @@ struct AgentRow: View {
 struct ActivityDot: View {
     @State private var on = false
     var body: some View {
-        Circle().fill(Color.green).frame(width: 7, height: 7)
+        Circle().fill(Color.accentColor).frame(width: 7, height: 7)
             .opacity(on ? 1 : 0.35)
             .animation(.easeInOut(duration: 0.9).repeatForever(), value: on)
             .onAppear { on = true }

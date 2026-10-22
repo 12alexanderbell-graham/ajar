@@ -15,6 +15,9 @@ struct Receipt: Equatable {
     var startPercent: Int?
     var endPercent: Int?
     var agentName: String?
+    /// Time the Mac had no internet while the lid was shut (it stayed awake, but agents couldn't reach anything).
+    var offlineSeconds: Double = 0
+    var offlineSince: Date?
 }
 
 @MainActor
@@ -95,6 +98,12 @@ final class Engine {
     private(set) var apps: [AppUsage] = []
     private(set) var thermal = ProcessInfo.processInfo.thermalState
     private(set) var receipt: Receipt?
+    private let net = NetWatch()
+    /// On an iPhone's Personal Hotspot right now (see NetWatch for why that matters with the lid shut).
+    private(set) var onHotspot = NetWatch.inIPhoneHotspotRange
+    var online: Bool { net.online }
+    /// Previews only: show the panel as if on an iPhone hotspot (a preview engine never touches the system).
+    func previewOnHotspot() { if previewOnly { onHotspot = true } }
     private(set) var fullWh: Double = UserDefaults.standard.double(forKey: "fullWh") > 20 ? UserDefaults.standard.double(forKey: "fullWh") : 70
     var panelOpen = false { didSet { if panelOpen && !oldValue { refreshFast() } } }
 
@@ -109,9 +118,8 @@ final class Engine {
     private var baseline: [String: Double] = [:]         // bundle path → watts when running normally
     private var lastSavingSample: Date?
     private var sleepInfo: (at: Date, watts: Double)?
-    /// What the Mac draws with the lid open on battery (smoothed), and the value captured as the lid closed.
+    /// What the Mac draws with the lid open on battery (smoothed).
     private(set) var openDraw: Double? = UserDefaults.standard.object(forKey: "openDraw") as? Double
-    private var openDrawAtClose: Double?
     /// Whole-Mac watts from the battery controller (on battery or charger), averaged between readings.
     private(set) var systemWatts: Double?
     private var lastPowerSample: PowerSample?
@@ -126,24 +134,6 @@ final class Engine {
     private(set) var powerTestProgress: String?
     /// Savings the last test couldn't pin down (the Mac's own load moved too much while measuring).
     private(set) var powerUnclear = Set(UserDefaults.standard.stringArray(forKey: "powerUnclear") ?? [])
-
-    struct Outlook {
-        var percentSaved: Double     // 0…1, closed-with-Ajar vs. open
-        var extraHours: Double
-        var totalHours: Double       // with the lid closed, down to the battery limit
-        var measured: Bool           // true while closed (both sides measured)
-    }
-
-    /// "Saving X%, runs Y longer": closed with Ajar versus leaving the lid open doing the same work.
-    var outlook: Outlook? {
-        guard let b = battery else { return nil }
-        let closed = (lidClosed ? (systemWatts ?? drawNow) : nil) ?? closedEstimate
-        let open = lidClosed ? (openDrawAtClose ?? openDraw) : (systemWatts ?? drawNow ?? openDraw)
-        guard let base = open, base > closed + 0.2, closed > 0.3 else { return nil }
-        let usable = Double(max(0, b.percent - config.batteryFloor)) / 100 * fullWh
-        return Outlook(percentSaved: 1 - closed / base, extraHours: usable / closed - usable / base,
-                       totalHours: usable / closed, measured: lidClosed && holding)
-    }
 
     /// Fired on changes worth announcing in the notch: (title, subtitle).
     var onAnnounce: ((String, String) -> Void)?
@@ -279,6 +269,8 @@ final class Engine {
         }
         let lid = Registry.lidClosed
         if lid != lidClosed { lidChanged(to: lid) }
+        trackOffline()
+        if ticks % 5 == 0 { let h = net.onPhoneHotspot; if h != onHotspot { onHotspot = h } }
 
         if ticks % (panelOpen ? 1 : 5) == 0 { readBattery() }
         let agentEvery = panelOpen ? 2 : (lidClosed ? 8 : 5)
@@ -610,14 +602,6 @@ final class Engine {
         liveSavingW = rate
     }
 
-    /// What the current rules would save with the lid closed, from live per-app readings (slow ≈ −77%, measured).
-    var potentialSavingW: Double {
-        userApps.reduce(0) { sum, a in
-            guard !isProtected(a) else { return sum }
-            switch rule(for: a.bundleID) { case .leave: return sum; case .slow: return sum + a.watts * 0.77; case .pause: return sum + a.watts }
-        }
-    }
-
     func percent(ofWh wh: Double) -> Double { wh / max(fullWh, 1) * 100 }
 
     private func finishSession(openedAt: Date) {
@@ -837,12 +821,26 @@ final class Engine {
         }
     }
 
+    /// Counts the minutes without internet during a lid-closed session, for the receipt.
+    private func trackOffline() {
+        guard var r = receipt else { return }
+        let end = r.openedAt ?? (lidClosed ? nil : Date())
+        if let since = r.offlineSince, net.online || end != nil {
+            r.offlineSeconds += (end ?? Date()).timeIntervalSince(since)
+            r.offlineSince = nil
+        } else if r.offlineSince == nil, !net.online, end == nil, r.sleptAt == nil {
+            r.offlineSince = Date()
+        }
+        if r != receipt { receipt = r }
+    }
+
     static func receiptLine(_ r: Receipt) -> String {
         let end = r.sleptAt ?? r.sleepRequestedAt ?? r.openedAt ?? Date()
         let mins = Int(end.timeIntervalSince(r.closedAt) / 60)
         let dur = mins < 60 ? "\(max(1, mins)) min" : "\(mins / 60) h \(mins % 60) min"
         var s = r.sleptAt != nil ? "Ran \(dur), then slept" : (r.sleepRequestedAt != nil ? "Ran \(dur), then asked it to sleep" : "Stayed awake \(dur)")
         if let a = r.startPercent, let b = r.endPercent, a >= b { s += " · used \(a - b)%" }
+        if r.offlineSeconds >= 60 { s += " · no internet for \(Int(r.offlineSeconds / 60)) min" }
         return s
     }
 
@@ -853,7 +851,6 @@ final class Engine {
         sessionWh = 0
         sleepInfo = nil
         lastSavingSample = Date()
-        openDrawAtClose = openDraw
         if config.lockOnClose {
             // The person chose a locked Mac: turn the screen off now, and macOS locks per its own setting.
             Shell.run("/usr/bin/pmset", ["displaysleepnow"])
@@ -1546,9 +1543,6 @@ final class Engine {
         update { $0.checkInMinutes = minutes }
     }
 
-    /// Set Up again after an update that added commands to the sudoers entry.
-    func refreshWakeReady() { wakeReady = Setup.wakeReady }
-
     /// "Let it sleep now": ends holds and timers; agents don't keep the Mac awake until the lid next opens
     /// (or it wakes). With the lid open the Mac sleeps right away.
     func sleepNow() {
@@ -1558,11 +1552,6 @@ final class Engine {
         snoozed = true
         evaluate()
         if !lidClosed && !holding && !previewOnly { Shell.pmsetRoot(["sleepnow"]) }
-    }
-
-    func toggleWatch(_ app: WatchedApp) {
-        if config.watchedApps.contains(where: { $0.id == app.id }) { update { $0.watchedApps.removeAll { $0.id == app.id } } }
-        else { addWatched(app) }
     }
 
     /// For the phone panel: apps already kept awake for, then the busiest open apps to pick from.

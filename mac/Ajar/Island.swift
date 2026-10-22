@@ -222,7 +222,7 @@ struct IslandView: View {
     private var content: some View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
-                LidMark(open: 1, light: model.glow ? 1 : 0, lineWidth: 2.4, color: .white)
+                AjarMark(glow: model.glow)
                     .frame(width: 30, height: 22)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(model.title).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
@@ -236,10 +236,12 @@ struct IslandView: View {
                         Button { model.setMode(m); model.mode = m } label: {
                             Text(m.label)
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(model.mode == m ? .black : .white)
+                                .foregroundStyle(.white)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 7)
-                                .background(Capsule().fill(model.mode == m ? Color.white : Color.white.opacity(0.14)))
+                                .background {
+                                    if model.mode == m { Capsule().fill(Brand.gradient) } else { Capsule().fill(Color.white.opacity(0.14)) }
+                                }
                         }
                         .buttonStyle(.plain)
                     }

@@ -17,7 +17,12 @@ fn main() {
     std::fs::write(&ico, icon::ico(&[16, 20, 24, 32, 40, 48, 64, 256])).unwrap();
     let version = env!("CARGO_PKG_VERSION");
     let v: Vec<&str> = version.split('.').collect();
-    let comma = format!("{},{},{},0", v.first().unwrap_or(&"1"), v.get(1).unwrap_or(&"0"), v.get(2).unwrap_or(&"0"));
+    let comma = format!(
+        "{},{},{},0",
+        v.first().unwrap_or(&"1"),
+        v.get(1).unwrap_or(&"0"),
+        v.get(2).unwrap_or(&"0")
+    );
     let rc = format!(
         r#"1 ICON "{ico}"
 1 VERSIONINFO
@@ -47,8 +52,20 @@ END
     let rc_path = out.join("ajar.rc");
     std::fs::write(&rc_path, rc).unwrap();
     let obj = out.join("ajar-res.o");
-    let windres = if target.contains("gnu") { "x86_64-w64-mingw32-windres" } else { "windres" };
-    let ok = std::process::Command::new(windres).arg(&rc_path).arg("-O").arg("coff").arg("-o").arg(&obj).status().map(|s| s.success()).unwrap_or(false);
+    let windres = if target.contains("gnu") {
+        "x86_64-w64-mingw32-windres"
+    } else {
+        "windres"
+    };
+    let ok = std::process::Command::new(windres)
+        .arg(&rc_path)
+        .arg("-O")
+        .arg("coff")
+        .arg("-o")
+        .arg(&obj)
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
     if ok {
         println!("cargo:rustc-link-arg-bins={}", obj.display());
     } else {

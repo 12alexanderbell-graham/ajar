@@ -66,9 +66,9 @@ private struct Welcome: View {
             StepHeader(step: 1, title: "Close the lid. Your work keeps going.",
                        subtitle: "Ajar keeps your Mac awake with the lid shut while your AI agents work.")
             VStack(alignment: .leading, spacing: 14) {
-                Feature(symbol: "laptopcomputer", color: .green, title: "Shut it and walk away",
+                Feature(symbol: "laptopcomputer", color: Brand.mid, title: "Shut it and walk away",
                         text: "Your agent keeps going in your bag.")
-                Feature(symbol: "leaf.fill", color: .orange, title: "Uses a fraction of the battery",
+                Feature(symbol: "leaf.fill", color: .teal, title: "Uses a fraction of the battery",
                         text: "18 W down to 3 W on our test Mac.")
                 Feature(symbol: "moon.zzz.fill", color: .indigo, title: "Sleeps when the work is done",
                         text: "Or when the battery runs low.")

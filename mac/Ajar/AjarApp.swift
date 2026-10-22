@@ -41,11 +41,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let others = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
             .filter { $0.processIdentifier != getpid() }
             .filter { installed ? $0.bundleURL?.path.hasPrefix("/Applications/") == true : true }
-        let isPreview = env["XCODE_RUNNING_FOR_PREVIEWS"] == "1" || env["DYLD_INSERT_LIBRARIES"]?.contains("__preview") == true
+        // Previews never run the installed copy; an installed copy opened from a shell that Xcode started can inherit
+        // Xcode's preview variables, and must still start normally.
+        let isPreview = !installed && (env["XCODE_RUNNING_FOR_PREVIEWS"] == "1" || env["DYLD_INSERT_LIBRARIES"]?.contains("__preview") == true)
+        // A build that isn't the installed app (Xcode snippets, previews, a dev run) never takes control while Ajar is
+        // installed, even if the installed app is quitting or restarting right then. AJAR_ACTIVE=1 overrides it.
+        let devDefers = !installed && FileManager.default.fileExists(atPath: "/Applications/Ajar.app") && env["AJAR_ACTIVE"] != "1"
         // Atomic single-instance lock, so two copies launched at once can't both take control of power settings.
-        lockFD = isPreview ? -1 : open(StateFiles.dir.appendingPathComponent("app.lock").path, O_CREAT | O_RDWR, 0o600)
+        lockFD = isPreview || devDefers ? -1 : open(StateFiles.dir.appendingPathComponent("app.lock").path, O_CREAT | O_RDWR, 0o600)
         let gotLock = lockFD >= 0 && flock(lockFD, LOCK_EX | LOCK_NB) == 0
-        guard others.isEmpty, !isPreview, gotLock else {
+        guard others.isEmpty, !isPreview, !devDefers, gotLock else {
             // A passive copy must not keep the lock, or the real app launched later would turn passive too.
             if lockFD >= 0 { close(lockFD); lockFD = -1 }   // closing drops the flock
             engine = Engine(passive: true)
@@ -54,10 +59,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 DistributedNotificationCenter.default().postNotificationName(Wire.requestName, object: nil,
                     userInfo: ["json": Wire.json(["id": UUID().uuidString, "cmd": "open", "args": ["where": "window"]])], deliverImmediately: true)
                 NSApp.terminate(nil)
+            } else if installed, !isPreview {
+                // The installed app lost the lock, or saw a copy that was still quitting (a restart, an update, a
+                // short-lived dev copy). Take over as soon as the lock is free instead of staying idle for good.
+                waitForLock()
             }
             return
         }
+        startActive()
+    }
 
+    private var lockRetry: Timer?
+
+    private func waitForLock() {
+        lockRetry = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let fd = open(StateFiles.dir.appendingPathComponent("app.lock").path, O_CREAT | O_RDWR, 0o600)
+                guard fd >= 0 else { return }
+                guard flock(fd, LOCK_EX | LOCK_NB) == 0 else { close(fd); return }
+                self.lockRetry?.invalidate(); self.lockRetry = nil
+                self.lockFD = fd
+                self.startActive()
+            }
+        }
+    }
+
+    /// Everything the one active copy runs: the engine, the menu bar item, commands, notifications, phone control.
+    private func startActive() {
         engine = Engine()
         let ui = StatusController(engine: engine)
         self.ui = ui

@@ -4,7 +4,10 @@ fn main() {
     let key = ajar::remote::parse_key(key_b64).unwrap();
     let (c, r) = ajar::remote::topics(&key);
     println!("cmd={c}\nreply={r}");
-    println!("sealed={}", ajar::remote::seal(&key, &c, "{\"cmd\":\"panel\",\"n\":\"abc\",\"t\":1}"));
+    println!(
+        "sealed={}",
+        ajar::remote::seal(&key, &c, "{\"cmd\":\"panel\",\"n\":\"abc\",\"t\":1}")
+    );
     if let Some(m) = std::env::args().nth(1) {
         println!("opened={:?}", ajar::remote::open(&key, &r, &m));
     }

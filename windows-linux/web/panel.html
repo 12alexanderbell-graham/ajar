@@ -16,13 +16,13 @@
 <link rel="icon" href="icon-192.png">
 <title>Ajar Remote</title>
 <style>
-:root{--bg:#f5f5f7;--card:#fff;--text:#1d1d1f;--sub:#6e6e73;--line:#e5e5ea;--amber:#e8781d;--seg:#e3e3e8;--segsel:#fff;--on:#34c759;--warn:#b25000;color-scheme:light}
-@media (prefers-color-scheme:dark){:root{--bg:#000;--card:#1c1c1e;--text:#f5f5f7;--sub:#98989d;--line:#2c2c2e;--amber:#f08a2c;--seg:#2c2c2e;--segsel:#636366;--warn:#ff9f0a;color-scheme:dark}}
+:root{--bg:#f5f5f7;--card:#fff;--text:#1d1d1f;--sub:#6e6e73;--line:#e5e5ea;--accent:#15784a;--seg:#e3e3e8;--segsel:#fff;--on:#1fa868;--warn:#b25000;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#000;--card:#1c1c1e;--text:#f5f5f7;--sub:#98989d;--line:#2c2c2e;--accent:#30bb81;--seg:#2c2c2e;--segsel:#636366;--warn:#ff9f0a;color-scheme:dark}}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--text);font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
 main{max-width:460px;margin:0 auto;padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(40px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
-a{color:var(--amber)}
+a{color:var(--accent)}
 .host{color:var(--sub);font-size:13px;margin:8px 4px 4px;display:flex;justify-content:space-between;gap:12px}
 .card{background:var(--card);border-radius:14px;padding:16px;margin:12px 0}
 h1{font-size:22px;line-height:1.25;margin:0 0 4px;font-weight:650}
@@ -30,7 +30,7 @@ h2{font-size:17px;margin:0 0 8px;font-weight:600}
 .detail{color:var(--sub);margin:0}
 .battery{margin:10px 0 0;font-variant-numeric:tabular-nums}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--sub);margin-right:8px;vertical-align:2px}
-.dot.on{background:var(--amber)}
+.dot.on{background:var(--accent)}
 .warn{color:var(--warn);font-size:14px;margin:8px 0 0}
 .label{font-size:13px;color:var(--sub);margin:18px 4px 6px}
 .seg{display:flex;background:var(--seg);border-radius:9px;padding:2px}
@@ -41,7 +41,7 @@ h2{font-size:17px;margin:0 0 8px;font-weight:600}
 .row:last-child{padding-bottom:0}
 .row .sub{color:var(--sub);font-size:13px}
 .btn{display:block;width:100%;border:0;background:var(--card);color:var(--text);font:inherit;padding:12px;border-radius:10px;margin-top:8px}
-.btn.primary{background:var(--amber);color:#fff;font-weight:600}
+.btn.primary{background:var(--accent);color:#fff;font-weight:600}
 .btn.confirm{background:#d70015;color:#fff;font-weight:600}
 .btns{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
 .btns .btn{margin:0}
@@ -51,7 +51,7 @@ h2{font-size:17px;margin:0 0 8px;font-weight:600}
 .switch span:before{content:"";position:absolute;width:27px;height:27px;left:2px;top:2px;background:#fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:.2s}
 .switch input:checked+span{background:var(--on)}
 .switch input:checked+span:before{transform:translateX(20px)}
-.switch input:focus-visible+span{outline:2px solid var(--amber);outline-offset:2px}
+.switch input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
 .foot{color:var(--sub);font-size:12px;text-align:center;margin-top:24px;line-height:1.7}
 .foot button{background:none;border:0;padding:0;font:inherit;color:inherit;text-decoration:underline}
 .empty{color:var(--sub);font-size:14px}

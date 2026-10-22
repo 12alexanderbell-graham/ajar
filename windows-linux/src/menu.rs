@@ -9,23 +9,53 @@ use crate::platform::Platform;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Node {
-    Text { id: String, text: String, enabled: bool },
-    Check { id: String, text: String, checked: bool, enabled: bool },
-    Sub { id: String, text: String, children: Vec<Node> },
+    Text {
+        id: String,
+        text: String,
+        enabled: bool,
+    },
+    Check {
+        id: String,
+        text: String,
+        checked: bool,
+        enabled: bool,
+    },
+    Sub {
+        id: String,
+        text: String,
+        children: Vec<Node>,
+    },
     Sep,
 }
 
 fn text(id: &str, t: impl Into<String>) -> Node {
-    Node::Text { id: id.into(), text: t.into(), enabled: true }
+    Node::Text {
+        id: id.into(),
+        text: t.into(),
+        enabled: true,
+    }
 }
 fn info(id: &str, t: impl Into<String>) -> Node {
-    Node::Text { id: id.into(), text: t.into(), enabled: false }
+    Node::Text {
+        id: id.into(),
+        text: t.into(),
+        enabled: false,
+    }
 }
 fn check(id: &str, t: impl Into<String>, checked: bool) -> Node {
-    Node::Check { id: id.into(), text: t.into(), checked, enabled: true }
+    Node::Check {
+        id: id.into(),
+        text: t.into(),
+        checked,
+        enabled: true,
+    }
 }
 fn sub(id: &str, t: impl Into<String>, children: Vec<Node>) -> Node {
-    Node::Sub { id: id.into(), text: t.into(), children }
+    Node::Sub {
+        id: id.into(),
+        text: t.into(),
+        children,
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -88,7 +118,13 @@ impl UiState {
     pub fn from_engine<P: Platform>(e: &Engine<P>, now: u64) -> UiState {
         let (keeps, headline, detail) = e.outcome();
         let wanted = e.blocked.is_some() || e.setup_error.is_some();
-        let tray = if e.holding { TrayState::Awake } else if wanted && e.cfg.mode != Mode::Off { TrayState::Blocked } else { TrayState::Idle };
+        let tray = if e.holding {
+            TrayState::Awake
+        } else if wanted && e.cfg.mode != Mode::Off {
+            TrayState::Blocked
+        } else {
+            TrayState::Idle
+        };
         let mut seen = std::collections::HashSet::new();
         let agents = e
             .watcher
@@ -111,7 +147,11 @@ impl UiState {
             .rev()
             .take(5)
             .map(|r| {
-                let mut s = format!("{} · {} closed", crate::format::when(r.date, now), crate::format::minutes(r.closed_minutes));
+                let mut s = format!(
+                    "{} · {} closed",
+                    crate::format::when(r.date, now),
+                    crate::format::minutes(r.closed_minutes)
+                );
                 if let (Some(a), Some(b)) = (r.start_percent, r.end_percent) {
                     if a >= b {
                         s.push_str(&format!(" · used {}%", a - b));
@@ -130,10 +170,18 @@ impl UiState {
             detail: detail.trim_end_matches([' ', '·']).to_string(),
             mode_line: e.mode_line(),
             battery: e.battery_summary(),
-            warning: [&e.hold_warning, &e.watchdog_warning, &e.lid_warning].into_iter().flatten().next().cloned(),
+            warning: [&e.hold_warning, &e.watchdog_warning, &e.lid_warning]
+                .into_iter()
+                .flatten()
+                .next()
+                .cloned(),
             tray,
             agents,
-            holds: e.holds.iter().map(|h| (h.id.clone(), h.reason.clone(), h.until)).collect(),
+            holds: e
+                .holds
+                .iter()
+                .map(|h| (h.id.clone(), h.reason.clone(), h.until))
+                .collect(),
             mode: e.cfg.mode,
             on_until: e.on_until(),
             preset: e.cfg.preset,
@@ -189,7 +237,11 @@ fn wrap(s: &str, width: usize) -> Vec<String> {
 /// One plain screen, the same as the Mac's: what closing the lid does and why, the three modes with a sentence
 /// saying what the chosen one means, one battery line, then everything else tucked into two submenus.
 pub fn build(s: &UiState) -> Vec<Node> {
-    let mut m = vec![info("head", &s.headline), info("detail", &s.detail), Node::Sep];
+    let mut m = vec![
+        info("head", &s.headline),
+        info("detail", &s.detail),
+        Node::Sep,
+    ];
 
     m.extend([
         check("mode:auto", Mode::Auto.label(), s.mode == Mode::Auto),
@@ -217,7 +269,10 @@ pub fn build(s: &UiState) -> Vec<Node> {
         m.push(text("sleepnow", "Sleep Now"));
     }
     if s.snoozed {
-        m.push(info("snoozed", "Sleeping when the lid closes, until it opens again"));
+        m.push(info(
+            "snoozed",
+            "Sleeping when the lid closes, until it opens again",
+        ));
     }
     if let Some(w) = &s.warning {
         for (i, line) in wrap(w, 58).into_iter().enumerate() {
@@ -225,7 +280,10 @@ pub fn build(s: &UiState) -> Vec<Node> {
         }
     }
     if !s.unrestored.is_empty() {
-        m.push(info("unrestored", format!("Couldn't put back: {}", s.unrestored.join(", "))));
+        m.push(info(
+            "unrestored",
+            format!("Couldn't put back: {}", s.unrestored.join(", ")),
+        ));
         m.push(text("retry", "Try again"));
     }
     m.push(Node::Sep);
@@ -257,7 +315,11 @@ fn apps_menu(s: &UiState) -> Vec<Node> {
         if !a.keeps_awake {
             label.push_str(" · tracked only");
         }
-        let mut children = vec![check(&format!("track:{}", a.id), "Keeps the laptop awake", a.keeps_awake)];
+        let mut children = vec![check(
+            &format!("track:{}", a.id),
+            "Keeps the laptop awake",
+            a.keeps_awake,
+        )];
         if let Some(p) = &a.project {
             children.push(info(&format!("proj:{}", a.id), format!("In {p}")));
         }
@@ -271,11 +333,19 @@ fn apps_menu(s: &UiState) -> Vec<Node> {
         m.push(info(&format!("hold:{id}"), t));
     }
     if !s.holds.is_empty() {
-        m.push(text("release", if s.holds.len() == 1 { "End this hold" } else { "End all holds" }));
+        m.push(text(
+            "release",
+            if s.holds.len() == 1 {
+                "End this hold"
+            } else {
+                "End all holds"
+            },
+        ));
     }
     m.push(Node::Sep);
 
-    let mut while_items: Vec<Node> = vec![info("while:help", "Stays awake while any of these is busy")];
+    let mut while_items: Vec<Node> =
+        vec![info("while:help", "Stays awake while any of these is busy")];
     if s.watch.is_empty() {
         while_items.push(info("while:none", "Busy apps show up here to pick from"));
     }
@@ -283,31 +353,79 @@ fn apps_menu(s: &UiState) -> Vec<Node> {
         while_items.push(check(&format!("watch:{key}"), name.clone(), *on));
     }
     let n_on = s.watch.iter().filter(|w| w.2).count();
-    m.push(sub("while", if n_on == 0 { "Also While These Run".to_string() } else { format!("Also While These Run: {n_on}") }, while_items));
+    m.push(sub(
+        "while",
+        if n_on == 0 {
+            "Also While These Run".to_string()
+        } else {
+            format!("Also While These Run: {n_on}")
+        },
+        while_items,
+    ));
 
     m.push(sub(
         "closed",
         format!("While Closed: {}", s.preset.label()),
         vec![
-            check("preset:longest", "Max Battery: pause chat and music, slow browsers", s.preset == Preset::Longest),
-            check("preset:balanced", "Balanced: slow browsers, chat and music", s.preset == Preset::Balanced),
-            check("preset:speed", "Full Speed: leave every app alone", s.preset == Preset::Speed),
+            check(
+                "preset:longest",
+                "Max Battery: pause chat and music, slow browsers",
+                s.preset == Preset::Longest,
+            ),
+            check(
+                "preset:balanced",
+                "Balanced: slow browsers, chat and music",
+                s.preset == Preset::Balanced,
+            ),
+            check(
+                "preset:speed",
+                "Full Speed: leave every app alone",
+                s.preset == Preset::Speed,
+            ),
             Node::Sep,
-            check("lowpower", "Switch to power saver while closed", s.low_power),
-            text("editconfig", "Per-app rules… (appRules in the settings file)"),
+            check(
+                "lowpower",
+                "Switch to power saver while closed",
+                s.low_power,
+            ),
+            text(
+                "editconfig",
+                "Per-app rules… (appRules in the settings file)",
+            ),
         ],
     ));
 
     let quiets = [2u32, 5, 10, 30];
     let mut quiet_items: Vec<Node> = quiets
         .iter()
-        .map(|q| check(&format!("quiet:{q}"), format!("{q} min after work stops"), s.sleep_when_done && s.quiet == *q))
+        .map(|q| {
+            check(
+                &format!("quiet:{q}"),
+                format!("{q} min after work stops"),
+                s.sleep_when_done && s.quiet == *q,
+            )
+        })
         .collect();
     if s.sleep_when_done && !quiets.contains(&s.quiet) {
-        quiet_items.insert(0, check(&format!("quiet:{}", s.quiet), format!("{} min after work stops", s.quiet), true));
+        quiet_items.insert(
+            0,
+            check(
+                &format!("quiet:{}", s.quiet),
+                format!("{} min after work stops", s.quiet),
+                true,
+            ),
+        );
     }
-    quiet_items.push(check("quiet:never", "Not while an agent is open", !s.sleep_when_done));
-    let quiet_label = if s.sleep_when_done { format!("Sleep: {} min after work stops", s.quiet) } else { "Sleep: when agents close".to_string() };
+    quiet_items.push(check(
+        "quiet:never",
+        "Not while an agent is open",
+        !s.sleep_when_done,
+    ));
+    let quiet_label = if s.sleep_when_done {
+        format!("Sleep: {} min after work stops", s.quiet)
+    } else {
+        "Sleep: when agents close".to_string()
+    };
     m.push(sub("quiet", quiet_label, quiet_items));
     m
 }
@@ -317,24 +435,61 @@ fn settings_menu(s: &UiState) -> Vec<Node> {
     let floors = [0u32, 10, 15, 20, 30, 50];
     let mut floor_items: Vec<Node> = floors
         .iter()
-        .map(|f| check(&format!("floor:{f}"), if *f == 0 { "No limit".to_string() } else { format!("Stop at {f}%") }, s.floor == *f))
+        .map(|f| {
+            check(
+                &format!("floor:{f}"),
+                if *f == 0 {
+                    "No limit".to_string()
+                } else {
+                    format!("Stop at {f}%")
+                },
+                s.floor == *f,
+            )
+        })
         .collect();
     if !floors.contains(&s.floor) {
-        floor_items.insert(0, check(&format!("floor:{}", s.floor), format!("Stop at {}%", s.floor), true));
+        floor_items.insert(
+            0,
+            check(
+                &format!("floor:{}", s.floor),
+                format!("Stop at {}%", s.floor),
+                true,
+            ),
+        );
     }
     if s.can_override_floor {
         floor_items.push(Node::Sep);
         floor_items.push(text("override", "Keep going below the limit this time"));
     }
-    let floor_label = if s.floor == 0 { "Battery Limit: none".to_string() } else { format!("Battery Limit: {}%", s.floor) };
+    let floor_label = if s.floor == 0 {
+        "Battery Limit: none".to_string()
+    } else {
+        format!("Battery Limit: {}%", s.floor)
+    };
     let mut settings = vec![sub("floor", floor_label, floor_items), Node::Sep];
 
-    settings.push(check("notify", "Notify when an agent goes idle", s.notify_done));
-    settings.push(check("onlyac", "Only stay awake on the charger", s.only_on_power));
+    settings.push(check(
+        "notify",
+        "Notify when an agent goes idle",
+        s.notify_done,
+    ));
+    settings.push(check(
+        "onlyac",
+        "Only stay awake on the charger",
+        s.only_on_power,
+    ));
     if s.heat_available {
-        settings.push(check("heat", "Heat guard: sleep if it gets too hot", s.heat_guard));
+        settings.push(check(
+            "heat",
+            "Heat guard: sleep if it gets too hot",
+            s.heat_guard,
+        ));
     }
-    settings.push(check("claudeapp", "Count the Claude app as an agent", s.claude_app));
+    settings.push(check(
+        "claudeapp",
+        "Count the Claude app as an agent",
+        s.claude_app,
+    ));
     settings.push(check("login", "Open at login", s.open_at_login));
     settings.push(Node::Sep);
     if s.ntfy_topic.is_empty() {
@@ -354,14 +509,25 @@ fn settings_menu(s: &UiState) -> Vec<Node> {
         settings.push(text("phone:on", "Phone control…"));
     }
     settings.push(Node::Sep);
-    let mut wake_items: Vec<Node> = vec![info("checkin:help", "While asleep with the lid shut, check for a wake from the phone")];
-    for (m, label) in [(0u32, "Never"), (15, "Every 15 min"), (30, "Every 30 min"), (60, "Every hour")] {
+    let mut wake_items: Vec<Node> = vec![info(
+        "checkin:help",
+        "While asleep with the lid shut, check for a wake from the phone",
+    )];
+    for (m, label) in [
+        (0u32, "Never"),
+        (15, "Every 15 min"),
+        (30, "Every 30 min"),
+        (60, "Every hour"),
+    ] {
         wake_items.push(check(&format!("checkin:{m}"), label, s.check_in == m));
     }
     wake_items.push(Node::Sep);
     match s.wake_at {
         Some(t) => {
-            wake_items.push(info("wakeat:info", format!("Wakes at {}", crate::format::clock(t))));
+            wake_items.push(info(
+                "wakeat:info",
+                format!("Wakes at {}", crate::format::clock(t)),
+            ));
             wake_items.push(text("wakeat:off", "Cancel the scheduled wake"));
         }
         None => wake_items.push(text("wakeat:7", "Wake at 07:00 tomorrow")),
@@ -369,21 +535,47 @@ fn settings_menu(s: &UiState) -> Vec<Node> {
     settings.push(sub("waking", "Waking Up", wake_items));
     let approve = if s.approve_confirm {
         vec![
-            info("approve:warn", "Agents will run any command and edit or delete any file without asking."),
+            info(
+                "approve:warn",
+                "Agents will run any command and edit or delete any file without asking.",
+            ),
             text("approve:confirm", "Turn on: approve everything"),
         ]
     } else {
         vec![
-            check("approve:toggle", "Approve everything automatically (risky)", s.auto_approve),
-            info("approve:help", "Claude Code and Codex run without asking; new sessions only"),
+            check(
+                "approve:toggle",
+                "Approve everything automatically (risky)",
+                s.auto_approve,
+            ),
+            info(
+                "approve:help",
+                "Claude Code and Codex run without asking; new sessions only",
+            ),
         ]
     };
-    settings.push(sub("approvals", if s.auto_approve { "Approvals: everything approved" } else { "Approvals" }, approve));
+    settings.push(sub(
+        "approvals",
+        if s.auto_approve {
+            "Approvals: everything approved"
+        } else {
+            "Approvals"
+        },
+        approve,
+    ));
     settings.push(Node::Sep);
     settings.push(text("editconfig", "Edit settings file…"));
     settings.push(text("openfolder", "Open Ajar folder"));
     if !s.recent.is_empty() {
-        settings.push(sub("recent", "Recent", s.recent.iter().enumerate().map(|(i, r)| info(&format!("recent:{i}"), r)).collect()));
+        settings.push(sub(
+            "recent",
+            "Recent",
+            s.recent
+                .iter()
+                .enumerate()
+                .map(|(i, r)| info(&format!("recent:{i}"), r))
+                .collect(),
+        ));
     }
     settings
 }
@@ -497,7 +689,11 @@ pub fn action(id: &str) -> Option<Action> {
         ("quit", _) => Action::Quit,
         ("approve", "toggle") => Action::ApproveToggle,
         ("approve", "confirm") => Action::ApproveConfirm,
-        ("checkin", m) => Action::CheckIn(m.parse::<u32>().ok().filter(|m| crate::wake::CHECK_IN_CHOICES.contains(m))?),
+        ("checkin", m) => Action::CheckIn(
+            m.parse::<u32>()
+                .ok()
+                .filter(|m| crate::wake::CHECK_IN_CHOICES.contains(m))?,
+        ),
         ("wakeat", "off") => Action::WakeOff,
         ("wakeat", h) => Action::WakeAt(h.parse().ok().filter(|h: &u32| *h < 24)?),
         _ => return None,
@@ -536,7 +732,14 @@ mod tests {
             battery: Some("64% · about 6 h 05 min with the lid closed".into()),
             warning: None,
             tray: TrayState::Awake,
-            agents: vec![AgentRow { id: "claude-code".into(), name: "Claude Code".into(), working: true, idle_minutes: Some(0), project: Some("ajar".into()), keeps_awake: true }],
+            agents: vec![AgentRow {
+                id: "claude-code".into(),
+                name: "Claude Code".into(),
+                working: true,
+                idle_minutes: Some(0),
+                project: Some("ajar".into()),
+                keeps_awake: true,
+            }],
             holds: vec![],
             mode: Mode::Auto,
             on_until: None,
@@ -554,7 +757,10 @@ mod tests {
             open_at_login: false,
             ntfy_topic: String::new(),
             recent: vec![],
-            watch: vec![("blender".into(), "blender".into(), true), ("ffmpeg".into(), "ffmpeg".into(), false)],
+            watch: vec![
+                ("blender".into(), "blender".into(), true),
+                ("ffmpeg".into(), "ffmpeg".into(), false),
+            ],
             unrestored: vec![],
             phone_on: true,
             phone_status: Some("Connected".into()),
@@ -594,7 +800,12 @@ mod tests {
         fn clickable(nodes: &[Node], out: &mut Vec<String>) {
             for n in nodes {
                 match n {
-                    Node::Text { id, enabled: true, .. } | Node::Check { id, enabled: true, .. } => out.push(id.clone()),
+                    Node::Text {
+                        id, enabled: true, ..
+                    }
+                    | Node::Check {
+                        id, enabled: true, ..
+                    } => out.push(id.clone()),
                     Node::Sub { children, .. } => clickable(children, out),
                     _ => {}
                 }
@@ -634,7 +845,10 @@ mod tests {
             })
         }
         let floor = find(&build(&s), "floor");
-        assert!(floor.unwrap().iter().any(|n| matches!(n, Node::Check { id, checked: true, .. } if id == "floor:25")));
+        assert!(floor
+            .unwrap()
+            .iter()
+            .any(|n| matches!(n, Node::Check { id, checked: true, .. } if id == "floor:25")));
     }
 
     #[test]
@@ -659,7 +873,10 @@ mod tests {
     #[test]
     fn long_warnings_wrap() {
         let lines = wrap("KDE may still sleep when the lid closes. In System Settings › Power Management, set it to Do nothing.", 40);
-        assert!(lines.len() >= 3 && lines.iter().all(|l| l.chars().count() <= 40), "{lines:?}");
+        assert!(
+            lines.len() >= 3 && lines.iter().all(|l| l.chars().count() <= 40),
+            "{lines:?}"
+        );
     }
 
     #[test]

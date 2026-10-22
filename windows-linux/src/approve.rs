@@ -33,8 +33,14 @@ pub struct Paths {
 impl Paths {
     pub fn new(root: &Path) -> Paths {
         let home = crate::state::home();
-        let codex_home = std::env::var_os("CODEX_HOME").map(PathBuf::from).unwrap_or_else(|| home.join(".codex"));
-        Paths { journal: root.join("auto-approve.json"), claude: home.join(".claude").join("settings.json"), codex: codex_home.join("config.toml") }
+        let codex_home = std::env::var_os("CODEX_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".codex"));
+        Paths {
+            journal: root.join("auto-approve.json"),
+            claude: home.join(".claude").join("settings.json"),
+            codex: codex_home.join("config.toml"),
+        }
     }
 }
 
@@ -43,13 +49,18 @@ pub fn is_on(p: &Paths) -> bool {
 }
 
 fn read_claude(p: &Paths) -> Result<Map<String, Value>, String> {
-    let Ok(text) = std::fs::read_to_string(&p.claude) else { return Ok(Map::new()) };
+    let Ok(text) = std::fs::read_to_string(&p.claude) else {
+        return Ok(Map::new());
+    };
     if text.trim().is_empty() {
         return Ok(Map::new());
     }
     match serde_json::from_str::<Value>(&text) {
         Ok(Value::Object(m)) => Ok(m),
-        _ => Err("Couldn't read ~/.claude/settings.json (it isn't plain JSON), so nothing was changed.".into()),
+        _ => Err(
+            "Couldn't read ~/.claude/settings.json (it isn't plain JSON), so nothing was changed."
+                .into(),
+        ),
     }
 }
 
@@ -58,7 +69,9 @@ fn write(path: &Path, text: &str) -> Result<(), String> {
         std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
     }
     let tmp = path.with_extension("ajar-tmp");
-    std::fs::write(&tmp, text).and_then(|_| std::fs::rename(&tmp, path)).map_err(|e| format!("Couldn't write {}: {e}", path.display()))
+    std::fs::write(&tmp, text)
+        .and_then(|_| std::fs::rename(&tmp, path))
+        .map_err(|e| format!("Couldn't write {}: {e}", path.display()))
 }
 
 fn save_journal(p: &Paths, j: &Journal) -> Result<(), String> {
@@ -71,10 +84,19 @@ pub fn turn_on(p: &Paths) -> Result<(), String> {
     }
     let mut claude = read_claude(p)?;
     let codex = std::fs::read_to_string(&p.codex).unwrap_or_default();
-    let mut perms = claude.get("permissions").and_then(Value::as_object).cloned().unwrap_or_default();
+    let mut perms = claude
+        .get("permissions")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
     let mut j = Journal {
-        claude_mode: perms.get("defaultMode").and_then(Value::as_str).map(str::to_string),
-        claude_skip: claude.get("skipDangerousModePermissionPrompt").and_then(Value::as_bool),
+        claude_mode: perms
+            .get("defaultMode")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        claude_skip: claude
+            .get("skipDangerousModePermissionPrompt")
+            .and_then(Value::as_bool),
         codex_approval: top_level_line(&codex, "approval_policy"),
         codex_sandbox: top_level_line(&codex, "sandbox_mode"),
         ..Default::default()
@@ -84,7 +106,10 @@ pub fn turn_on(p: &Paths) -> Result<(), String> {
     perms.insert("defaultMode".into(), json!("bypassPermissions"));
     claude.insert("permissions".into(), Value::Object(perms));
     claude.insert("skipDangerousModePermissionPrompt".into(), json!(true));
-    write(&p.claude, &serde_json::to_string_pretty(&Value::Object(claude)).unwrap_or_default())?;
+    write(
+        &p.claude,
+        &serde_json::to_string_pretty(&Value::Object(claude)).unwrap_or_default(),
+    )?;
     j.claude_touched = true;
     save_journal(p, &j)?;
     let t = set_top_level(&codex, "approval_policy", Some(CODEX_APPROVAL));
@@ -96,13 +121,20 @@ pub fn turn_on(p: &Paths) -> Result<(), String> {
 
 /// Puts back what was there, but only where the value is still Ajar's.
 pub fn turn_off(p: &Paths) -> Result<(), String> {
-    let Some(j) = std::fs::read_to_string(&p.journal).ok().and_then(|t| serde_json::from_str::<Journal>(&t).ok()) else {
+    let Some(j) = std::fs::read_to_string(&p.journal)
+        .ok()
+        .and_then(|t| serde_json::from_str::<Journal>(&t).ok())
+    else {
         let _ = std::fs::remove_file(&p.journal);
         return Ok(());
     };
     if j.claude_touched {
         if let Ok(mut c) = read_claude(p) {
-            let mut perms = c.get("permissions").and_then(Value::as_object).cloned().unwrap_or_default();
+            let mut perms = c
+                .get("permissions")
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default();
             if perms.get("defaultMode").and_then(Value::as_str) == Some("bypassPermissions") {
                 match &j.claude_mode {
                     Some(m) => perms.insert("defaultMode".into(), json!(m)),
@@ -114,13 +146,19 @@ pub fn turn_off(p: &Paths) -> Result<(), String> {
             } else {
                 c.insert("permissions".into(), Value::Object(perms));
             }
-            if c.get("skipDangerousModePermissionPrompt").and_then(Value::as_bool) == Some(true) {
+            if c.get("skipDangerousModePermissionPrompt")
+                .and_then(Value::as_bool)
+                == Some(true)
+            {
                 match j.claude_skip {
                     Some(s) => c.insert("skipDangerousModePermissionPrompt".into(), json!(s)),
                     None => c.remove("skipDangerousModePermissionPrompt"),
                 };
             }
-            write(&p.claude, &serde_json::to_string_pretty(&Value::Object(c)).unwrap_or_default())?;
+            write(
+                &p.claude,
+                &serde_json::to_string_pretty(&Value::Object(c)).unwrap_or_default(),
+            )?;
         }
     }
     if j.codex_touched {
@@ -138,7 +176,9 @@ pub fn turn_off(p: &Paths) -> Result<(), String> {
 }
 
 fn is_key_line(trimmed: &str, key: &str) -> bool {
-    trimmed.strip_prefix(key).is_some_and(|rest| rest.trim_start().starts_with('='))
+    trimmed
+        .strip_prefix(key)
+        .is_some_and(|rest| rest.trim_start().starts_with('='))
 }
 
 /// The top-level `key = …` line (before the first [table]), verbatim.
@@ -157,7 +197,11 @@ pub fn top_level_line(text: &str, key: &str) -> Option<String> {
 
 /// Replaces the top-level `key = …` line with `line` (None removes it), or adds `line` at the top.
 pub fn set_top_level(text: &str, key: &str, line: Option<&str>) -> String {
-    let mut lines: Vec<String> = if text.is_empty() { vec![] } else { text.split('\n').map(str::to_string).collect() };
+    let mut lines: Vec<String> = if text.is_empty() {
+        vec![]
+    } else {
+        text.split('\n').map(str::to_string).collect()
+    };
     for i in 0..lines.len() {
         let t = lines[i].trim();
         if t.starts_with('[') {
@@ -190,23 +234,40 @@ mod tests {
         let d = std::env::temp_dir().join(format!("ajar-approve-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
-        Paths { journal: d.join("auto-approve.json"), claude: d.join("claude/settings.json"), codex: d.join("codex/config.toml") }
+        Paths {
+            journal: d.join("auto-approve.json"),
+            claude: d.join("claude/settings.json"),
+            codex: d.join("codex/config.toml"),
+        }
     }
 
     #[test]
     fn on_then_off_puts_everything_back() {
         let p = paths("roundtrip");
-        write(&p.claude, r#"{"model":"opus","permissions":{"defaultMode":"acceptEdits","allow":["Bash(ls)"]}}"#).unwrap();
+        write(
+            &p.claude,
+            r#"{"model":"opus","permissions":{"defaultMode":"acceptEdits","allow":["Bash(ls)"]}}"#,
+        )
+        .unwrap();
         write(&p.codex, "model = \"gpt-5\"\napproval_policy = \"on-request\"\n\n[profiles.fast]\nsandbox_mode = \"read-only\"\n").unwrap();
         turn_on(&p).unwrap();
         assert!(is_on(&p));
         let c: Value = serde_json::from_str(&std::fs::read_to_string(&p.claude).unwrap()).unwrap();
         assert_eq!(c["permissions"]["defaultMode"], "bypassPermissions");
-        assert_eq!(c["permissions"]["allow"][0], "Bash(ls)", "other settings kept");
+        assert_eq!(
+            c["permissions"]["allow"][0], "Bash(ls)",
+            "other settings kept"
+        );
         assert_eq!(c["skipDangerousModePermissionPrompt"], true);
         let t = std::fs::read_to_string(&p.codex).unwrap();
-        assert!(t.contains(CODEX_APPROVAL) && t.starts_with(CODEX_SANDBOX), "{t}");
-        assert!(t.contains("[profiles.fast]\nsandbox_mode = \"read-only\""), "tables untouched");
+        assert!(
+            t.contains(CODEX_APPROVAL) && t.starts_with(CODEX_SANDBOX),
+            "{t}"
+        );
+        assert!(
+            t.contains("[profiles.fast]\nsandbox_mode = \"read-only\""),
+            "tables untouched"
+        );
         turn_off(&p).unwrap();
         assert!(!is_on(&p));
         let c: Value = serde_json::from_str(&std::fs::read_to_string(&p.claude).unwrap()).unwrap();
@@ -219,7 +280,11 @@ mod tests {
     fn a_value_the_person_changed_meanwhile_is_left_alone_and_bad_json_changes_nothing() {
         let p = paths("changed");
         turn_on(&p).unwrap();
-        write(&p.claude, r#"{"permissions":{"defaultMode":"plan"},"skipDangerousModePermissionPrompt":true}"#).unwrap();
+        write(
+            &p.claude,
+            r#"{"permissions":{"defaultMode":"plan"},"skipDangerousModePermissionPrompt":true}"#,
+        )
+        .unwrap();
         turn_off(&p).unwrap();
         let c: Value = serde_json::from_str(&std::fs::read_to_string(&p.claude).unwrap()).unwrap();
         assert_eq!(c["permissions"]["defaultMode"], "plan");

@@ -1,20 +1,27 @@
 import AppKit
 import SwiftUI
 
-/// The menu bar panel: one plain screen anyone can read at a glance.
-///  • what Ajar does now (Off / When Busy / Always, with one sentence saying what that means)
-///  • what closing the lid will do right now, and why
-///  • one battery line
-/// Everything else (apps, rules, numbers, history) lives in Settings.
+/// The menu bar panel, two tabs:
+///  • Now: the mode (Off / When Busy / Always) with one sentence, what closing the lid does right now, the battery.
+///  • Apps: what keeps the Mac awake, what closing the lid slows or pauses, the battery limit, per-app rules.
+/// Everything else is in Settings.
 struct PanelView: View {
+    enum Tab: String { case now, apps }
+
     @Bindable var engine: Engine
     var actions = PanelActions(openSettings: {}, quit: { NSApp.terminate(nil) })
+    /// Opens on this tab (previews and screenshots); otherwise the last one used.
+    var showTab: Tab? = nil
+    @AppStorage("panelTab") private var tab: Tab = .now
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             if engine.setupReady {
                 header
-                NowTab(engine: engine)
+                switch showTab ?? tab {
+                case .now: NowTab(engine: engine)
+                case .apps: AppsView(engine: engine)
+                }
             } else {
                 SetupView(engine: engine)
             }
@@ -24,8 +31,16 @@ struct PanelView: View {
     }
 
     private var header: some View {
-        HStack {
-            Text("Ajar").font(.headline)
+        HStack(spacing: 16) {
+            ForEach([Tab.now, Tab.apps], id: \.self) { t in
+                Button { tab = t } label: {
+                    Text(t == .now ? "Now" : "Apps")
+                        .font(.headline)
+                        .foregroundStyle((showTab ?? tab) == t ? .primary : .tertiary)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
             Spacer()
             Button { actions.openSettings() } label: {
                 Image(systemName: "gearshape").font(.system(size: 14)).foregroundStyle(.secondary)
@@ -68,17 +83,64 @@ private struct NowTab: View {
             } else if engine.floorOverride {
                 notice("Going below \(engine.batteryFloor)% until you plug in.", button: "Undo") { engine.overrideFloor(false) }
             }
+            if engine.onHotspot && !engine.config.hotspotAutomatic && Registry.hasLid { hotspotNotice }
             if let r = engine.recentReceipt, dismissedReceipt != r.closedAt { receipt(r) }
 
-            if let line = engine.batteryLine {
+            if Registry.hasLid, let b = engine.battery {
                 Divider()
-                HStack(spacing: 8) {
-                    Image(systemName: batteryIcon).font(.system(size: 13)).foregroundStyle(.secondary).frame(width: 22)
-                    Text(line).font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
-                }
-                .help("How long the battery would last with the lid closed, down to \(engine.batteryFloor == 0 ? "0%" : "your \(engine.batteryFloor)% limit"), with what's running now.")
+                battery(b)
+            }
+            if let w = engine.weekSummary {
+                Divider()
+                week(w)
             }
         }
+    }
+
+    private func battery(_ b: BatteryReading) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Battery").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                Spacer()
+                Label(batteryState(b), systemImage: batteryIcon).labelStyle(.titleAndIcon)
+                    .font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
+            }
+            if let closed = engine.closedHours {
+                HStack(alignment: .firstTextBaseline, spacing: 16) {
+                    Figure(value: PanelFormat.hm(closed), caption: engine.onBattery ? "left with the lid closed" : "on battery, lid closed")
+                    if engine.onBattery, let open = engine.openHours, closed > open {
+                        Figure(value: "+" + PanelFormat.hm(closed - open), caption: "vs. \(PanelFormat.hm(open)) lid open", tint: .accentColor)
+                    }
+                }
+                .help("Down to \(engine.batteryFloor == 0 ? "0%" : "your \(engine.batteryFloor)% limit"), estimated from what's running now and measured while the lid is shut.")
+            }
+            Text(drawLine).font(.caption).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
+        }
+    }
+
+    private func batteryState(_ b: BatteryReading) -> String {
+        if b.charging { return "\(b.percent)% · charging" }
+        if engine.onBattery, let d = engine.drawNow { return "\(b.percent)% · \(PanelFormat.pct(engine.percentPerHour(d)))/h" }
+        return b.onAC ? "\(b.percent)% · plugged in" : "\(b.percent)%"
+    }
+
+    private var drawLine: String {
+        var s = "Uses ≈\(PanelFormat.w(engine.closedEstimate)) closed"
+        if let o = engine.openWatts { s += " · \(PanelFormat.w(o)) open" }
+        return s
+    }
+
+    private func week(_ w: Engine.WeekSummary) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Last 7 days").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                Spacer()
+                Text("\(PanelFormat.hm(w.closedHours)) with the lid closed").font(.subheadline.weight(.semibold)).monospacedDigit()
+            }
+            Text("\(w.sessions) session\(w.sessions == 1 ? "" : "s")" + (w.whSaved >= 10 ? " · ≈\(String(format: "%.0f", w.whSaved)) Wh saved" : ""))
+                .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+        }
+        .help("Estimated from the power macOS attributes to apps before and while Ajar slowed them, plus the sleeps after the work stopped.")
     }
 
     private var batteryIcon: String {
@@ -97,16 +159,16 @@ private struct NowTab: View {
         return HStack(alignment: .top, spacing: 10) {
             Image(systemName: o.keeps ? "laptopcomputer" : "moon.zzz.fill")
                 .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(o.keeps ? Color.green : Color.secondary)
+                .foregroundStyle(o.keeps ? Color.accentColor : Color.secondary)
                 .frame(width: 26, height: 22)
             VStack(alignment: .leading, spacing: 2) {
                 Text(o.headline).font(.headline)
                 Text(o.detail).font(.subheadline).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                if engine.mode == .on { durationMenu.padding(.top, 2) }
+                if engine.mode == .on { durationMenu.padding(.top, 2).padding(.leading, -3) }   // the menu's own inset, so it lines up with the text
                 else if engine.holding {
                     Button("Sleep Now") { engine.sleepNow() }
-                        .buttonStyle(.link).font(.subheadline).padding(.top, 2)
+                        .buttonStyle(.plain).foregroundStyle(Color.accentColor).font(.subheadline).padding(.top, 2)
                         .help("Let it sleep now. Agents can't keep it awake again until you open the lid.")
                 }
             }
@@ -114,9 +176,27 @@ private struct NowTab: View {
         }
     }
 
+    /// On an iPhone hotspot: macOS only reconnects to it by itself with the lid shut if "Ask to join hotspots" is
+    /// on Automatic. Ajar can't read or change that setting, so it asks once and remembers the answer.
+    private var hotspotNotice: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "personalhotspot").font(.system(size: 13)).foregroundStyle(.orange).frame(width: 18, height: 18)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("You're on your iPhone's hotspot").font(.subheadline.weight(.semibold))
+                Text("If the iPhone turns it off, macOS only reconnects with the lid shut when Wi-Fi › Ask to join hotspots is set to Automatic.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 14) {
+                    Button("Open Wi-Fi Settings") { NSWorkspace.shared.open(NetWatch.wifiSettingsURL) }
+                    Button("It's on Automatic") { engine.update { $0.hotspotAutomatic = true } }
+                }
+                .buttonStyle(.plain).foregroundStyle(Color.accentColor).font(.caption.weight(.medium))
+            }
+        }
+    }
+
     private func receipt(_ r: Receipt) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "checkmark.circle.fill").font(.system(size: 13)).foregroundStyle(.green).frame(width: 18, height: 18)
+            Image(systemName: "checkmark.circle.fill").font(.system(size: 13)).foregroundStyle(Color.accentColor).frame(width: 18, height: 18)
             VStack(alignment: .leading, spacing: 1) {
                 Text("While the lid was closed").font(.subheadline.weight(.semibold))
                 Text(([r.agentName].compactMap { $0 } + [Engine.receiptLine(r)]).joined(separator: " · "))
@@ -166,6 +246,20 @@ private struct NowTab: View {
 
 }
 
+/// A big number with a plain caption underneath.
+private struct Figure: View {
+    let value: String
+    let caption: String
+    var tint: Color = .primary
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(value).font(.title2.weight(.semibold)).monospacedDigit().foregroundStyle(tint)
+                .contentTransition(.numericText()).animation(.snappy, value: value)
+            Text(caption).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        }
+    }
+}
+
 enum PanelFormat {
     static func hm(_ hours: Double) -> String {
         let m = Int((hours * 60).rounded())
@@ -180,7 +274,7 @@ enum PanelFormat {
     }
 }
 
-// MARK: - Apps (shown in Settings › Keep Awake For)
+// MARK: - Apps (the panel's Apps tab, and Settings › Keep Awake For)
 
 struct AppsView: View {
     @Bindable var engine: Engine
@@ -320,7 +414,7 @@ struct AppsView: View {
             ForEach(shown) { app in EnergyRow(app: app, engine: engine) }
             if apps.count > 4 {
                 Button(showAll ? "Show Fewer" : "Show \(apps.count - 4) More") { showAll.toggle() }
-                    .buttonStyle(.link).font(.subheadline)
+                    .buttonStyle(.plain).foregroundStyle(Color.accentColor).font(.subheadline)
             }
             if let t = engine.lastTest, Date().timeIntervalSince(t.date) < 3600, t.before > 0 {
                 let change = Int(((t.after / t.before - 1) * 100).rounded())
@@ -334,7 +428,7 @@ struct AppsView: View {
         Button { engine.measureSavings() } label: {
             if engine.measuring { ProgressView().controlSize(.mini) } else { Text("Measure") }
         }
-        .buttonStyle(.link).font(.subheadline)
+        .buttonStyle(.plain).foregroundStyle(Color.accentColor).font(.subheadline)
         .disabled(engine.measuring || (engine.lidClosed && engine.holding))
         .help("Applies these rules for about 5 seconds and reads each app's real power before and after")
     }
@@ -383,15 +477,21 @@ private struct SetupView: View {
 }
 
 #Preview("Now") {
-    PanelView(engine: .preview()).background(.regularMaterial)
+    PanelView(engine: .preview(), showTab: .now).background(.regularMaterial)
 }
 
 #Preview("Apps") {
-    ScrollView { AppsView(engine: .preview()).padding(16) }.frame(width: 320, height: 640).background(.regularMaterial)
+    PanelView(engine: .preview(), showTab: .apps).background(.regularMaterial)
+}
+
+#Preview("On a hotspot") {
+    let e = Engine.preview()
+    e.previewOnHotspot()
+    return PanelView(engine: e, showTab: .now).background(.regularMaterial)
 }
 
 #Preview("Now, When Busy") {
     let e = Engine.preview()
     e.mode = .auto   // preview engines never save
-    return PanelView(engine: e).background(.regularMaterial)
+    return PanelView(engine: e, showTab: .now).background(.regularMaterial)
 }

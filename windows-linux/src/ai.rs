@@ -50,8 +50,16 @@ pub const SETTINGS: &[Spec] = &[
 ];
 
 pub const LISTS: &[(&str, &str, &str)] = &[
-    ("app_rules", "ajar rule <app> leave|slow|pause|default  (MCP: set_app_rule)", "Per-app override of the preset while the lid is closed."),
-    ("watched_apps", "ajar watch <app> [--remove]  (MCP: watch_app)", "Apps or tools that keep the laptop awake while busy."),
+    (
+        "app_rules",
+        "ajar rule <app> leave|slow|pause|default  (MCP: set_app_rule)",
+        "Per-app override of the preset while the lid is closed.",
+    ),
+    (
+        "watched_apps",
+        "ajar watch <app> [--remove]  (MCP: watch_app)",
+        "Apps or tools that keep the laptop awake while busy.",
+    ),
 ];
 
 pub fn describe(c: &Config, config_path: &Path) -> Value {
@@ -87,14 +95,23 @@ pub const SETUP_PROMPT: &str = "Ajar is installed on this laptop. It keeps the m
 Never turn off the heat guard or lower the battery limit; Ajar won't let you, and that's on purpose.";
 
 fn home() -> PathBuf {
-    std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(PathBuf::from).unwrap_or_default()
+    std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+        .map(PathBuf::from)
+        .unwrap_or_default()
 }
 
 fn server() -> (String, Vec<String>) {
     let exe = std::env::current_exe().ok();
     // The MCP server lives in the `ajar` command next to the tray app.
-    let cli = exe.as_ref().and_then(|p| p.parent()).map(|d| d.join(if cfg!(windows) { "ajar.exe" } else { "ajar" }));
-    let path = cli.filter(|p| p.exists()).or(exe).map(|p| p.display().to_string()).unwrap_or_else(|| "ajar".into());
+    let cli = exe
+        .as_ref()
+        .and_then(|p| p.parent())
+        .map(|d| d.join(if cfg!(windows) { "ajar.exe" } else { "ajar" }));
+    let path = cli
+        .filter(|p| p.exists())
+        .or(exe)
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| "ajar".into());
     (path, vec!["mcp".into()])
 }
 
@@ -118,11 +135,15 @@ pub fn connect_codex() -> Result<String, String> {
 fn connect_claude_code_at(path: &Path) -> Result<String, String> {
     let path = path.to_path_buf();
     let mut root: Value = match std::fs::read(&path) {
-        Ok(b) => serde_json::from_slice(&b).map_err(|_| format!("{} isn't valid JSON, so I left it alone", path.display()))?,
+        Ok(b) => serde_json::from_slice(&b)
+            .map_err(|_| format!("{} isn't valid JSON, so I left it alone", path.display()))?,
         Err(_) => json!({}),
     };
     if !root.is_object() {
-        return Err(format!("{} isn't a JSON object, so I left it alone", path.display()));
+        return Err(format!(
+            "{} isn't a JSON object, so I left it alone",
+            path.display()
+        ));
     }
     if path.exists() {
         std::fs::copy(&path, path.with_extension("json.ajar-backup")).map_err(|e| e.to_string())?;
@@ -131,8 +152,14 @@ fn connect_claude_code_at(path: &Path) -> Result<String, String> {
     if !root["mcpServers"].is_object() {
         root["mcpServers"] = json!({});
     }
-    root["mcpServers"]["ajar"] = json!({ "type": "stdio", "command": cmd, "args": args, "env": {} });
-    write_atomic(&path, serde_json::to_string_pretty(&root).unwrap_or_default().as_bytes())?;
+    root["mcpServers"]["ajar"] =
+        json!({ "type": "stdio", "command": cmd, "args": args, "env": {} });
+    write_atomic(
+        &path,
+        serde_json::to_string_pretty(&root)
+            .unwrap_or_default()
+            .as_bytes(),
+    )?;
     Ok("Added to Claude Code for all projects. New sessions can use Ajar.".into())
 }
 
@@ -144,12 +171,17 @@ fn connect_codex_at(path: &Path) -> Result<String, String> {
     }
     let (cmd, args) = server();
     let q = |s: &str| format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""));
-    let block = format!("\n[mcp_servers.ajar]\ncommand = {}\nargs = [{}]\n", q(&cmd), args.iter().map(|a| q(a)).collect::<Vec<_>>().join(", "));
+    let block = format!(
+        "\n[mcp_servers.ajar]\ncommand = {}\nargs = [{}]\n",
+        q(&cmd),
+        args.iter().map(|a| q(a)).collect::<Vec<_>>().join(", ")
+    );
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
     if !existing.is_empty() {
-        std::fs::write(path.with_extension("toml.ajar-backup"), &existing).map_err(|e| e.to_string())?;
+        std::fs::write(path.with_extension("toml.ajar-backup"), &existing)
+            .map_err(|e| e.to_string())?;
     }
     write_atomic(path, format!("{existing}{block}").as_bytes())?;
     Ok("Added to Codex. New sessions can use Ajar.".into())
@@ -162,7 +194,9 @@ fn write_atomic(path: &Path, data: &[u8]) -> Result<(), String> {
 }
 
 pub fn status() -> Value {
-    let cc = std::fs::read(claude_code_config()).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok());
+    let cc = std::fs::read(claude_code_config())
+        .ok()
+        .and_then(|b| serde_json::from_slice::<Value>(&b).ok());
     let codex = std::fs::read_to_string(codex_config()).unwrap_or_default();
     json!([
         { "agent": "claude_code", "installed": claude_code_config().exists(), "connected": cc.map(|v| v["mcpServers"]["ajar"].is_object()).unwrap_or(false) },
@@ -177,9 +211,23 @@ mod tests {
     #[test]
     fn describe_lists_every_setting_with_values() {
         let d = describe(&Config::default(), Path::new("/tmp/config.json"));
-        let keys: Vec<&str> = d["settings"].as_array().unwrap().iter().map(|s| s["key"].as_str().unwrap()).collect();
-        assert!(keys.contains(&"battery_floor") && keys.contains(&"heat_guard") && keys.contains(&"preset"));
-        let floor = d["settings"].as_array().unwrap().iter().find(|s| s["key"] == "battery_floor").unwrap();
+        let keys: Vec<&str> = d["settings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["key"].as_str().unwrap())
+            .collect();
+        assert!(
+            keys.contains(&"battery_floor")
+                && keys.contains(&"heat_guard")
+                && keys.contains(&"preset")
+        );
+        let floor = d["settings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["key"] == "battery_floor")
+            .unwrap();
         assert_eq!(floor["value"], json!(15));
         assert!(floor["note"].as_str().unwrap().contains("raised"));
     }
@@ -190,9 +238,14 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let cc = dir.join(".claude.json");
         let codex = dir.join(".codex/config.toml");
-        std::fs::write(&cc, r#"{"mcpServers":{"other":{"command":"x"}},"theme":"light"}"#).unwrap();
+        std::fs::write(
+            &cc,
+            r#"{"mcpServers":{"other":{"command":"x"}},"theme":"light"}"#,
+        )
+        .unwrap();
         connect_claude_code_at(&cc).unwrap();
-        let v: Value = serde_json::from_slice(&std::fs::read(dir.join(".claude.json")).unwrap()).unwrap();
+        let v: Value =
+            serde_json::from_slice(&std::fs::read(dir.join(".claude.json")).unwrap()).unwrap();
         assert_eq!(v["mcpServers"]["other"]["command"], "x");
         assert_eq!(v["theme"], "light");
         assert_eq!(v["mcpServers"]["ajar"]["args"], json!(["mcp"]));

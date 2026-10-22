@@ -17,7 +17,9 @@ use std::path::{Path, PathBuf};
 
 pub fn dir() -> PathBuf {
     let base = if cfg!(windows) {
-        std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(|| home().join("AppData").join("Roaming"))
+        std::env::var_os("APPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home().join("AppData").join("Roaming"))
     } else {
         std::env::var_os("XDG_CONFIG_HOME")
             .map(PathBuf::from)
@@ -30,7 +32,11 @@ pub fn dir() -> PathBuf {
 }
 
 pub fn home() -> PathBuf {
-    let v = if cfg!(windows) { std::env::var_os("USERPROFILE") } else { std::env::var_os("HOME") };
+    let v = if cfg!(windows) {
+        std::env::var_os("USERPROFILE")
+    } else {
+        std::env::var_os("HOME")
+    };
     v.map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."))
 }
 
@@ -104,9 +110,16 @@ pub fn heartbeat_has_pid(path: &Path) -> bool {
 /// Is the app that wrote the heartbeat still the same running process?
 pub fn heartbeat_process_alive(path: &Path) -> bool {
     let Some(text) = read(path) else { return false };
-    let f: Vec<u64> = text.split_whitespace().filter_map(|x| x.parse().ok()).collect();
+    let f: Vec<u64> = text
+        .split_whitespace()
+        .filter_map(|x| x.parse().ok())
+        .collect();
     match f.as_slice() {
-        [_, pid, start] => *pid <= u32::MAX as u64 && crate::procs::start_time(*pid as u32) == Some(*start) && *start != 0,
+        [_, pid, start] => {
+            *pid <= u32::MAX as u64
+                && crate::procs::start_time(*pid as u32) == Some(*start)
+                && *start != 0
+        }
         _ => false,
     }
 }

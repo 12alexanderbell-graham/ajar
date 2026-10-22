@@ -52,7 +52,7 @@ enum SettingsTopic: String, CaseIterable, Identifiable {
     }
     var color: Color {
         switch self {
-        case .lid: .blue; case .sleep: .indigo; case .awake: .orange; case .alerts: .red
+        case .lid: .blue; case .sleep: .indigo; case .awake: Brand.mid; case .alerts: .red
         case .phone: .green; case .ai: .teal; case .general: .gray; case .about: .gray
         }
     }
@@ -210,6 +210,15 @@ struct SettingsView: View {
             }
         } footer: {
             Text("Dark means no password when you open the lid.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        Section {
+            Toggle("Remind me on an iPhone hotspot", isOn: Binding(get: { !engine.config.hotspotAutomatic }, set: { v in engine.update { $0.hotspotAutomatic = !v } }))
+            Button("Open Wi-Fi Settings") { NSWorkspace.shared.open(NetWatch.wifiSettingsURL) }
+        } header: {
+            Text("Internet")
+        } footer: {
+            Text("An iPhone can turn its hotspot off by itself. With the lid shut, macOS only reconnects if Wi-Fi › Ask to join hotspots is set to Automatic.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         Section {
@@ -473,7 +482,7 @@ struct SettingsView: View {
         } label: {
             HStack(spacing: 4) {
                 Text(name)
-                if connected { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).help("Connected") }
+                if connected { Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.accentColor).help("Connected") }
             }
         }
     }
@@ -554,11 +563,6 @@ struct SettingsView: View {
         if let a = s.startPercent, let b = s.endPercent, a >= b { parts.append("used \(a - b)%") }
         if s.sleptMinutes > 0.5 { parts.append("then slept") }
         return parts.joined(separator: " · ")
-    }
-
-    static func appName(_ bundleID: String) -> String {
-        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return bundleID }
-        return FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
     }
 }
 

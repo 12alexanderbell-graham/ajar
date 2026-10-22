@@ -17,7 +17,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tao::event::{Event, StartCause};
 use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy};
-use tray_icon::menu::{CheckMenuItem, IsMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
+use tray_icon::menu::{
+    CheckMenuItem, IsMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu,
+};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder, TrayIconEvent};
 
 static TERMINATE: AtomicBool = AtomicBool::new(false);
@@ -93,7 +95,9 @@ fn main() {
         *control_flow = ControlFlow::Wait;
         let event = match event {
             // A held-back rebuild comes due.
-            Event::NewEvents(StartCause::ResumeTimeReached { .. }) if deferred => Event::UserEvent(UserEvent::Refresh),
+            Event::NewEvents(StartCause::ResumeTimeReached { .. }) if deferred => {
+                Event::UserEvent(UserEvent::Refresh)
+            }
             other => other,
         };
         match event {
@@ -102,7 +106,11 @@ fn main() {
             }
             Event::NewEvents(StartCause::Init) => {
                 let icon = tray_icon(TrayState::Idle);
-                let built = Rendered::build(&[Node::Text { id: "head".into(), text: "Starting…".into(), enabled: false }]);
+                let built = Rendered::build(&[Node::Text {
+                    id: "head".into(),
+                    text: "Starting…".into(),
+                    enabled: false,
+                }]);
                 tray = TrayIconBuilder::new()
                     .with_icon(icon)
                     .with_tooltip("Ajar")
@@ -115,7 +123,9 @@ fn main() {
             }
             Event::UserEvent(UserEvent::Refresh) => {
                 let Some(t) = &tray else { return };
-                let Some(s) = shared.lock().ok().and_then(|g| g.clone()) else { return };
+                let Some(s) = shared.lock().ok().and_then(|g| g.clone()) else {
+                    return;
+                };
                 let nodes = menu::build(&s);
                 match &rendered {
                     Some(r) if r.shape == menu::shape(&nodes) => {
@@ -125,7 +135,9 @@ fn main() {
                     Some(r) if menu_clicked.is_some_and(|at| at.elapsed() < MENU_OPEN_GRACE) => {
                         r.update(&nodes);
                         deferred = true;
-                        *control_flow = ControlFlow::WaitUntil(menu_clicked.unwrap_or_else(Instant::now) + MENU_OPEN_GRACE);
+                        *control_flow = ControlFlow::WaitUntil(
+                            menu_clicked.unwrap_or_else(Instant::now) + MENU_OPEN_GRACE,
+                        );
                     }
                     _ => {
                         let r = Rendered::build(&nodes);
@@ -176,7 +188,13 @@ struct Rendered {
 
 impl Rendered {
     fn build(nodes: &[Node]) -> Rendered {
-        let mut r = Rendered { menu: Menu::new(), shape: menu::shape(nodes), texts: HashMap::new(), checks: HashMap::new(), subs: HashMap::new() };
+        let mut r = Rendered {
+            menu: Menu::new(),
+            shape: menu::shape(nodes),
+            texts: HashMap::new(),
+            checks: HashMap::new(),
+            subs: HashMap::new(),
+        };
         let items = r.make(nodes);
         for i in &items {
             let _ = r.menu.append(i.as_ref());
@@ -193,7 +211,12 @@ impl Rendered {
                     self.texts.insert(id.clone(), m.clone());
                     out.push(Box::new(m));
                 }
-                Node::Check { id, text, checked, enabled } => {
+                Node::Check {
+                    id,
+                    text,
+                    checked,
+                    enabled,
+                } => {
                     let m = CheckMenuItem::with_id(id.as_str(), text, *enabled, *checked, None);
                     self.checks.insert(id.clone(), m.clone());
                     out.push(Box::new(m));
@@ -223,7 +246,9 @@ impl Rendered {
                         m.set_enabled(*enabled);
                     }
                 }
-                Node::Check { id, text, checked, .. } => {
+                Node::Check {
+                    id, text, checked, ..
+                } => {
                     if let Some(m) = self.checks.get(id) {
                         if m.text() != *text {
                             m.set_text(text);
@@ -270,11 +295,20 @@ fn start_remote(root: &Path, tx: Sender<Cmd>) -> Option<RemoteHandle> {
                 stop2,
                 |cmd, args| {
                     let (rtx, rrx) = channel();
-                    if tx.send(Cmd::Remote(cmd.to_string(), args, rtx, Instant::now() + Duration::from_secs(10))).is_err() {
+                    if tx
+                        .send(Cmd::Remote(
+                            cmd.to_string(),
+                            args,
+                            rtx,
+                            Instant::now() + Duration::from_secs(10),
+                        ))
+                        .is_err()
+                    {
                         return json!({ "ok": false, "error": "Ajar is quitting" });
                     }
                     // A little longer than the deadline, so a command started just before it can still answer.
-                    rrx.recv_timeout(Duration::from_secs(15)).unwrap_or_else(|_| json!({ "ok": false, "error": "Ajar is busy" }))
+                    rrx.recv_timeout(Duration::from_secs(15))
+                        .unwrap_or_else(|_| json!({ "ok": false, "error": "Ajar is busy" }))
                 },
                 |err| {
                     let _ = tx_status.send(Cmd::RemoteStatus(err));
@@ -285,7 +319,13 @@ fn start_remote(root: &Path, tx: Sender<Cmd>) -> Option<RemoteHandle> {
     Some(RemoteHandle { stop })
 }
 
-fn engine_thread(root: PathBuf, rx: Receiver<Cmd>, tx: Sender<Cmd>, shared: Arc<Mutex<Option<UiState>>>, proxy: EventLoopProxy<UserEvent>) {
+fn engine_thread(
+    root: PathBuf,
+    rx: Receiver<Cmd>,
+    tx: Sender<Cmd>,
+    shared: Arc<Mutex<Option<UiState>>>,
+    proxy: EventLoopProxy<UserEvent>,
+) {
     let mut e = Engine::new(platform::native(), root.clone(), procs::snapshot());
     // First run: register the watchdog (it puts things back if Ajar ever dies while it has changed something).
     if !root.join("installed").exists() && e.platform.install_watchdog().is_ok() {
@@ -305,22 +345,32 @@ fn engine_thread(root: PathBuf, rx: Receiver<Cmd>, tx: Sender<Cmd>, shared: Arc<
             Ok(Cmd::Action(Action::ApproveToggle)) => {
                 if ajar::approve::is_on(&approve_paths) {
                     let msg = match ajar::approve::turn_off(&approve_paths) {
-                        Ok(()) => "Off. Your previous Claude Code and Codex settings are back.".to_string(),
+                        Ok(()) => "Off. Your previous Claude Code and Codex settings are back."
+                            .to_string(),
                         Err(err) => err,
                     };
-                    e.outbox.push(ajar::engine::Announcement { title: "Approve everything".into(), body: msg });
+                    e.outbox.push(ajar::engine::Announcement {
+                        title: "Approve everything".into(),
+                        body: msg,
+                    });
                 } else {
                     approve_armed = Some(Instant::now());
                 }
                 changed = true;
             }
             Ok(Cmd::Action(Action::ApproveConfirm)) => {
-                if approve_armed.take().is_some_and(|t| t.elapsed() < Duration::from_secs(30)) {
+                if approve_armed
+                    .take()
+                    .is_some_and(|t| t.elapsed() < Duration::from_secs(30))
+                {
                     let msg = match ajar::approve::turn_on(&approve_paths) {
                         Ok(()) => "On. New Claude Code and Codex sessions won't ask before acting; running ones keep their mode.".to_string(),
                         Err(err) => err,
                     };
-                    e.outbox.push(ajar::engine::Announcement { title: "Approve everything".into(), body: msg });
+                    e.outbox.push(ajar::engine::Announcement {
+                        title: "Approve everything".into(),
+                        body: msg,
+                    });
                 }
                 changed = true;
             }
@@ -330,7 +380,11 @@ fn engine_thread(root: PathBuf, rx: Receiver<Cmd>, tx: Sender<Cmd>, shared: Arc<
             }
             Ok(Cmd::Remote(_, _, _, deadline)) if Instant::now() >= deadline => {}
             Ok(Cmd::Remote(cmd, args, reply, _)) => {
-                let r = if remote::ALLOWED.contains(&cmd.as_str()) { e.handle(&cmd, &args) } else { json!({ "ok": false, "error": "not allowed" }) };
+                let r = if remote::ALLOWED.contains(&cmd.as_str()) {
+                    e.handle(&cmd, &args)
+                } else {
+                    json!({ "ok": false, "error": "not allowed" })
+                };
                 let _ = reply.send(remote::phone_reply(&cmd, &r, e.panel_json(ajar::now())));
                 changed = true;
             }
@@ -398,13 +452,23 @@ fn quit<P: Platform>(e: &mut Engine<P>, remote: Option<&RemoteHandle>) -> ! {
     std::process::exit(0);
 }
 
-fn apply<P: Platform>(e: &mut Engine<P>, a: Action, root: &Path, tx: &Sender<Cmd>, remote: &mut Option<RemoteHandle>) {
+fn apply<P: Platform>(
+    e: &mut Engine<P>,
+    a: Action,
+    root: &Path,
+    tx: &Sender<Cmd>,
+    remote: &mut Option<RemoteHandle>,
+) {
     match a {
         Action::Mode(m) => e.set_mode(m),
         Action::StayFor(min) => e.stay_awake(Some(min)),
         Action::StayUntil(h) => {
             let now = ajar::now();
-            e.stay_awake(Some(ajar::format::next_local_hour(now, h).saturating_sub(now).div_ceil(60)));
+            e.stay_awake(Some(
+                ajar::format::next_local_hour(now, h)
+                    .saturating_sub(now)
+                    .div_ceil(60),
+            ));
         }
         Action::Preset(p) => e.update(|c| c.preset = p),
         Action::LowPower => e.update(|c| c.low_power_while_closed = !c.low_power_while_closed),
@@ -444,7 +508,10 @@ fn apply<P: Platform>(e: &mut Engine<P>, a: Action, root: &Path, tx: &Sender<Cmd
             }
             s.enabled = true;
             if !s.save(root) {
-                e.outbox.push(ajar::engine::Announcement { title: "Phone control".into(), body: "Couldn't save the pairing key.".into() });
+                e.outbox.push(ajar::engine::Announcement {
+                    title: "Phone control".into(),
+                    body: "Couldn't save the pairing key.".into(),
+                });
                 return;
             }
             if let Some(r) = remote.take() {
@@ -468,7 +535,11 @@ fn apply<P: Platform>(e: &mut Engine<P>, a: Action, root: &Path, tx: &Sender<Cmd
             e.set_wake(Some(ajar::format::next_local_hour(now, h)), None);
         }
         Action::WakeOff => e.set_wake(None, None),
-        Action::EditConfig | Action::OpenFolder | Action::Quit | Action::ApproveToggle | Action::ApproveConfirm => {}
+        Action::EditConfig
+        | Action::OpenFolder
+        | Action::Quit
+        | Action::ApproveToggle
+        | Action::ApproveConfirm => {}
     }
 }
 
@@ -476,7 +547,9 @@ fn apply<P: Platform>(e: &mut Engine<P>, a: Action, root: &Path, tx: &Sender<Cmd
 /// to the copy on the Ajar website.
 fn default_panel_url(root: &Path) -> String {
     let _ = root;
-    option_env!("AJAR_PANEL_URL").unwrap_or("https://12alexanderbell-graham.github.io/ajar/remote/").to_string()
+    option_env!("AJAR_PANEL_URL")
+        .unwrap_or("https://12alexanderbell-graham.github.io/ajar/remote/")
+        .to_string()
 }
 
 fn show_pairing(root: &Path, s: &remote::Settings) {
@@ -506,7 +579,10 @@ fn deliver<P: Platform>(e: &mut Engine<P>) {
     if !topic.is_empty() && ajar::config::valid_topic(&topic) {
         std::thread::spawn(move || {
             for a in items {
-                let url = format!("https://ntfy.sh/{topic}?title={}", ajar::format::url_encode(&a.title));
+                let url = format!(
+                    "https://ntfy.sh/{topic}?title={}",
+                    ajar::format::url_encode(&a.title)
+                );
                 let _ = ureq::post(&url).send(a.body.as_str());
             }
         });
@@ -519,7 +595,10 @@ fn open_target(target: &str) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        let _ = std::process::Command::new("explorer.exe").arg(target).creation_flags(0x0800_0000).spawn();
+        let _ = std::process::Command::new("explorer.exe")
+            .arg(target)
+            .creation_flags(0x0800_0000)
+            .spawn();
     }
     #[cfg(not(windows))]
     {
@@ -542,7 +621,12 @@ fn open_settings_file(p: &Path) {
 #[cfg(unix)]
 fn single_instance(root: &Path) -> Option<std::fs::File> {
     use std::os::unix::io::AsRawFd;
-    let f = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(root.join("app.lock")).ok()?;
+    let f = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(root.join("app.lock"))
+        .ok()?;
     let r = unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
     (r == 0).then_some(f)
 }
