@@ -1159,6 +1159,8 @@ pub fn run_watchdog<P: Platform>(
         state::save_json(&root.join("restore.json"), &r);
     }
     state::remove(&root.join("hold"));
+    // The app is gone, so nothing will end Approve everything when the work finishes or its time is up.
+    crate::approve::end_unwatched(&crate::approve::Paths::new(root));
     if ok {
         "restored"
     } else {

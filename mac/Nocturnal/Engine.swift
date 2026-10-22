@@ -339,7 +339,8 @@ final class Engine {
     func checkApprove() {
         approveChanged()   // also picks up a change made elsewhere (the CLI's uninstall, a second copy)
         guard !previewOnly, AutoApprove.isOn else { return }
-        let working = holding && holdReason != nil
+        // Agent work only: Always, timers and terminal holds don't count as "the work".
+        let working = workReason() != nil
         if working, AutoApprove.load()?.sawWork != true { AutoApprove.markWork(); approveChanged() }
         guard let why = AutoApprove.expiry(holdingForWork: working) else { return }
         let ok = (try? AutoApprove.turnOff()) != nil
@@ -857,6 +858,8 @@ final class Engine {
             StateFiles.remove(StateFiles.hold)
         }
         holding = false
+        // Nothing will be watching for the work to finish or the time to run out once Nocturnal has quit.
+        AutoApprove.endUnwatched()
         // Everything is back: no heartbeat means the watchdog has nothing to check after we're gone.
         if Watchdog.systemChanges().isEmpty { StateFiles.remove(StateFiles.alive) }
     }

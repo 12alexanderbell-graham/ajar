@@ -347,7 +347,7 @@ fn engine_thread(
     loop {
         let mut changed = false;
         match rx.recv_timeout(Duration::from_millis(250)) {
-            Ok(Cmd::Quit) => quit(&mut e, remote.as_ref()),
+            Ok(Cmd::Quit) => quit(&mut e, remote.as_ref(), &approve_paths),
             Ok(Cmd::Action(Action::ApproveToggle)) => {
                 if nocturnal::approve::is_on(&approve_paths) {
                     let msg = match nocturnal::approve::turn_off(&approve_paths) {
@@ -426,12 +426,12 @@ fn engine_thread(
             Err(_) => {}
         }
         if TERMINATE.load(Ordering::SeqCst) {
-            quit(&mut e, remote.as_ref());
+            quit(&mut e, remote.as_ref(), &approve_paths);
         }
         for (id, cmd, args) in ipc::take_requests(&root) {
             if cmd == "quit" {
                 ipc::reply(&root, &id, &json!({ "ok": true }));
-                quit(&mut e, remote.as_ref());
+                quit(&mut e, remote.as_ref(), &approve_paths);
             }
             let r = e.handle(&cmd, &args);
             ipc::reply(&root, &id, &r);
@@ -491,7 +491,8 @@ fn check_approve<P: Platform>(e: &mut Engine<P>, p: &nocturnal::approve::Paths) 
     if !nocturnal::approve::is_on(p) {
         return;
     }
-    let working = e.holding && e.hold_reason.is_some();
+    // Agent work only: Always, timers and terminal holds don't count as "the work".
+    let working = e.work_reason(nocturnal::now()).is_some();
     if working {
         nocturnal::approve::mark_work(p);
     }
@@ -512,11 +513,17 @@ fn check_approve<P: Platform>(e: &mut Engine<P>, p: &nocturnal::approve::Paths) 
     }
 }
 
-fn quit<P: Platform>(e: &mut Engine<P>, remote: Option<&RemoteHandle>) -> ! {
+fn quit<P: Platform>(
+    e: &mut Engine<P>,
+    remote: Option<&RemoteHandle>,
+    approve: &nocturnal::approve::Paths,
+) -> ! {
     if let Some(r) = remote {
         r.stop.store(true, Ordering::SeqCst);
     }
     e.shutdown();
+    // Nothing will be watching for the work to finish or the time to run out once Nocturnal has quit.
+    nocturnal::approve::end_unwatched(approve);
     std::process::exit(0);
 }
 

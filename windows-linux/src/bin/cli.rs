@@ -606,6 +606,16 @@ fn put_everything_back(root: &std::path::Path) -> Result<(), Vec<String>> {
 }
 
 fn rescue(root: &std::path::Path) -> ExitCode {
+    // The big red button: Approve everything goes off too, whatever it was set to end with.
+    let approve = nocturnal::approve::Paths::new(root);
+    if nocturnal::approve::is_on(&approve) {
+        match nocturnal::approve::turn_off(&approve) {
+            Ok(()) => println!(
+                "Approve everything is off: Claude Code and Codex ask before acting again."
+            ),
+            Err(e) => println!("Couldn't turn Approve everything off: {e}"),
+        }
+    }
     match put_everything_back(root) {
         Ok(()) => {
             println!("Everything Nocturnal changed is back to how it was. Nocturnal is stopped; start it again from your apps.");
@@ -641,6 +651,10 @@ fn uninstall(root: &std::path::Path) -> ExitCode {
         Ok(()) => {
             state::remove(&root.join("installed"));
             println!("Nocturnal's watchdog and login item are removed and nothing it changed is left. Delete the app and {} to finish.", root.display());
+            // Linux: the optional power helper and its sudo rule were installed with sudo, so they're removed the same way.
+            if std::path::Path::new("/usr/local/libexec/nocturnal-power").exists() {
+                println!("Also remove the power helper: sudo rm -f /usr/local/libexec/nocturnal-power /etc/sudoers.d/nocturnal-power");
+            }
             ExitCode::SUCCESS
         }
         Err(e) => fail(&e),

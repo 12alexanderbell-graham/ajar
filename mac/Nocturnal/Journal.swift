@@ -140,6 +140,8 @@ enum Watchdog {
         // macOS only sleeps on the lid-close edge. If the lid is already shut, ask for sleep directly, or a
         // crashed session would leave the Mac running in a bag until the battery runs out.
         if released && Registry.lidClosed { Shell.pmsetRoot(["sleepnow"]) }
+        // The app is gone, so nothing will end Approve everything when the work finishes or its time is up.
+        AutoApprove.endUnwatched()
         // Nothing left to undo: drop the stale heartbeat so the every-minute job stops launching this binary.
         if ok && !Heartbeat.appIsAlive() { StateFiles.remove(StateFiles.alive) }
         return ok ? "restored" : "partly restored"

@@ -22,7 +22,7 @@ With the lid shut it pauses apps you aren't using and turns on Low Power Mode. I
 
 - **Off, When Busy or Always.** When Busy keeps it awake while an agent works and sleeps a few minutes after.
 - **Knows what Claude Code is doing.** Claude Code's own hooks tell Nocturnal when it's working, waiting for your approval, or finished, so a quiet two-hour build still counts and a question waiting for you doesn't look like "done". Other agents are detected from their power use and running commands.
-- **Apps tab.** What keeps it awake (add any app with +), what closing the lid slows or pauses, the battery limit, and a rule per app.
+- **Apps tab.** What keeps it awake (add any app with +), what closing the lid slows or pauses, and a rule per app.
 - **Saves power with the lid shut.** Pauses other apps, simulators and silent audio, turns on Low Power Mode. Opening the lid puts it all back.
 - **Measures it.** `nocturnal power test` reads whole-laptop power from the battery controller.
 - **Agents can use it.** MCP server and CLI, so agents keep the laptop awake for long jobs.

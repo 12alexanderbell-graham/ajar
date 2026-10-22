@@ -236,6 +236,11 @@ enum CLI {
             }
         }
         _ = Watchdog.run(force: true)
+        // The big red button: Approve everything goes off too, whatever it was set to end with.
+        if AutoApprove.isOn {
+            do { try AutoApprove.turnOff(); print("Approve everything is off: Claude Code and Codex ask before acting again.") }
+            catch { print("Couldn't turn Approve everything off: \(error.localizedDescription)") }
+        }
         let left = Watchdog.outstanding()
         if left.isEmpty { print("Everything Nocturnal changed is back to how it was. Nocturnal is stopped; open it again when you want it."); return 0 }
         print("Couldn't undo:\n  " + left.joined(separator: "\n  "))

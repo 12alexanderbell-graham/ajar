@@ -118,7 +118,7 @@ private struct NowTab: View {
                     Text(line).font(.callout.weight(.semibold)).monospacedDigit()
                         .foregroundStyle(keeps ? Color.white : Color.accentColor)
                         .padding(.top, 4)
-                        .help("Down to \(engine.batteryFloor == 0 ? "0%" : "your \(engine.batteryFloor)% limit"), estimated from what's running now and measured while the lid is shut.")
+                        .help("What this Mac draws with the lid shut (Nocturnal's rules on) against with it open, measured on this Mac.")
                 }
             }
         }
@@ -153,21 +153,28 @@ private struct NowTab: View {
             }
             .help(a.on ? (a.endsLine ?? "Claude Code and Codex run without asking. Click to turn off.")
                        : "Let Claude Code and Codex run without asking, until the work finishes")
-            let phones = NocturnalShared.remote.map { $0.enabled ? $0.settings.phones.count : 0 } ?? 0
-            Tile(symbol: "iphone", title: "Phone", state: phones == 0 ? "Pair" : phones == 1 ? "Paired" : "\(phones) paired", tint: nil, action: openPhone)
+            let remote = NocturnalShared.remote
+            let phones = remote?.settings.phones.count ?? 0
+            let phoneState = phones == 0 ? "Pair" : remote?.enabled != true ? "Off" : phones == 1 ? "Paired" : "\(phones) paired"
+            Tile(symbol: "iphone", title: "Phone", state: phoneState, tint: nil, action: openPhone)
                 .help("Check on it, wake it or let it sleep from your phone")
-            Menu {
-                ForEach(Preset.allCases, id: \.self) { p in
-                    Button { engine.preset = p } label: {
-                        if engine.preset == p { Label(p.label, systemImage: "checkmark") } else { Text(p.label) }
-                    }
-                }
-            } label: {
-                TileFace(symbol: "laptopcomputer", title: "Lid shut", state: engine.preset.label, tint: nil)
-            }
-            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
-            .help(engine.preset.detail)
+            if Registry.hasLid { presetTile }
         }
+    }
+
+    /// Desktop Macs have no lid, so the lid-shut rules (and this tile) never apply there.
+    private var presetTile: some View {
+        Menu {
+            ForEach(Preset.allCases, id: \.self) { p in
+                Button { engine.preset = p } label: {
+                    if engine.preset == p { Label(p.label, systemImage: "checkmark") } else { Text(p.label) }
+                }
+            }
+        } label: {
+            TileFace(symbol: "laptopcomputer", title: "Lid shut", state: engine.preset.label, tint: nil)
+        }
+        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
+        .help(engine.preset.detail)
     }
 
     // MARK: Notices: one at a time, most important first
@@ -188,7 +195,7 @@ private struct NowTab: View {
         if engine.floorOverride {
             return notice("Going below \(engine.batteryFloor)% until you plug in.", "Undo") { engine.overrideFloor(false) }
         }
-        if let w = engine.warning { return Notice(text: w, warning: true) }
+        if let w = engine.warning { return Notice(text: w, button: "OK", warning: true) { engine.warning = nil } }
         // The hotspot tip only after it actually cost something: the last lid-shut session lost the internet.
         if engine.onHotspot, !engine.config.hotspotAutomatic, let r = engine.recentReceipt, r.offlineSeconds > 60 {
             return notice("Lost the internet with the lid shut: set Wi‑Fi › Ask to join hotspots to Automatic.", "Open") {
@@ -196,7 +203,7 @@ private struct NowTab: View {
                 engine.update { $0.hotspotAutomatic = true }
             }
         }
-        if let r = engine.recentReceipt, dismissedReceipt != r.closedAt {
+        if let r = engine.recentReceipt, abs(dismissedReceiptAt - r.closedAt.timeIntervalSince1970) > 1 {
             return notice("While the lid was shut: " + ([r.agentName].compactMap { $0 } + [Engine.receiptLine(r)]).joined(separator: " · "), "OK") {
                 dismissedReceiptAt = r.closedAt.timeIntervalSince1970
             }
@@ -204,8 +211,8 @@ private struct NowTab: View {
         return nil
     }
 
+    /// Which receipt was dismissed, by its session's start (compared to the second: a Double round trip isn't exact).
     @AppStorage("dismissedReceipt") private var dismissedReceiptAt: Double = 0
-    private var dismissedReceipt: Date? { dismissedReceiptAt > 0 ? Date(timeIntervalSince1970: dismissedReceiptAt) : nil }
 
     private func notice(_ text: String, _ button: String, action: @escaping () -> Void) -> Notice {
         Notice(text: text, button: button, action: action)

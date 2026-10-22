@@ -253,6 +253,17 @@ pub fn turn_on(p: &Paths, ends: Ends, hours: Option<f64>, now: u64) -> Result<()
 
 /// Puts back what was there, but only where the value is still Nocturnal's. Keeps the journal, and returns the
 /// reason, if any file couldn't be put back and checked.
+/// Nocturnal is quitting or has died: nothing is left to watch for the work finishing or the time running out,
+/// so an Approve everything that was meant to end by itself ends now. Only "When I turn it off" stays on.
+/// Returns whether it turned it off.
+pub fn end_unwatched(p: &Paths) -> bool {
+    let Some(j) = load(p) else { return false };
+    if matches!(j.ends, None | Some(Ends::Manual)) {
+        return false;
+    }
+    turn_off(p).is_ok()
+}
+
 pub fn turn_off(p: &Paths) -> Result<(), String> {
     if !is_on(p) {
         return Ok(());
@@ -605,6 +616,37 @@ mod tests {
     }
 
     const NOW: u64 = 1_800_000_000;
+
+    #[test]
+    fn quitting_ends_it_unless_it_was_set_to_stay_on() {
+        for (name, ends, ended) in [
+            ("quit-work", Ends::Work, true),
+            ("quit-time", Ends::Time, true),
+            ("quit-manual", Ends::Manual, false),
+        ] {
+            let p = paths(name);
+            write(
+                &p.claude,
+                r#"{"permissions":{"defaultMode":"acceptEdits"}}"#,
+            )
+            .unwrap();
+            turn_on(&p, ends, Some(8.0), NOW).unwrap();
+            assert_eq!(end_unwatched(&p), ended, "{name}");
+            assert_eq!(is_on(&p), !ended, "{name}");
+            if ended {
+                let c: Value =
+                    serde_json::from_str(&std::fs::read_to_string(&p.claude).unwrap()).unwrap();
+                assert_eq!(
+                    c["permissions"]["defaultMode"], "acceptEdits",
+                    "{name}: the person's own setting is back"
+                );
+            }
+        }
+        assert!(
+            !end_unwatched(&paths("quit-none")),
+            "nothing on: nothing to do"
+        );
+    }
 
     #[test]
     fn on_then_off_puts_everything_back() {

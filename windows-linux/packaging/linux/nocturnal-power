@@ -29,21 +29,13 @@ apply)
     case "$(cat "$dev/class" 2>/dev/null)" in 0x02*) continue ;; esac   # network: leave it alone
     save "$dev/power/control" auto
   done
-  if command -v iw >/dev/null 2>&1; then
-    for i in $(iw dev 2>/dev/null | awk '$1 == "Interface" { print $2 }'); do
-      if iw dev "$i" get power_save 2>/dev/null | grep -q ': off'; then
-        echo "iw $i" >> "$state.new"
-        iw dev "$i" set power_save on 2>/dev/null || true
-      fi
-    done
-  fi
   mv "$state.new" "$state"
   ;;
 restore)
   [ -e "$state" ] || exit 0
   while read -r a b; do
     case "$a" in
-      iw) iw dev "$b" set power_save off 2>/dev/null || true ;;
+      iw) iw dev "$b" set power_save off 2>/dev/null || true ;;   # left by older versions
       /sys/*|/proc/sys/*) printf '%s' "$b" > "$a" 2>/dev/null || true ;;
     esac
   done < "$state"

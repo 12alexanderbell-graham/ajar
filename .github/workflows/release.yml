@@ -1,6 +1,7 @@
 name: Release
 # Publish a release on GitHub with a new tag like v1.0.1 (Releases › Draft a new release), or push such a tag:
-# GitHub builds every download from that tag's source and attaches them to the release.
+# GitHub builds the Windows and Linux downloads from that tag's source and attaches them to the release. The Mac app
+# is signed and notarized on a Mac with mac/release.sh (it needs your Developer ID), then uploaded by hand.
 on:
   push:
     tags: ['v*']
@@ -23,20 +24,19 @@ jobs:
           path: |
             windows-linux/dist/*.zip
             windows-linux/dist/*.tar.gz
-  macos:
-    runs-on: macos-latest
+  versions:
+    # The tag, the Windows/Linux version and the Mac version must agree, or the downloads get mismatched names.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - run: sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
-      - working-directory: mac
-        run: |
-          xcodebuild -project Nocturnal.xcodeproj -scheme Nocturnal -configuration Release -destination 'generic/platform=macOS' \
-            -derivedDataPath build ONLY_ACTIVE_ARCH=NO ARCHS="arm64 x86_64" CODE_SIGN_IDENTITY=- build
-          ditto -c -k --sequesterRsrc --keepParent build/Build/Products/Release/Nocturnal.app "Nocturnal-${GITHUB_REF_NAME#v}-mac.zip"
-      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
-        with: { name: mac, path: mac/*.zip }
+      - run: |
+          tag="${GITHUB_REF_NAME#v}"
+          cargo=$(grep '^version' windows-linux/Cargo.toml | head -1 | cut -d'"' -f2)
+          mac=$(grep -m1 'MARKETING_VERSION' mac/Nocturnal.xcodeproj/project.pbxproj | sed 's/.*= *\([^;]*\);.*/\1/')
+          echo "tag $tag · windows-linux $cargo · mac $mac"
+          [ "$tag" = "$cargo" ] && [ "$tag" = "$mac" ] || { echo "Versions differ: bump Cargo.toml and MARKETING_VERSION to $tag"; exit 1; }
   release:
-    needs: [windows-linux, macos]
+    needs: [versions, windows-linux]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
@@ -49,5 +49,5 @@ jobs:
             gh release upload "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" out/*
           else
             gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --title "Nocturnal ${GITHUB_REF_NAME#v}" \
-              --notes "Built by GitHub Actions from this tag's source. macOS 14+ (universal), Windows 10/11 and Linux with systemd (x86-64). Checksums in SHA256SUMS." out/*
+              --notes "Windows 10/11 and Linux with systemd (x86-64), built by GitHub Actions from this tag's source; checksums in SHA256SUMS. The Mac app (macOS 14+, signed and notarized) is at https://nocturnal.tools and via Homebrew: brew install --cask 12alexanderbell-graham/nocturnal/nocturnal" out/*
           fi

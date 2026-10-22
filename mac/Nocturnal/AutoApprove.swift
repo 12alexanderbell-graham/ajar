@@ -140,6 +140,14 @@ enum AutoApprove {
 
     /// Turns it off: puts back what was there, but only where the value is still Nocturnal's (a value the person has
     /// changed since is left alone). Throws, and keeps the journal, if any file couldn't be put back and checked.
+    /// Nocturnal is quitting or has died: nothing is left to watch for the work finishing or the time running out,
+    /// so an Approve everything that was meant to end by itself ends now. Only "When I turn it off" stays on.
+    @discardableResult
+    static func endUnwatched() -> Bool {
+        guard let j = load(), let ends = j.ends, ends != .manual else { return false }
+        return (try? turnOff()) != nil
+    }
+
     static func turnOff() throws {
         guard isOn else { return }
         // A damaged journal still means "on": undo Nocturnal's own values (they can only be Nocturnal's) without the
