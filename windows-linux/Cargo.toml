@@ -3,7 +3,7 @@ name = "ajar"
 version = "1.0.0"
 edition = "2021"
 description = "Keeps a laptop awake with the lid closed while AI agents work, then lets it sleep. Windows and Linux edition."
-license = "Proprietary"
+license = "MIT"
 
 [[bin]]
 name = "ajar"          # command line + MCP server (console)

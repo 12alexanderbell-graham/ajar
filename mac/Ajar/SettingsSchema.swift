@@ -94,7 +94,8 @@ enum SettingsSchema {
                     description: "ntfy.sh topic for phone alerts when work goes idle; empty turns them off.",
                     get: { $0.ntfyTopic }, set: { c, v in
                         let s = String(describing: v).trimmingCharacters(in: .whitespaces)
-                        guard s.count <= 64, s.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }) else { return "letters, numbers, - and _ (max 64)" }
+                        // Alerts go wherever this topic points, so only Ajar's own Settings can set it; commands may turn it off.
+                        guard s.isEmpty else { return "to be set in Ajar's Settings (commands can only turn it off)" }
                         c.ntfyTopic = s; return nil }),
         SettingSpec(key: "menubar", type: "enum", allowed: MenuBarText.allCases.map(\.rawValue), category: "Appearance",
                     description: "Text next to the menu bar icon.",

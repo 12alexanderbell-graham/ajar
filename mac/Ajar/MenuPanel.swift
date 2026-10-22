@@ -20,7 +20,7 @@ struct PanelView: View {
                 header
                 switch showTab ?? tab {
                 case .now: NowTab(engine: engine)
-                case .apps: AppsView(engine: engine)
+                case .apps: AppsView(engine: engine, openAgentSettings: { UIState.shared.settingsTab = .ai; actions.openSettings() })
                 }
             } else {
                 SetupView(engine: engine)
@@ -82,7 +82,7 @@ private struct NowTab: View {
                 notice("Couldn't put back \(engine.unrestored.joined(separator: ", ")) yet. Ajar keeps trying.", button: "Try Again") { engine.retryRestore() }
             }
             if engine.blockedByFloor {
-                notice("Battery is under \(engine.batteryFloor)%, so it sleeps when you close the lid.", button: "Keep Awake Anyway") { engine.overrideFloor() }
+                notice("Battery is at \(engine.battery?.percent ?? engine.batteryFloor)%, at your \(engine.batteryFloor)% limit, so it sleeps with the lid closed.", button: "Keep Awake Anyway") { engine.overrideFloor() }
             } else if engine.floorOverride {
                 notice("Going below \(engine.batteryFloor)% until you plug in.", button: "Undo") { engine.overrideFloor(false) }
             }
@@ -122,7 +122,7 @@ private struct NowTab: View {
     @AppStorage("dismissedReceipt") private var dismissedReceiptAt: Double = 0
     private var dismissedReceipt: Date? { dismissedReceiptAt > 0 ? Date(timeIntervalSince1970: dismissedReceiptAt) : nil }
 
-    /// "Close the lid: it keeps working" and why, big enough to be the first thing anyone reads.
+    /// "Keeps working" or "Sleeps normally", and why, big enough to be the first thing anyone reads.
     private var outcome: some View {
         let o = engine.lidOutcome
         return HStack(alignment: .top, spacing: 10) {
@@ -184,7 +184,7 @@ private struct NowTab: View {
             }
             Divider()
             ForEach([7, 8, 9], id: \.self) { h in
-                let d = Self.next(hour: h)
+                let d = PanelFormatTime.next(hour: h)
                 Button("Until \(d.formatted(date: .omitted, time: .shortened))") { engine.stayAwake(until: d) }
             }
             Divider()
@@ -198,12 +198,6 @@ private struct NowTab: View {
         .help("How long to stay awake")
     }
 
-    /// The next time the clock shows `hour`:00 (tomorrow if that's already passed today).
-    static func next(hour: Int) -> Date {
-        let cal = Calendar.current
-        let today = cal.date(bySettingHour: hour, minute: 0, second: 0, of: Date()) ?? Date()
-        return today > Date() ? today : cal.date(byAdding: .day, value: 1, to: today) ?? today
-    }
 
     private func notice(_ text: String, button: String, action: @escaping () -> Void) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -247,11 +241,17 @@ enum PanelFormat {
 
 struct AppsView: View {
     @Bindable var engine: Engine
+    /// Opens Settings › Agents (nil where Settings are already open).
+    var openAgentSettings: (() -> Void)? = nil
     @State private var showAll = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             keepAwake
+            if let open = openAgentSettings {
+                Divider()
+                approveRow(open)
+            }
             if Registry.hasLid {   // desktop Macs have no lid and no battery, so these rules never apply
                 Divider()
                 whileClosed
@@ -296,6 +296,22 @@ struct AppsView: View {
             }
             settingRow("Sleep once idle for") { quietMenu }
                 .padding(.top, 4)
+        }
+    }
+
+    /// Approve everything, where agents are: its state, and the way to the switch (Settings › Agents, which
+    /// shows the warning first). Read from its journal file, so it's always the real state.
+    private func approveRow(_ open: @escaping () -> Void) -> some View {
+        let on = AutoApprove.isOn
+        return HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Approve everything").font(.subheadline.weight(.semibold))
+                Text(on ? "On: Claude Code and Codex don't ask" : "Off: agents ask before acting")
+                    .font(.caption).foregroundStyle(on ? Color.orange : Color.secondary)
+            }
+            Spacer()
+            Button { open() } label: { Text(on ? "Change…" : "Turn On…") }
+                .buttonStyle(.plain).foregroundStyle(Color.accentColor).font(.subheadline)
         }
     }
 

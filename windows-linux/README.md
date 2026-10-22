@@ -14,7 +14,7 @@ Same product and settings file as the Mac app. Windows 10/11 and Linux with syst
 
 - **When Busy** (default): awake only while an agent is working, or a command an agent started is still running (a build, a test run), plus anything you add under *Also While These Run* (Blender, ffmpeg, a Python training script…). After work stops it waits the quiet time you chose (5 min by default), then lets the laptop sleep; with the lid already shut it puts it to sleep.
 - **Always**: forever, for an hour, or until 07:00. **Off**: never (holds from `ajar run` and agents still work).
-- **While closed**: Max Battery pauses messaging apps and slows browsers; Balanced slows browsers, chat and music; Full Speed leaves everything alone. Only apps on a fixed list are ever touched, never the desktop or anything an agent depends on (its whole process tree and the apps above it).
+- **While closed**: Max Battery pauses chat, mail and office apps and slows browsers (music and calls are left alone); Balanced slows browsers and chat apps; Full Speed leaves everything alone. Only apps on a fixed list are ever touched, never the desktop or anything an agent depends on (its whole process tree and the apps above it).
 - **Limits**: stops at your battery limit (15% default) and, on Linux, if it gets too hot. Only the menu can loosen these; agents, the phone and settings-file edits can't.
 - **Let It Sleep Now**: ends holds and timers; agents can't keep it awake until the lid next opens.
 - **Phone control** (Settings › Phone control): a QR code pairs your phone with a small control page that works from anywhere. Messages go through ntfy.sh end-to-end encrypted (AES-256-GCM, key only in the QR code).
@@ -58,7 +58,7 @@ Every change to an app or setting is written to disk before it's made. If Ajar c
 - **"Went idle"** means no activity, not success: Ajar can't tell a finished task from a crash or a question waiting for you.
 - **Battery hours** are estimates. Until Ajar has measured this laptop with the lid shut, the figure is marked "rough".
 - **Same-user programs**: anything running as you could still stop Ajar or change its files. The safety rules stop accidental and agent-driven loosening, not deliberate attacks.
-- **Phone control** uses the phone page at https://ajar.tools/remote/ (a copy is included as `panel.html`; to host your own, set `panelUrl` in remote.json). The relay (ntfy.sh) has small free limits, and Ajar only sends when the phone asks.
+- **Phone control** uses the phone page at https://ajar.tools/remote/ (to host your own copy, set `panelUrl` in remote.json). The relay (ntfy.sh) has small free limits, and Ajar only sends when the phone asks.
 
 ## Building
 

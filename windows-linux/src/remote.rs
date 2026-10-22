@@ -31,7 +31,6 @@ pub const DEFAULT_SERVER: &str = "https://ntfy.sh";
 pub const ALLOWED: &[&str] = &[
     "panel",
     "mode",
-    "release",
     "preset",
     "watch",
     "track",
@@ -180,6 +179,23 @@ pub struct Guard {
 }
 
 impl Guard {
+    /// The ids seen, one "id<TAB>time" per line, so a restart still refuses a replay.
+    pub fn seen_text(&self) -> String {
+        self.seen.iter().map(|(id, at)| format!("{id}\t{at}\n")).collect()
+    }
+
+    /// Adds ids saved by `seen_text` (from an earlier run) that aren't known yet.
+    pub fn load_seen(&mut self, text: &str) {
+        for line in text.lines() {
+            let mut parts = line.split('\t');
+            if let (Some(id), Some(at)) = (parts.next(), parts.next().and_then(|a| a.parse::<u64>().ok())) {
+                if !id.is_empty() && id.len() <= 64 && !self.seen.iter().any(|(s, _)| s == id) {
+                    self.seen.push_back((id.to_string(), at));
+                }
+            }
+        }
+    }
+
     pub fn check(&mut self, t: u64, id: &str, now: u64) -> Result<(), &'static str> {
         self.check_aged(t, id, now, MAX_AGE)
     }
@@ -271,11 +287,15 @@ pub fn decode_command(
     if !ALLOWED.contains(&cmd.as_str()) {
         return Err(refuse(&format!("{cmd:?} isn't allowed from the phone")));
     }
-    let args = v
+    let mut args = v
         .get("args")
         .cloned()
         .filter(Value::is_object)
         .unwrap_or_else(|| json!({}));
+    if cmd == "wake" {
+        // How long it waited at the relay: an old wake is only for a laptop that's still shut and asleep.
+        args["_age"] = json!(now.saturating_sub(t));
+    }
     Ok((id, cmd, args))
 }
 
@@ -437,6 +457,10 @@ pub fn listen(
     let mut since: Option<String> = crate::state::read(&cursor)
         .map(|s| s.trim().to_string())
         .filter(|s| valid_id(s));
+    let seen_file = cursor.with_file_name("remote-seen");
+    if let Some(text) = crate::state::read(&seen_file) {
+        GUARD.lock().unwrap_or_else(|e| e.into_inner()).load_seen(&text);
+    }
     let mut backoff = 5u64;
     while !stop.load(Ordering::SeqCst) {
         let url = match &since {
@@ -484,17 +508,19 @@ pub fn listen(
                     }
                     let now = crate::now();
                     let mut guard = GUARD.lock().unwrap_or_else(|e| e.into_inner());
-                    let Some(mut body) = reply_to(
+                    let reply = reply_to(
                         &key,
                         &cmd_topic,
                         ev["message"].as_str().unwrap_or(""),
                         &mut guard,
                         now,
                         &mut run,
-                    ) else {
+                    );
+                    let _ = std::fs::write(&seen_file, guard.seen_text());
+                    drop(guard);
+                    let Some(mut body) = reply else {
                         continue;
                     };
-                    drop(guard);
                     body["t"] = json!(now);
                     if let Err(e) = publish(&server, &key, &reply_topic, &body) {
                         on_error(Some(format!("Couldn't reach {server}: {e}")));
@@ -745,7 +771,7 @@ mod tests {
         let watch: Vec<Value> = (0..40).map(|i| json!({ "id": format!("/Applications/Some Long Application Name {i}.app"), "name": format!("Some Long Application Name {i}"), "on": i < 2 })).collect();
         let agents: Vec<Value> = (0..12).map(|i| json!({ "id": format!("agent{i}"), "name": format!("Agent number {i}"), "working": true, "keeps": true, "instances": 1 })).collect();
         let holds = vec!["Asked to stay awake"; 20];
-        let panel = json!({ "headline": "Close the lid: keeps working", "watch": watch, "agents": agents, "holds": holds });
+        let panel = json!({ "headline": "Keeps working", "watch": watch, "agents": agents, "holds": holds });
         let result = json!({ "ok": true, "headline": "dup", "watch": panel["watch"].clone() });
         let r = phone_reply("panel", &result, panel);
         assert!(
@@ -776,5 +802,23 @@ mod tests {
                 && first.get("description").is_none()
         );
         assert!(r.to_string().len() < MAX_REPLY);
+    }
+}
+
+#[cfg(test)]
+mod seen_tests {
+    use super::*;
+
+    #[test]
+    fn replay_ids_survive_a_restart() {
+        let mut g = Guard::default();
+        let now = 1_000_000;
+        assert!(g.check(now, "abc", now).is_ok());
+        let saved = g.seen_text();
+        let mut fresh = Guard::default();
+        fresh.load_seen(&saved);
+        assert_eq!(fresh.check(now, "abc", now + 5), Err(REPLAYED));
+        fresh.load_seen("garbage\nno-tab\n\tx\n");
+        assert!(fresh.check(now, "new", now + 5).is_ok());
     }
 }

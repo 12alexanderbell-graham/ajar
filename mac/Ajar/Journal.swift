@@ -84,6 +84,7 @@ enum Heartbeat {
 struct Safety: Codable, Equatable {
     var heatGuard: Bool
     var batteryFloor: Int
+    var onlyOnPower: Bool? = nil
     static var url: URL { StateFiles.dir.appendingPathComponent("safety.json") }
     static func load() -> Safety? { (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode(Safety.self, from: $0) } }
     func save() { _ = StateFiles.writeDurably((try? JSONEncoder().encode(self)) ?? Data(), to: Self.url) }
@@ -105,20 +106,32 @@ enum Watchdog {
             let parts = saved.split(separator: " ").map(String.init)
             if parts.count != 2 || Shell.pmsetRoot(["-b", parts[0], parts[1]]) { StateFiles.remove(StateFiles.modeRestore) } else { ok = false }
         }
+        var released = false
         if StateFiles.exists(StateFiles.hold) {
-            if !Registry.sleepDisabled || Shell.pmsetRoot(["-a", "disablesleep", "0"]) { StateFiles.remove(StateFiles.hold) } else { ok = false }
+            if !Registry.sleepDisabled { StateFiles.remove(StateFiles.hold) }
+            else if Shell.pmsetRoot(["-a", "disablesleep", "0"]) { StateFiles.remove(StateFiles.hold); released = true }
+            else { ok = false }
         }
         if !TimeMachine.resume() { ok = false }
+        // macOS only sleeps on the lid-close edge. If the lid is already shut, ask for sleep directly, or a
+        // crashed session would leave the Mac running in a bag until the battery runs out.
+        if released && Registry.lidClosed { Shell.pmsetRoot(["sleepnow"]) }
+        // Nothing left to undo: drop the stale heartbeat so the every-minute job stops launching this binary.
+        if ok && !Heartbeat.appIsAlive() { StateFiles.remove(StateFiles.alive) }
         return ok ? "restored" : "partly restored"
     }
 
     /// Plain-language list of what Ajar has changed right now (for `ajar doctor` and `ajar rescue`).
     static func outstanding() -> [String] {
+        systemChanges() + (AutoApprove.isOn ? ["Approve everything is on: Claude Code and Codex run without asking (turn off in Settings › Agents)"] : [])
+    }
+
+    /// Changes to the Mac itself that must be undone (Approve everything is a setting the person chose, not one).
+    static func systemChanges() -> [String] {
         var out = Journal.load().map { "\($0.paused ? "paused" : "slowed") \(($0.path as NSString).lastPathComponent) (pid \($0.pid))" }
         if StateFiles.exists(StateFiles.hold) || Registry.sleepDisabled { out.append(Registry.sleepDisabled ? "sleep is switched off (pmset disablesleep 1)" : "hold marker present") }
         if StateFiles.exists(StateFiles.modeRestore) { out.append("Low Power Mode changed") }
         if TimeMachine.paused { out.append("Time Machine automatic backups paused") }
-        if AutoApprove.isOn { out.append("Approve everything is on: Claude Code and Codex run without asking (turn off in Settings › AI Agents)") }
         if StateFiles.exists(Brightness.restoreFile) { out.append("screen dimmed to zero") }
         if StateFiles.exists(DisplayPower.marker) { out.append("built-in screen switched off") }
         return out

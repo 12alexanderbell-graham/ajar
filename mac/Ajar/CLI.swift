@@ -45,7 +45,7 @@ enum CLI {
             }
             if let p = flag("--pid", rest).flatMap(Int.init) { a["pid"] = p }
             return show(send("hold", a))
-        case "release": return show(send("release", rest.first.map { ["id": $0] } ?? [:]))
+        case "release": return show(send("release", rest.first.map { ["id": $0] } ?? ["all": true]))
         case "wake-at", "wake_at":
             guard let t = rest.first else { print("ajar wake-at HH:MM [--for 30m] | off"); return 2 }
             var w: [String: Any] = ["time": t]
@@ -208,7 +208,7 @@ enum CLI {
     private static func doctor() -> Int32 {
         print("Ajar folder: \(StateFiles.dir.path)")
         print(Heartbeat.appIsAlive() ? "App: running" : "App: not running")
-        print("Watchdog: " + (Setup.watchdogLoaded ? "running" : (Setup.watchdogReady ? "installed but not loaded (open Ajar › Settings › Set Up)" : "not installed")))
+        print("Watchdog: " + (Setup.watchdogLoaded ? "running" : (Setup.watchdogReady ? "installed but not loaded (open Ajar › Settings › General › Set Up)" : "not installed")))
         print("Sleep permission: " + (Setup.sudoReady ? "set up" : "missing (open Ajar to set it up)"))
         print("Sleep switched off right now: " + (Registry.sleepDisabled ? "yes" : "no"))
         let left = Watchdog.outstanding()

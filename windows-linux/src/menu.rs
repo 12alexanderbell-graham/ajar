@@ -270,7 +270,7 @@ pub fn build(s: &UiState) -> Vec<Node> {
     if s.snoozed {
         m.push(info(
             "snoozed",
-            "Sleeping when the lid closes, until it opens again",
+            "Letting it sleep until the lid opens",
         ));
     }
     if let Some(w) = &s.warning {
@@ -374,12 +374,12 @@ fn apps_menu(s: &UiState) -> Vec<Node> {
         vec![
             check(
                 "preset:longest",
-                "Max Battery: pause chat and music, slow browsers",
+                "Max Battery: pause chat, mail and office apps, slow browsers",
                 s.preset == Preset::Longest,
             ),
             check(
                 "preset:balanced",
-                "Balanced: slow browsers, chat and music",
+                "Balanced: slow browsers and chat apps",
                 s.preset == Preset::Balanced,
             ),
             check(
@@ -731,7 +731,7 @@ mod tests {
         UiState {
             keeps: true,
             holding: true,
-            headline: "Close the lid: it keeps working".into(),
+            headline: "Keeps working".into(),
             detail: "Claude Code is working".into(),
             mode_line: "Stays awake while your AI agents work, then sleeps.".into(),
             battery: Some("64% · about 6 h 05 min with the lid closed".into()),

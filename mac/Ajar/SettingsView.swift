@@ -255,7 +255,9 @@ struct SettingsView: View {
             .disabled(!engine.wakeReady)
             if let at = engine.config.wakeAt {
                 DatePicker("Wake at", selection: Binding(get: { Date(timeIntervalSince1970: at) }, set: { d in
-                    engine.setWake(at: d > Date() ? d : Calendar.current.date(byAdding: .day, value: 1, to: d))
+                    // Only the clock time is picked: use its next occurrence, whatever day the old value was on.
+                    let hm = Calendar.current.dateComponents([.hour, .minute], from: d)
+                    engine.setWake(at: Calendar.current.nextDate(after: Date(), matching: hm, matchingPolicy: .nextTime))
                 }), displayedComponents: [.hourAndMinute])
                 Picker("Then stay awake for", selection: Binding(get: { engine.config.wakeForMinutes }, set: { m in engine.update { $0.wakeForMinutes = m } })) {
                     ForEach(Array(Set([15, 30, 60, 120, engine.config.wakeForMinutes])).sorted(), id: \.self) { Text(Engine.formatMinutes(Double($0))).tag($0) }

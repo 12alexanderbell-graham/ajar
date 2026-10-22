@@ -337,14 +337,23 @@ impl Platform for Linux {
     }
 
     fn sleep_now(&mut self) {
+        // Do what the person's own lid setting says (hibernate, hybrid sleep...), falling back to plain suspend.
+        let key = if self.on_ac() { "HandleLidSwitchExternalPower" } else { "HandleLidSwitch" };
+        let method = match self
+            .logind_property(key)
+            .and_then(|v| String::try_from(v).ok())
+            .as_deref()
+        {
+            Some("hibernate") => "Hibernate",
+            Some("hybrid-sleep") => "HybridSleep",
+            Some("suspend-then-hibernate") => "SuspendThenHibernate",
+            _ => "Suspend",
+        };
         if let Some(sys) = self.system.as_ref() {
-            let _ = sys.call_method(
-                Some(LOGIND),
-                LOGIND_PATH,
-                Some(LOGIND_IFACE),
-                "Suspend",
-                &(false,),
-            );
+            let call = |m: &str| sys.call_method(Some(LOGIND), LOGIND_PATH, Some(LOGIND_IFACE), m, &(false,));
+            if call(method).is_err() && method != "Suspend" {
+                let _ = call("Suspend");
+            }
         }
     }
 

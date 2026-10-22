@@ -4,17 +4,6 @@ import SwiftUI
 // Shared building blocks for the panel and window (the panel itself is in MenuPanel.swift).
 
 
-extension View {
-    /// Control Center module surface: a lighter translucent rounded tile over the panel's material.
-    func tile() -> some View {
-        background {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color(nsColor: .textBackgroundColor).opacity(0.62))
-                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color.primary.opacity(0.06)))
-                .shadow(color: .black.opacity(0.05), radius: 3, y: 1)
-        }
-    }
-}
 
 /// A real NSSegmentedControl with equal-width segments that fills the row, so every segmented control
 /// in the panel shares the same edges (SwiftUI's segmented Picker sizes to its labels on macOS).

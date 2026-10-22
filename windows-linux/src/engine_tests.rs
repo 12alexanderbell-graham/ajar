@@ -579,7 +579,7 @@ fn desktop_without_lid_reads_stays_awake() {
     e.set_mode(Mode::On);
     let (keeps, head, _) = e.outcome();
     assert!(keeps);
-    assert_eq!(head, "Stays awake");
+    assert_eq!(head, "Keeps working");
     assert!(e.battery_line().is_none());
 }
 
@@ -689,7 +689,19 @@ fn commands_validate_their_input() {
         h.until.unwrap() <= crate::now() + 7 * 24 * 3600 + 1,
         "capped at 7 days"
     );
-    assert_eq!(e.handle("release", &json!({}))["released"], 1);
+    assert_eq!(e.handle("release", &json!({}))["ok"], false, "release needs an id or all");
+    assert_eq!(e.handle("release", &json!({ "all": true }))["released"], 1);
+    assert_eq!(
+        e.handle("set", &json!({ "key": "ntfy_topic", "value": "mytopic" }))["ok"],
+        false,
+        "only the menu sets the alert topic"
+    );
+    e.update(|c| c.only_on_power = true);
+    assert_eq!(
+        e.handle("set", &json!({ "key": "only_on_power", "value": false }))["ok"],
+        false,
+        "commands can't loosen only-on-power"
+    );
     assert_eq!(
         e.handle(
             "rule",
@@ -1239,4 +1251,25 @@ fn old_commands_are_dropped_but_a_wake_waits_up_to_three_hours() {
     assert!(crate::format::parse_wake_time("07:30", now)
         .is_some_and(|t| t > now && t <= now + 86_400 + 3600));
     assert!(crate::format::parse_wake_time("25:00", now).is_none());
+}
+
+#[test]
+fn a_wake_time_that_passed_is_used_up() {
+    let mut e = engine("wake-passed", Mock::laptop());
+    let now = crate::now();
+    e.update(|c| c.wake_at = Some(now - 5));
+    e.tick(now, None);
+    assert!(e.cfg.wake_at.is_none(), "a past wake time doesn't linger");
+    assert!(e.holds.is_empty(), "lid open: nothing to keep awake for");
+}
+
+#[test]
+fn a_stale_phone_wake_is_skipped_with_the_lid_open() {
+    let mut e = engine("wake-stale", Mock::laptop());
+    e.tick(crate::now(), None);
+    let r = e.handle("wake", &json!({ "_age": 3600 }));
+    assert_eq!(r["skipped"], "already awake");
+    assert!(e.holds.is_empty());
+    let r = e.handle("wake", &json!({ "_age": 10 }));
+    assert!(r["hold"].is_object(), "a fresh wake still works");
 }

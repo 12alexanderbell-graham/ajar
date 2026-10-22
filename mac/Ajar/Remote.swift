@@ -45,7 +45,7 @@ struct RemoteSettings: Codable, Equatable {
 }
 
 enum RemoteCrypto {
-    static let allowed: Set<String> = ["panel", "mode", "release", "preset", "watch", "track", "sleep_now", "set", "power", "power_test", "schema", "wake", "wake_at"]
+    static let allowed: Set<String> = ["panel", "mode", "preset", "watch", "track", "sleep_now", "set", "power", "power_test", "schema", "wake", "wake_at"]
     /// Commands still worth running when they arrive late: a "wake" sent while the Mac slept waits at the relay
     /// until the next check-in. Everything else is dropped after 5 minutes (the phone stopped waiting).
     static func maxAge(_ cmd: String) -> TimeInterval { cmd == "wake" ? WakePlan.wakeMaxAge : 300 }
@@ -118,21 +118,24 @@ enum RemoteCrypto {
     }
 }
 
-/// Rejects stale, future-dated, repeated and too-frequent commands.
+/// Rejects stale, future-dated, repeated and too-frequent commands. The ids seen are saved, so a command copied
+/// off the relay can't be replayed after Ajar restarts either.
 struct RemoteGuard {
-    private var seen: [(String, Date)] = []
+    private(set) var seen: [String: Date] = [:]
     private var recent: [Date] = []
+
+    init(seen: [String: Date] = [:]) { self.seen = seen }
 
     mutating func check(t: Double, id: String, maxAge: TimeInterval = 300, now: Date = Date()) -> String? {
         guard !id.isEmpty, id.count <= 64 else { return "bad id" }
         let n = now.timeIntervalSince1970
         guard t + maxAge >= n, t <= n + 60 else { return "too old or from the future (check the phone's clock)" }
         // Ids are remembered as long as any command can still be accepted, so none runs twice.
-        seen.removeAll { now.timeIntervalSince($0.1) > WakePlan.wakeMaxAge + 60 }
-        guard !seen.contains(where: { $0.0 == id }) else { return "already handled" }
+        seen = seen.filter { now.timeIntervalSince($0.value) <= WakePlan.wakeMaxAge + 60 }
+        guard seen[id] == nil else { return "already handled" }
         recent.removeAll { now.timeIntervalSince($0) > 60 }
         guard recent.count < 30 else { return "too many commands, wait a minute" }
-        seen.append((id, now))
+        seen[id] = now
         recent.append(now)
         return nil
     }
@@ -145,7 +148,11 @@ final class RemoteControl {
     private(set) var status: String?
     private var task: Task<Void, Never>?
     /// Replay protection, kept across reconnects (a wake restarts the listener).
-    private var guardian = RemoteGuard()
+    private var guardian = RemoteGuard(seen: RemoteControl.loadSeen())
+    private static var seenURL: URL { StateFiles.dir.appendingPathComponent("remote-seen.json") }
+    private static func loadSeen() -> [String: Date] {
+        (try? Data(contentsOf: seenURL)).flatMap { try? JSONDecoder().decode([String: Date].self, from: $0) } ?? [:]
+    }
     private let engine: Engine
     private let run: (String, [String: Any], @escaping ([String: Any]) -> Void) -> Void
 
@@ -228,8 +235,10 @@ final class RemoteControl {
                               let msg = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] else { continue }   // not from the phone: no reply
                         let n = msg["n"] as? String ?? ""
                         let cmd = msg["cmd"] as? String ?? ""
-                        let args = msg["args"] as? [String: Any] ?? [:]
+                        var args = msg["args"] as? [String: Any] ?? [:]
                         let sent = (msg["t"] as? NSNumber)?.doubleValue ?? 0
+                        // How long a wake waited at the relay: an old one is only for a Mac that's still shut.
+                        if cmd == "wake" { args["_age"] = max(0, Date().timeIntervalSince1970 - sent) }
                         // Reached the relay more than 5 minutes ago (by the relay's clock, not the phone's): the
                         // phone stopped waiting long ago. No reply: after a long sleep there can be a backlog of
                         // these, and every reply counts against the relay's limits.
@@ -238,6 +247,9 @@ final class RemoteControl {
                         guard let me = self else { return }
                         let problem = me.guardian.check(t: sent, id: n, maxAge: maxAge)
                             ?? (RemoteCrypto.allowed.contains(cmd) ? nil : "\(cmd) isn't allowed from the phone")
+                        if !n.isEmpty, me.guardian.seen[n] != nil {
+                            _ = StateFiles.writeDurably((try? JSONEncoder().encode(me.guardian.seen)) ?? Data(), to: RemoteControl.seenURL)
+                        }
                         var reply: [String: Any] = problem.map { ["ok": false, "error": $0] } ?? [:]
                         if problem == nil, let me = self {
                             reply = await me.execute(cmd, args)
@@ -318,7 +330,8 @@ struct PhoneControlSection: View {
                     Text("Use Ajar from your phone").font(.headline)
                     Text("See it working, wake it or let it sleep, from anywhere.")
                         .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                    Button { remote?.enable(); showPairing = true } label: { Text("Pair a Phone").frame(maxWidth: .infinity) }
+                    // A fresh key every time: phones paired before phone control was switched off don't come back.
+                    Button { remote?.enable(newKey: true); showPairing = true } label: { Text("Pair a Phone").frame(maxWidth: .infinity) }
                         .buttonStyle(.borderedProminent).controlSize(.large)
                         .disabled(remote == nil)
                 }

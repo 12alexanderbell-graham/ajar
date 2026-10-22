@@ -500,7 +500,8 @@ fn apply<P: Platform>(
         Action::NtfyOff => e.update(|c| c.ntfy_topic.clear()),
         Action::PhoneOn | Action::PhoneShow | Action::PhoneNewKey => {
             let mut s = remote::Settings::load(root);
-            if s.key.is_empty() || matches!(a, Action::PhoneNewKey) {
+            // "Pair a Phone…" after phone control was off makes a fresh key, so phones paired before don't come back.
+            if s.key.is_empty() || matches!(a, Action::PhoneNewKey) || (matches!(a, Action::PhoneOn) && !s.enabled) {
                 s.key = remote::new_key();
             }
             if s.panel_url.is_empty() {
@@ -543,8 +544,7 @@ fn apply<P: Platform>(
     }
 }
 
-/// Where the phone page is served from. Shipped next to the app as `panel.html`; set `panelUrl` in remote.json
-/// to the copy on the Ajar website.
+/// Where the phone page is served from (ajar.tools/remote). To host it elsewhere, set `panelUrl` in remote.json.
 fn default_panel_url(root: &Path) -> String {
     let _ = root;
     option_env!("AJAR_PANEL_URL")
@@ -557,7 +557,7 @@ fn show_pairing(root: &Path, s: &remote::Settings) {
     let html = match s.pairing_link() {
         Some(link) => remote::pairing_page(&link),
         None => format!(
-            "<!doctype html><meta charset=utf-8><title>Ajar phone control</title><body style=\"font:16px system-ui;max-width:520px;margin:40px auto;padding:0 16px\"><h1>One step left</h1><p>The phone panel is a single web page, <code>panel.html</code>, shipped next to Ajar. Put it on any https address (the Ajar website, GitHub Pages, Netlify…), then add that address as <code>\"panelUrl\"</code> in <code>{}</code> and choose Phone control again.</p></body>",
+            "<!doctype html><meta charset=utf-8><title>Ajar phone control</title><body style=\"font:16px system-ui;max-width:520px;margin:40px auto;padding:0 16px\"><h1>One step left</h1><p>Ajar doesn't know the phone page's address. Add <code>\"panelUrl\": \"https://ajar.tools/remote/\"</code> (or your own copy of that page) to <code>{}</code> and choose Pair a Phone again.</p></body>",
             root.join("remote.json").display()
         ),
     };

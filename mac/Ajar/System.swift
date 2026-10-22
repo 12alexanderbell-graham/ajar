@@ -251,8 +251,8 @@ enum Setup {
         }
     }
 
-    /// The launchd job runs this tiny script every minute. While the app's heartbeat is fresh it exits at once;
-    /// otherwise it hands over to the app binary (`Ajar cli watchdog`), which checks the heartbeat's pid and
+    /// The launchd job runs this tiny script every minute. While the app's heartbeat is fresh, or there is none
+    /// (Ajar quit cleanly and put everything back), it exits at once; with a stale heartbeat it hands over to the app binary (`Ajar cli watchdog`), which checks the heartbeat's pid and
     /// start time and undoes everything from the journal in Swift. No journal parsing in shell. If the app has
     /// been deleted, the script still lets the Mac sleep again.
     static var watchdogScript: String {
@@ -261,12 +261,14 @@ enum Setup {
         #!/bin/sh
         # Ajar watchdog (written by Ajar; refreshed each launch).
         D="$HOME/Library/Application Support/Ajar"
+        EXE=\(shellQuote(exe))
         if [ -f "$D/alive" ]; then
           now=$(/bin/date +%s); beat=$(/usr/bin/stat -f %m "$D/alive")
           [ $((now - beat)) -lt 40 ] && exit 0
+          # Stale heartbeat: the app died or hung. The app binary undoes everything from the journal.
+          if [ -x "$EXE" ]; then exec "$EXE" cli watchdog; fi
         fi
-        EXE=\(shellQuote(exe))
-        if [ -x "$EXE" ]; then exec "$EXE" cli watchdog; fi
+        # No heartbeat: Ajar quit cleanly (or was deleted). Only a leftover hold can still need undoing.
         if [ -f "$D/hold" ]; then /usr/bin/sudo -n /usr/bin/pmset -a disablesleep 0 && /bin/rm -f "$D/hold"; fi
         exit 0
         """

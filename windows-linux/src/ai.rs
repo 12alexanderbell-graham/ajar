@@ -165,7 +165,11 @@ fn connect_claude_code_at(path: &Path) -> Result<String, String> {
 
 /// Appends an `[mcp_servers.ajar]` table to Codex's config.toml; an existing entry is left alone.
 fn connect_codex_at(path: &Path) -> Result<String, String> {
-    let existing = std::fs::read_to_string(path).unwrap_or_default();
+    let existing = match std::fs::read_to_string(path) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(_) => return Err(format!("Couldn't read {}, so I left it alone", path.display())),
+    };
     if existing.contains("[mcp_servers.ajar]") {
         return Ok("Codex already has Ajar.".into());
     }
@@ -193,15 +197,31 @@ fn write_atomic(path: &Path, data: &[u8]) -> Result<(), String> {
     std::fs::rename(&tmp, path).map_err(|e| e.to_string())
 }
 
-pub fn status() -> Value {
-    let cc = std::fs::read(claude_code_config())
-        .ok()
-        .and_then(|b| serde_json::from_slice::<Value>(&b).ok());
-    let codex = std::fs::read_to_string(codex_config()).unwrap_or_default();
-    json!([
-        { "agent": "claude_code", "installed": claude_code_config().exists(), "connected": cc.map(|v| v["mcpServers"]["ajar"].is_object()).unwrap_or(false) },
-        { "agent": "codex", "installed": codex_config().parent().is_some_and(Path::exists), "connected": codex.contains("[mcp_servers.ajar]") },
-    ])
+/// Removes Ajar's MCP entry from Claude Code and Codex (uninstall), so they don't keep starting a program that's
+/// about to be deleted. Everything else in their configs stays; a file that can't be read is left alone.
+pub fn disconnect_all() {
+    let cc = claude_code_config();
+    if let Some(mut root) = std::fs::read(&cc).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok()) {
+        if let Some(servers) = root.get_mut("mcpServers").and_then(Value::as_object_mut) {
+            if servers.remove("ajar").is_some() {
+                let _ = std::fs::copy(&cc, cc.with_extension("json.ajar-backup"));
+                let _ = write_atomic(&cc, serde_json::to_string_pretty(&root).unwrap_or_default().as_bytes());
+            }
+        }
+    }
+    let cx = codex_config();
+    if let Ok(text) = std::fs::read_to_string(&cx) {
+        let lines: Vec<&str> = text.split('\n').collect();
+        if let Some(start) = lines.iter().position(|l| l.trim() == "[mcp_servers.ajar]") {
+            let end = lines[start + 1..]
+                .iter()
+                .position(|l| l.trim_start().starts_with('['))
+                .map_or(lines.len(), |i| start + 1 + i);
+            let kept: Vec<&str> = lines[..start].iter().chain(&lines[end..]).copied().collect();
+            let _ = std::fs::write(cx.with_extension("toml.ajar-backup"), &text);
+            let _ = write_atomic(&cx, kept.join("\n").as_bytes());
+        }
+    }
 }
 
 #[cfg(test)]

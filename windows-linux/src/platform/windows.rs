@@ -813,11 +813,16 @@ impl Platform for Win {
     /// nothing is read while the "best power efficiency" mode (Ajar's low-power setting) is on: Unknown, which
     /// the heat guard never acts on, rather than mistaking Ajar's own setting for heat.
     fn thermal(&mut self) -> Thermal {
+        let t = thermal_from_limits(&processor_limits());
         if efficiency_overlay_on() {
-            self.heat.clear();
-            return Thermal::Unknown;
+            // That mode caps the clocks too, so only a cut deeper than it makes (critical) still counts as heat:
+            // the guard stays able to act in Ajar's own low-power mode instead of going blind.
+            return self.heat.feed(match t {
+                Thermal::Critical | Thermal::Unknown => t,
+                _ => Thermal::Normal,
+            });
         }
-        self.heat.feed(thermal_from_limits(&processor_limits()))
+        self.heat.feed(t)
     }
 
     fn begin_hold(&mut self, reason: &str, restore: &mut Restore) -> Result<(), String> {
@@ -939,8 +944,17 @@ impl Platform for Win {
         if self.caps.modern_standby {
             screen_off();
         } else {
+            // Do what the person's own "When I close the lid" says (already put back by now): hibernate if that's
+            // their choice, otherwise sleep.
+            let on_ac = unsafe {
+                let mut st: SYSTEM_POWER_STATUS = std::mem::zeroed();
+                GetSystemPowerStatus(&mut st) != 0 && st.ACLineStatus == 1
+            };
+            let hibernate = active_scheme()
+                .and_then(|g| read_lid_action(&g))
+                .is_some_and(|(ac, dc)| (if on_ac { ac } else { dc }) == 2);
             enable_shutdown_privilege();
-            if !unsafe { SetSuspendState(false, false, false) } {
+            if !unsafe { SetSuspendState(hibernate, false, false) } {
                 screen_off();
             }
         }

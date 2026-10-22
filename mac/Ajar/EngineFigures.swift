@@ -56,25 +56,24 @@ extension Engine {
         return max(0, u.timeIntervalSinceNow)
     }
 
-    /// The question people actually have: what happens if I close the lid right now?
+    /// What the laptop is doing, in plain words: it keeps working, or it sleeps. Same words on the phone.
     var lidOutcome: (keeps: Bool, headline: String, detail: String) {
-        // Desktop Macs (mini, Studio, iMac, Pro) have no lid: same logic, worded for idle sleep instead.
-        let keeps = Registry.hasLid ? "Close the lid: it keeps working" : "Stays awake"
-        let sleeps = Registry.hasLid ? "Close the lid: it sleeps" : "Sleeps normally"
+        let keeps = "Keeps working"
+        let sleeps = Registry.hasLid && lidClosed ? "Going to sleep" : "Sleeps normally"
         guard setupReady else { return (false, sleeps, "Ajar needs a one-time setup") }
         if let b = blockedReason { return (false, sleeps, b) }
         if holding { return (true, keeps, holdReason ?? "Staying awake") }
         switch config.mode {
         case .off: return (false, sleeps, "Ajar is off")
-        case .auto: return (false, sleeps, "No agent is working right now")
-        case .on: return (false, sleeps, "Starting…")
+        case .auto: return (false, sleeps, snoozed ? "Sleeping until you open the lid" : "No agent is working right now")
+        case .on: return (false, sleeps, holdFailing ? "macOS wouldn't switch sleep off" : "Starting…")
         }
     }
 
     /// What the selected mode does, in one sentence (under the mode switch, Mac and phone).
     var modeLine: String {
         switch config.mode {
-        case .off: return Registry.hasLid ? "Sleeps like normal when you close the lid." : "Sleeps like normal."
+        case .off: return "Sleeps like any Mac."
         case .auto: return "Stays awake while your AI agents work, then sleeps."
         case .on: return onUntil.map { "Stays awake until \($0.formatted(date: .omitted, time: .shortened))." } ?? "Stays awake until you turn it off."
         }

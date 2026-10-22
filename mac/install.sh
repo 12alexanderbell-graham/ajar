@@ -4,6 +4,7 @@
 #  2. ask the running Ajar to quit normally (it puts back every app and setting it changed as it quits)
 #  3. copy the new app next to the old one, then swap them with two renames
 #  4. move the old copy to _to_delete/ next to this script (nothing is deleted), and open the new one
+# Also leaves the build as dist/Ajar-<version>-mac.zip.
 # Log: install.log next to this file.
 cd "$(dirname "$0")"
 exec > install.log 2>&1
@@ -14,6 +15,11 @@ DD="${TMPDIR:-/tmp}/ajar-release"
   -derivedDataPath "$DD" ONLY_ACTIVE_ARCH=NO ARCHS="arm64 x86_64" CODE_SIGN_IDENTITY=- build | tail -3
 NEW="$DD/Build/Products/Release/Ajar.app"
 [ -x "$NEW/Contents/MacOS/Ajar" ] || { echo "build produced no app"; exit 1; }
+# The same build as a zip for the website and Homebrew (ad-hoc signed; release.sh makes the notarized one).
+V=$(/usr/bin/defaults read "$NEW/Contents/Info" CFBundleShortVersionString)
+mkdir -p dist
+/usr/bin/ditto -c -k --keepParent "$NEW" "dist/Ajar-$V-mac.zip"
+/usr/bin/shasum -a 256 "dist/Ajar-$V-mac.zip"
 
 # Graceful quit through Ajar's own command channel (no Automation permission needed); the app restores
 # everything as it quits. Note: with the lid closed, quitting Ajar lets the Mac sleep.

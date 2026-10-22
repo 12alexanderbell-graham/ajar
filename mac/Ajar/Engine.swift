@@ -41,17 +41,29 @@ final class Engine {
         if old.mode != c.mode && c.mode != .on { config.alwaysUntil = nil; config.modeBeforeAlways = nil }
         if save && !previewOnly {
             try? config.encoded().write(to: Config.url, options: .atomic)
-            if old.heatGuard != config.heatGuard || old.batteryFloor != config.batteryFloor {
-                Safety(heatGuard: config.heatGuard, batteryFloor: config.batteryFloor).save()
+            if old.heatGuard != config.heatGuard || old.batteryFloor != config.batteryFloor || old.onlyOnPower != config.onlyOnPower {
+                Safety(heatGuard: config.heatGuard, batteryFloor: config.batteryFloor, onlyOnPower: config.onlyOnPower).save()
             }
         }
         if old.watchedApps != c.watchedApps || old.countRequests != c.countRequests || old.customAgents != c.customAgents { sampleWatchers() }
+        // Screen choice changed with the lid already shut: switch to the new behaviour now, not at the next close.
+        if old.lockOnClose != c.lockOnClose && lidClosed && holding && !previewOnly {
+            if c.lockOnClose {
+                if screenOff { DisplayPower.restoreBuiltIn(); screenOff = false }
+                holdDisplayAwake(false)
+                Shell.run("/usr/bin/pmset", ["displaysleepnow"])
+            } else {
+                holdDisplayAwake(true)
+                Brightness.dimForClosedLid()
+                if c.screenOffNoLock { switchScreenOff() }
+            }
+        }
         if old.screenOffNoLock != c.screenOffNoLock && lidClosed && holding && !c.lockOnClose {
             if c.screenOffNoLock { switchScreenOff() } else { DisplayPower.restoreBuiltIn(); screenOff = false }
         }
         if (old.preset != c.preset || old.appRules != c.appRules || old.lowPowerWhileClosed != c.lowPowerWhileClosed
             || old.pauseSimulators != c.pauseSimulators || old.pauseBackgroundAudio != c.pauseBackgroundAudio
-            || old.shutDownSimulators != c.shutDownSimulators) && lidClosed && holding && !powerTestRunning {
+            || old.shutDownSimulators != c.shutDownSimulators || old.pauseTimeMachine != c.pauseTimeMachine) && lidClosed && holding && !powerTestRunning {
             reapplyClosedState(forcing: heatForced ? .longest : nil)
         }
         evaluate()
@@ -227,7 +239,12 @@ final class Engine {
     }
 
     private func reloadConfigFromDisk() {
-        guard let data = try? Data(contentsOf: Config.url), let c = try? JSONDecoder().decode(Config.self, from: data) else { return }
+        // A partial edit changes only the keys it names: the rest keep their current values, not the defaults.
+        guard let data = try? Data(contentsOf: Config.url),
+              let edited = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let current = (try? JSONSerialization.jsonObject(with: config.encoded())) as? [String: Any],
+              let merged = try? JSONSerialization.data(withJSONObject: current.merging(edited) { _, new in new }),
+              let c = try? JSONDecoder().decode(Config.self, from: merged) else { return }
         apply(c, save: false)
         enforceSafety()
     }
@@ -238,13 +255,15 @@ final class Engine {
     /// Undoes any loosening of the heat guard or battery limit that didn't come from Ajar's own UI.
     private func enforceSafety() {
         guard !previewOnly else { return }
-        guard let s = Safety.load() else { Safety(heatGuard: config.heatGuard, batteryFloor: config.batteryFloor).save(); return }
+        let mine = Safety(heatGuard: config.heatGuard, batteryFloor: config.batteryFloor, onlyOnPower: config.onlyOnPower)
+        guard let s = Safety.load() else { mine.save(); return }
         var undone: [String] = []
         var c = config
         if s.heatGuard && !c.heatGuard { c.heatGuard = true; undone.append("the heat guard stays on") }
         if c.batteryFloor < s.batteryFloor { c.batteryFloor = s.batteryFloor; undone.append("the battery limit stays at \(s.batteryFloor)%") }
+        if s.onlyOnPower == true && !c.onlyOnPower { c.onlyOnPower = true; undone.append("it still only stays awake on power") }
         if undone.isEmpty {
-            if c.heatGuard != s.heatGuard || c.batteryFloor != s.batteryFloor { Safety(heatGuard: c.heatGuard, batteryFloor: c.batteryFloor).save() }
+            if s != mine { mine.save() }
             return
         }
         config = c
@@ -300,8 +319,30 @@ final class Engine {
             StateFiles.remove(StateFiles.hold)
         }
         if ticks % 5 == 0 { reloadConfigIfEdited() }
+        if ticks % 5 == 0 { checkScheduledWake(); reassertSleep() }
         evaluate()
         settleAdoptedHold()
+    }
+
+    /// A scheduled wake whose time came while the Mac was already up: with the lid shut it starts the stay-awake
+    /// time now; either way it's used up, so it never lingers in Settings or on the phone as a time in the past.
+    private func checkScheduledWake() {
+        guard !previewOnly, let at = config.wakeAt, Date().timeIntervalSince1970 >= at else { return }
+        let minutes = config.wakeForMinutes
+        update { $0.wakeAt = nil }
+        if lidClosed && setupReady { addHold(reason: "Scheduled wake", minutes: Double(minutes), pid: nil) }
+    }
+
+    /// Sleep is Ajar's switch: Ajar's sudoers entry lets any program of this user run `pmset -a disablesleep 1`,
+    /// so an agent could keep the Mac up past the battery limit or the heat guard. Whenever Ajar isn't holding
+    /// (or checking in, or still settling a hold it adopted), sleep goes back on.
+    private func reassertSleep() {
+        guard !previewOnly, setupReady, !holding, checkInUntil == nil, adoptedHoldUntil == nil, !pendingRelease,
+              Registry.sleepDisabled else { return }
+        if Shell.pmsetRoot(["-a", "disablesleep", "0"]) {
+            StateFiles.remove(StateFiles.hold)
+            if lidClosed { Shell.pmsetRoot(["sleepnow"]) }
+        }
     }
 
     /// Catches in-place edits (nano, `echo >`) that the folder watcher can miss.
@@ -332,15 +373,17 @@ final class Engine {
 
     /// Launchd still has the watchdog loaded; if not, reinstall it once, then warn.
     private var watchdogRepairTried = false
+    static let watchdogWarning = "The safety watchdog isn't running, so a crash wouldn't be cleaned up automatically. Run Set Up again in Settings › General."
     private func checkWatchdog() {
         guard !previewOnly, setupReady else { return }
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let loaded = Setup.watchdogLoaded
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                if loaded { self.warning = nil; return }
-                if !self.watchdogRepairTried { self.watchdogRepairTried = true; try? Setup.installWatchdog(); if Setup.watchdogLoaded { self.warning = nil; return } }
-                self.warning = "The safety watchdog isn't running, so a crash wouldn't be cleaned up automatically. Run Set Up again in Settings."
+                let mine = Self.watchdogWarning
+                if loaded { if self.warning == mine { self.warning = nil }; return }
+                if !self.watchdogRepairTried { self.watchdogRepairTried = true; try? Setup.installWatchdog(); if Setup.watchdogLoaded { if self.warning == mine { self.warning = nil }; return } }
+                if self.warning == nil { self.warning = mine }
             }
         }
     }
@@ -515,12 +558,20 @@ final class Engine {
 
         holdReason = reason
         if want && !holding { startHold(reason: reason) }
-        else if !want && holding { endHold(because: blockedReason ?? (config.mode == .off ? "Turned off" : "\(sessions.first?.kind.name ?? "Work") finished")) }
+        else if !want && holding { endHold(because: blockedReason ?? endReason) }
 
         // Heat guard: switch to the strictest rules once when it gets hot, and back once it cools.
         let hot = holding && lidClosed && config.heatGuard && thermal.rawValue >= ProcessInfo.ThermalState.serious.rawValue
         if hot && !heatForced && config.preset != .longest { heatForced = true; reapplyClosedState(forcing: .longest) }
         else if !hot && heatForced { heatForced = false; if holding && lidClosed { reapplyClosedState() } }
+    }
+
+    /// Why a hold just ended, for the receipt and the notification.
+    private var endReason: String {
+        if config.mode == .off { return "Turned off" }
+        if snoozed { return "Put to sleep" }
+        if let w = config.sleepWhenDone ? lastWork : lastSeen { return "\(w.name) finished" }
+        return "Nothing left to wait for"
     }
 
     private var heatForced = false
@@ -530,6 +581,7 @@ final class Engine {
     static let hotGrace: TimeInterval = 300
     private var pendingRelease = false
     private var holdFailedAt: Date?
+    var holdFailing: Bool { holdFailedAt != nil }
     private var activity: NSObjectProtocol?
 
     static func describe(_ s: AgentSession) -> String {
@@ -546,12 +598,13 @@ final class Engine {
         switch config.mode {
         case .off:
             if holding, let r = holdReason { return "\(r) · stays awake closed" }
-            return "Sleeps when you close the lid"
+            return "Sleeps normally"
         case .on:
             guard let u = onUntil else { return "Awake until you turn it off" }
             return "Awake until \(u.formatted(date: .omitted, time: .shortened)) · \(PanelFormat.hm(max(0, u.timeIntervalSinceNow) / 3600)) left"
         case .auto:
             if holding, let r = holdReason { return "\(r) · stays awake closed" }
+            if snoozed { return "Sleeping until the lid opens" }
             return "Nothing running · sleeps when closed"
         }
     }
@@ -751,7 +804,7 @@ final class Engine {
         guard Shell.pmsetRoot(["-a", "disablesleep", "1"]) else {
             if !pendingRelease { StateFiles.remove(StateFiles.hold) }
             holdFailedAt = Date()
-            warning = "macOS refused to switch sleep off, so closing the lid would sleep the Mac. Run Set Up again in Settings › About."
+            warning = "macOS refused to switch sleep off, so closing the lid would sleep the Mac. Run Set Up again in Settings › General."
             let ready = Setup.isReady
             if ready != setupReady { setupReady = ready }
             return
@@ -764,7 +817,7 @@ final class Engine {
         activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep],
                                                          reason: "Supervising a lid-closed session")
         if lidClosed { enterClosed() }
-        announce(reason ?? "Staying awake", "Close the lid, it keeps going")
+        announce(reason ?? "Staying awake", "Keeps working with the lid closed")
     }
 
     private func endHold(because why: String) {
@@ -1168,6 +1221,8 @@ final class Engine {
             StateFiles.remove(StateFiles.hold)
         }
         holding = false
+        // Everything is back: no heartbeat means the watchdog has nothing to check after we're gone.
+        if Watchdog.systemChanges().isEmpty { StateFiles.remove(StateFiles.alive) }
     }
 
     /// Apps a person would recognise (no macOS internals, not Ajar itself), most power-hungry first.
@@ -1437,6 +1492,8 @@ final class Engine {
 
     /// Puts everything back and removes the sudoers entry, watchdog and CLI link.
     func uninstallHelper() throws {
+        // Approve everything goes back first (it's a change to other apps' settings, and nobody would see it was on).
+        try AutoApprove.turnOff()
         update { $0.mode = .off }
         _ = releaseHold(nil)
         shutdown()
@@ -1446,6 +1503,7 @@ final class Engine {
         guard left.isEmpty else {
             throw SetupError(message: "Not removed yet: \(left.joined(separator: ", ")). Ajar keeps its helper so it can keep trying; try again in a minute.")
         }
+        AIConnect.disconnectAll()
         try Setup.uninstall()
         setupReady = Setup.isReady
     }
@@ -1527,6 +1585,9 @@ final class Engine {
         if let a = checkInActivity { ProcessInfo.processInfo.endActivity(a); checkInActivity = nil }
         guard !holding else { return }   // a phone command or an agent took over; the hold owns sleep now
         if Shell.pmsetRoot(["-a", "disablesleep", "0"]) { StateFiles.remove(StateFiles.hold) } else { pendingRelease = true }
+        // Ask for the next check-in before going down: after a dark wake the will-sleep notification
+        // doesn't always arrive, and without this check-ins would stop after the first one.
+        scheduleWake()
         if Registry.lidClosed { Shell.pmsetRoot(["sleepnow"]) }
     }
 
@@ -1616,6 +1677,6 @@ final class Engine {
             c.alwaysUntil = minutes.map { Date().addingTimeInterval(TimeInterval(min($0, 7 * 24 * 60) * 60)).timeIntervalSince1970 }
         }
         evaluate()
-        announce(minutes.map { "Awake for \(Self.formatMinutes(Double($0)))" } ?? "Always awake", "Close the lid, it keeps going")
+        announce(minutes.map { "Awake for \(Self.formatMinutes(Double($0)))" } ?? "Always awake", "Keeps working with the lid closed")
     }
 }

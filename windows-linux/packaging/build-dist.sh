@@ -8,10 +8,11 @@ PKG_CONFIG_ALLOW_CROSS=1 cargo zigbuild --release --target x86_64-unknown-linux-
 cargo build --release --target x86_64-pc-windows-gnu
 mkdir -p dist
 L=dist/ajar-linux-x86_64; W=dist/Ajar-windows-x86_64
+rm -rf "$L" "$W"
 mkdir -p "$L/icons" "$W"
-cp target/x86_64-unknown-linux-gnu/release/ajar target/x86_64-unknown-linux-gnu/release/ajar-app packaging/linux/install.sh packaging/linux/ajar-power web/panel.html README.md "$L/"
+cp target/x86_64-unknown-linux-gnu/release/ajar target/x86_64-unknown-linux-gnu/release/ajar-app packaging/linux/install.sh packaging/linux/ajar-power README.md "$L/"
 cargo run -q --example write_icons -- "$L/icons"
-cp target/x86_64-pc-windows-gnu/release/ajar-app.exe target/x86_64-pc-windows-gnu/release/ajar.exe web/panel.html "$W/"
+cp target/x86_64-pc-windows-gnu/release/ajar-app.exe target/x86_64-pc-windows-gnu/release/ajar.exe "$W/"
 sed 's/$/\r/' README.md > "$W/README.txt"
 chmod +x "$L/install.sh" "$L/ajar-power" "$L/ajar" "$L/ajar-app"
 tar -C dist -czf "dist/ajar-$V-linux-x86_64.tar.gz" ajar-linux-x86_64

@@ -196,10 +196,26 @@ enum AIConnect {
         }
     }
 
-    /// Which agents are on this Mac and whether each already has Ajar.
-    static func status() -> [[String: Any]] {
-        [["agent": "claude_code", "installed": claudeCodeInstalled, "connected": claudeCodeConnected],
-         ["agent": "codex", "installed": codexInstalled, "connected": codexConnected],
-         ["agent": "claude_app", "installed": claudeAppInstalled, "connected": claudeAppConnected]]
+    /// Removes Ajar's MCP entry from every agent it was added to (Remove Ajar), so they don't keep starting a
+    /// program that's about to be deleted. Everything else in their configs stays.
+    nonisolated static func disconnectAll() {
+        let dropAjar: (inout [String: Any]) -> Void = { root in
+            var servers = root["mcpServers"] as? [String: Any] ?? [:]
+            servers.removeValue(forKey: "ajar")
+            root["mcpServers"] = servers
+        }
+        if claudeCodeConnected {
+            if let bin = claudeCodeBinary { _ = Shell.run(bin, ["mcp", "remove", "--scope", "user", "ajar"]) }
+            if claudeCodeConnected { _ = editJSON(claudeCodeConfig, done: "", dropAjar) }
+        }
+        if claudeAppConnected { _ = editJSON(claudeAppConfig, done: "", dropAjar) }
+        if let text = try? String(contentsOf: codexConfig, encoding: .utf8) {
+            var lines = text.components(separatedBy: "\n")
+            if let r = codexAjarRange(lines) {
+                try? text.write(to: codexConfig.appendingPathExtension("ajar-backup"), atomically: true, encoding: .utf8)
+                lines.removeSubrange(r)
+                try? lines.joined(separator: "\n").write(to: codexConfig, atomically: true, encoding: .utf8)
+            }
+        }
     }
 }

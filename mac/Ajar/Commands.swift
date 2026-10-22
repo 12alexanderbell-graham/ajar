@@ -135,11 +135,17 @@ final class CommandCenter {
             ok(["hold": holdDict(h)])
 
         case "release":
-            ok(["released": engine.releaseHold(str("id"))])
+            // One hold by id, or all of them only when asked in so many words (`ajar release` with no id).
+            if let id = str("id") { return ok(["released": engine.releaseHold(id)]) }
+            guard a["all"] as? Bool == true else { return fail("id: the hold to end (see ajar status), or all: true") }
+            ok(["released": engine.releaseHold(nil)])
 
         case "wake":
             // From the phone while the Mac slept (picked up at the next check-in), or any time: stay awake a while.
             guard engine.setupReady else { return fail("Ajar needs its one-time setup first. Open Ajar from the menu bar and click Continue.") }
+            // One that waited at the relay and arrives with the lid open is stale: someone opened the Mac in the
+            // meantime, and a surprise hour awake after they close it again would be wrong.
+            if !engine.lidClosed, let age = (a["_age"] as? NSNumber)?.doubleValue, age > 300 { return ok(["skipped": "already awake"]) }
             let minutes = num("minutes", max: 24 * 60).map { max(5, $0) } ?? 60
             let h = engine.addHold(reason: String((str("reason") ?? "Woken from your phone").prefix(80)), minutes: minutes, pid: nil)
             ok(["hold": holdDict(h)])
@@ -148,7 +154,7 @@ final class CommandCenter {
             // "07:00" (the next time the clock shows it), "off", or Unix seconds; optional minutes to stay awake.
             guard let t = str("time") ?? (a["time"] as? NSNumber).map({ $0.stringValue }) else { return fail("time: HH:MM, off, or Unix seconds") }
             if ["off", "none", "cancel"].contains(t.lowercased()) { engine.setWake(at: nil); return ok(["wakeAt": NSNull()]) }
-            guard engine.wakeReady else { return fail("Scheduled wakes need Set Up to run again (Settings › About › Set Up), once, after this update.") }
+            guard engine.wakeReady else { return fail("Scheduled wakes need Set Up to run again (Settings › General › Set Up), once, after this update.") }
             guard let date = Self.parseWakeTime(t) else { return fail("time: HH:MM (24-hour), off, or Unix seconds") }
             engine.setWake(at: date, forMinutes: num("minutes", max: 24 * 60).map { Int($0) })
             ok(["wakeAt": date.formatted(date: .abbreviated, time: .shortened)])
@@ -273,7 +279,9 @@ final class CommandCenter {
             poll()
 
         case "island":
-            ui.island.show(title: str("title") ?? "Ajar", subtitle: str("subtitle") ?? engine.statusLine, glyph: engine.holding)
+            // Any local program can send this, so keep it to one short line each.
+            let line = { (s: String?, n: Int) in s.map { String($0.replacingOccurrences(of: "\n", with: " ").prefix(n)) } }
+            ui.island.show(title: line(str("title"), 40) ?? "Ajar", subtitle: line(str("subtitle"), 80) ?? engine.statusLine, glyph: engine.holding)
             ok()
 
         default:

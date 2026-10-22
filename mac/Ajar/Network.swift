@@ -13,7 +13,6 @@ final class NetWatch {
     private(set) var online = true
     /// macOS marks a phone's hotspot as an expensive network.
     private(set) var expensiveWiFi = false
-    var onChange: (() -> Void)?
 
     init() {
         monitor.pathUpdateHandler = { [weak self] path in
@@ -23,7 +22,6 @@ final class NetWatch {
                 guard let self, self.online != ok || self.expensiveWiFi != pricey else { return }
                 self.online = ok
                 self.expensiveWiFi = pricey
-                self.onChange?()
             }
         }
         monitor.start(queue: DispatchQueue(label: "ajar.netwatch"))

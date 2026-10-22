@@ -58,6 +58,8 @@ struct Runtime {
 struct Safety {
     heat_guard: bool,
     battery_floor: u32,
+    #[serde(default)]
+    only_on_power: bool,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -274,7 +276,10 @@ impl<P: Platform> Engine<P> {
             self.cfg.mode_before_always = None;
         }
         self.save_config();
-        if old.heat_guard != self.cfg.heat_guard || old.battery_floor != self.cfg.battery_floor {
+        if old.heat_guard != self.cfg.heat_guard
+            || old.battery_floor != self.cfg.battery_floor
+            || old.only_on_power != self.cfg.only_on_power
+        {
             self.save_safety();
         }
         if old.open_at_login != self.cfg.open_at_login {
@@ -297,6 +302,7 @@ impl<P: Platform> Engine<P> {
             &Safety {
                 heat_guard: self.cfg.heat_guard,
                 battery_floor: self.cfg.battery_floor,
+                only_on_power: self.cfg.only_on_power,
             },
         );
     }
@@ -316,8 +322,15 @@ impl<P: Platform> Engine<P> {
             self.cfg.battery_floor = s.battery_floor;
             undone.push(format!("the battery limit stays at {}%", s.battery_floor));
         }
+        if s.only_on_power && !self.cfg.only_on_power {
+            self.cfg.only_on_power = true;
+            undone.push("it still only stays awake on power".to_string());
+        }
         if undone.is_empty() {
-            if self.cfg.heat_guard != s.heat_guard || self.cfg.battery_floor != s.battery_floor {
+            if self.cfg.heat_guard != s.heat_guard
+                || self.cfg.battery_floor != s.battery_floor
+                || self.cfg.only_on_power != s.only_on_power
+            {
                 self.save_safety(); // stricter edits are accepted and become the new baseline
             }
             return;
@@ -525,8 +538,23 @@ impl<P: Platform> Engine<P> {
             self.save_restore();
         }
         state::heartbeat(&self.path("alive"));
+        self.check_scheduled_wake(now);
         self.evaluate(now);
         self.keep_wake_armed(now);
+    }
+
+    /// A scheduled wake whose time came while the machine was already up: with the lid shut it starts the
+    /// stay-awake time now; either way it's used up, so it never lingers as a time in the past.
+    fn check_scheduled_wake(&mut self, now: u64) {
+        let Some(at) = self.cfg.wake_at else { return };
+        if now < at {
+            return;
+        }
+        let minutes = self.cfg.wake_for_minutes;
+        self.update(|c| c.wake_at = None);
+        if self.lid_closed && !self.holding {
+            let _ = self.add_hold("Scheduled wake", Some(minutes as f64), None);
+        }
     }
 
     // MARK: waking while asleep (see wake.rs)
@@ -547,10 +575,12 @@ impl<P: Platform> Engine<P> {
             crate::wake::next_step(until, check_in)
         };
         match step {
+            // Re-armed often enough that it's never due while awake, not every minute (each arm can cost a
+            // privileged call): a quarter of the step, at least 50 s.
             Some(s)
                 if self
                     .wake_armed_at
-                    .is_none_or(|t| now.saturating_sub(t) >= 50) =>
+                    .is_none_or(|t| now.saturating_sub(t) >= (s as u64 / 4).max(50)) =>
             {
                 self.wake_armed_at = self.platform.arm_wake(s).then_some(now);
             }
@@ -1543,18 +1573,10 @@ impl<P: Platform> Engine<P> {
         }
     }
 
-    /// The one line that answers "what happens if I close the lid right now?".
+    /// What the laptop is doing, in plain words: it keeps working, or it sleeps. Same words on the phone and the Mac.
     pub fn outcome(&self) -> (bool, String, String) {
-        let keeps = if self.has_lid {
-            "Close the lid: it keeps working"
-        } else {
-            "Stays awake"
-        };
-        let sleeps = if self.has_lid {
-            "Close the lid: it sleeps"
-        } else {
-            "Sleeps normally"
-        };
+        let keeps = "Keeps working";
+        let sleeps = if self.has_lid && self.lid_closed { "Going to sleep" } else { "Sleeps normally" };
         if let Some(e) = &self.setup_error {
             return (false, sleeps.into(), e.clone());
         }
@@ -1572,6 +1594,7 @@ impl<P: Platform> Engine<P> {
         }
         let detail = match self.cfg.mode {
             Mode::Off => "Ajar is off".to_string(),
+            Mode::Auto if self.snoozed => "Sleeping until you open the lid".to_string(),
             Mode::Auto => "No agent is working right now".to_string(),
             Mode::On => "Starting…".to_string(),
         };
@@ -1581,8 +1604,7 @@ impl<P: Platform> Engine<P> {
     /// What the selected mode does, in one sentence (menu and phone, worded as on the Mac).
     pub fn mode_line(&self) -> String {
         match self.cfg.mode {
-            Mode::Off if self.has_lid => "Sleeps like normal when you close the lid.".into(),
-            Mode::Off => "Sleeps like normal.".into(),
+            Mode::Off => "Sleeps like any laptop.".into(),
             Mode::Auto => "Stays awake while your AI agents work, then sleeps.".into(),
             Mode::On => match self.on_until() {
                 Some(u) => format!("Stays awake until {}.", crate::format::clock(u)),
@@ -1719,6 +1741,13 @@ impl<P: Platform> Engine<P> {
             }
             "wake" => {
                 // From the phone while asleep (picked up at the next check-in), or any time: stay awake a while.
+                // One that waited at the relay and arrives with the lid open is stale: someone opened the laptop
+                // in the meantime, and a surprise hour awake after they close it again would be wrong.
+                if !self.lid_closed && num("_age", f64::MAX).unwrap_or(0.0) > 300.0 {
+                    let mut r = self.ok();
+                    r["skipped"] = json!("already awake");
+                    return r;
+                }
                 let minutes = num("minutes", 24.0 * 60.0)
                     .map(|m| m.max(5.0))
                     .unwrap_or(60.0);
@@ -1753,6 +1782,10 @@ impl<P: Platform> Engine<P> {
                 r
             }
             "release" => {
+                // One hold by id, or all of them only when asked in so many words (`ajar release` with no id).
+                if s("id").is_none() && boolean("all") != Some(true) {
+                    return fail("needs id (see ajar status), or all: true".into());
+                }
                 let n = self.release_hold(s("id").as_deref());
                 let mut r = self.ok();
                 r["released"] = json!(n);
@@ -1943,14 +1976,15 @@ impl<P: Platform> Engine<P> {
                     "low_power" => match v_bool { Some(b) => c.low_power_while_closed = b, None => bad = Some("on/off") },
                     // The heat guard protects a laptop in a bag; only the person can turn it off (in the tray menu).
                     "heat_guard" => match v_bool { Some(true) => c.heat_guard = true, Some(false) => bad = Some("to be turned off from the Ajar menu (it can only be turned on from here)"), None => bad = Some("on/off") },
-                    "only_on_power" => match v_bool { Some(b) => c.only_on_power = b, None => bad = Some("on/off") },
+                    "only_on_power" => match v_bool { Some(b) if b || !c.only_on_power => c.only_on_power = b, Some(_) => bad = Some("to be turned off from the Ajar menu (it can only be turned on from here)"), None => bad = Some("on/off") },
                     "claude_app" => match v_bool { Some(b) => c.count_claude_app = b, None => bad = Some("on/off") },
                     "notify_done" => match v_bool { Some(b) => c.notify_done = b, None => bad = Some("on/off") },
                     "check_in_minutes" => match v_num.map(|n| n as u32).filter(|n| crate::wake::CHECK_IN_CHOICES.contains(n)) {
                         Some(n) => c.check_in_minutes = n,
                         None => bad = Some("0, 15, 30 or 60"),
                     },
-                    "ntfy_topic" => match v_str { Some(t) if t.is_empty() || crate::config::valid_topic(&t) => c.ntfy_topic = t, _ => bad = Some("letters, numbers, - and _ only (or empty to turn off)") },
+                    // Alerts go wherever this topic points, so only the menu sets it; commands may turn it off.
+                    "ntfy_topic" => match v_str { Some(t) if t.is_empty() => c.ntfy_topic = t, _ => bad = Some("to be set from the Ajar menu (commands can only turn it off with an empty value)") },
                     _ => bad = Some("a known key"),
                 });
                 if let Some(b) = bad {

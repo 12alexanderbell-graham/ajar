@@ -281,7 +281,7 @@ struct NotchShape: Shape {
 #Preview("Island") {
     let m = IslandModel()
     m.open = true; m.showControls = true
-    m.title = "Claude Code is working"; m.subtitle = "Close the lid, it keeps going"; m.glow = true
+    m.title = "Claude Code is working"; m.subtitle = "Keeps working with the lid closed"; m.glow = true
     m.notchSize = CGSize(width: 190, height: 32)
     return IslandView(model: m).background(Color.gray.opacity(0.3))
 }

@@ -82,9 +82,14 @@ pub fn turn_on(p: &Paths) -> Result<(), String> {
     if is_on(p) {
         return Ok(());
     }
-    let mut claude = read_claude(p)?;
-    let codex = std::fs::read_to_string(&p.codex).unwrap_or_default();
-    let mut perms = claude
+    let claude = read_claude(p)?;
+    // An existing Codex config that can't be read is never overwritten.
+    let codex = match std::fs::read_to_string(&p.codex) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(_) => return Err("Couldn't read Codex's config.toml, so nothing was changed.".into()),
+    };
+    let perms = claude
         .get("permissions")
         .and_then(Value::as_object)
         .cloned()
@@ -103,6 +108,19 @@ pub fn turn_on(p: &Paths) -> Result<(), String> {
     };
     // Journal before touching anything: if Ajar dies halfway, turning it off still puts things back.
     save_journal(p, &j)?;
+    // A failure partway puts back whatever was changed, so it's never left half on.
+    apply(p, claude, perms, &codex, &mut j).inspect_err(|_| {
+        let _ = turn_off(p);
+    })
+}
+
+fn apply(
+    p: &Paths,
+    mut claude: Map<String, Value>,
+    mut perms: Map<String, Value>,
+    codex: &str,
+    j: &mut Journal,
+) -> Result<(), String> {
     perms.insert("defaultMode".into(), json!("bypassPermissions"));
     claude.insert("permissions".into(), Value::Object(perms));
     claude.insert("skipDangerousModePermissionPrompt".into(), json!(true));
@@ -111,23 +129,29 @@ pub fn turn_on(p: &Paths) -> Result<(), String> {
         &serde_json::to_string_pretty(&Value::Object(claude)).unwrap_or_default(),
     )?;
     j.claude_touched = true;
-    save_journal(p, &j)?;
-    let t = set_top_level(&codex, "approval_policy", Some(CODEX_APPROVAL));
+    save_journal(p, j)?;
+    let t = set_top_level(codex, "approval_policy", Some(CODEX_APPROVAL));
     let t = set_top_level(&t, "sandbox_mode", Some(CODEX_SANDBOX));
     write(&p.codex, &t)?;
     j.codex_touched = true;
-    save_journal(p, &j)
+    save_journal(p, j)
 }
 
 /// Puts back what was there, but only where the value is still Ajar's.
 pub fn turn_off(p: &Paths) -> Result<(), String> {
-    let Some(j) = std::fs::read_to_string(&p.journal)
+    if !is_on(p) {
+        return Ok(());
+    }
+    // A damaged journal still means "on": undo Ajar's own values (they can only be Ajar's) without the
+    // previous ones, rather than leaving both tools running without asking.
+    let j = std::fs::read_to_string(&p.journal)
         .ok()
         .and_then(|t| serde_json::from_str::<Journal>(&t).ok())
-    else {
-        let _ = std::fs::remove_file(&p.journal);
-        return Ok(());
-    };
+        .unwrap_or(Journal {
+            claude_touched: true,
+            codex_touched: true,
+            ..Default::default()
+        });
     if j.claude_touched {
         if let Ok(mut c) = read_claude(p) {
             let mut perms = c

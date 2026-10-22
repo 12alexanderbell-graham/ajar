@@ -11,7 +11,7 @@ const HELP: &str = "ajar: keep the laptop awake with the lid closed while work r
 
   ajar                          what Ajar is doing (add --json for machine-readable)
   ajar run -- <command…>        keep awake while a command runs, then let it sleep
-  ajar on [minutes | until 7]   stay awake (for a while, or until 07:00)
+  ajar on [minutes | --for 2h | until 7]   stay awake (for a while, or until 07:00)
   ajar auto                     stay awake only while an agent is working (default)
   ajar off                      never keep awake (holds from `run` and agents still work)
   ajar hold [minutes] [reason]  keep awake until `ajar release` (or for N minutes)
@@ -203,7 +203,10 @@ fn main() -> ExitCode {
             };
             ("hold", json!({ "minutes": minutes, "reason": reason }))
         }
-        "release" => ("release", json!({ "id": rest.first() })),
+        "release" => match rest.first() {
+            Some(id) => ("release", json!({ "id": id })),
+            None => ("release", json!({ "all": true })),
+        },
         "wake-at" | "wake_at" => match rest.first() {
             Some(t) => (
                 "wake_at",
@@ -264,6 +267,27 @@ fn fail(msg: &str) -> ExitCode {
 }
 
 /// `on`, `on 90`, `on until 7`, `on until 07:00`.
+/// "90m", "2h", "1h30m" or plain minutes ("45") → minutes.
+fn parse_duration(s: &str) -> Option<f64> {
+    let s = s.trim().to_ascii_lowercase();
+    if let Ok(m) = s.parse::<f64>() {
+        return (m.is_finite() && m > 0.0).then_some(m);
+    }
+    let (mut total, mut num) = (0.0, String::new());
+    for c in s.chars() {
+        match c {
+            '0'..='9' | '.' => num.push(c),
+            'h' | 'm' => {
+                let n: f64 = num.parse().ok()?;
+                total += if c == 'h' { n * 60.0 } else { n };
+                num.clear();
+            }
+            _ => return None,
+        }
+    }
+    (num.is_empty() && total > 0.0 && total.is_finite()).then_some(total)
+}
+
 fn parse_on(rest: &[String]) -> Result<Option<f64>, String> {
     match rest {
         [] => Ok(None),
@@ -273,6 +297,9 @@ fn parse_on(rest: &[String]) -> Result<Option<f64>, String> {
             .filter(|m| m.is_finite() && *m > 0.0)
             .map(Some)
             .ok_or_else(|| format!("{m:?} isn't a number of minutes")),
+        [f, d] if f == "--for" => parse_duration(d)
+            .map(Some)
+            .ok_or_else(|| format!("{d:?}: use a duration like 90m, 2h or 1h30m")),
         [u, h] if u == "until" => {
             let hour: u32 = h
                 .split(':')
@@ -284,7 +311,7 @@ fn parse_on(rest: &[String]) -> Result<Option<f64>, String> {
             let t = ajar::format::next_local_hour(now, hour);
             Ok(Some(((t - now) as f64 / 60.0).ceil()))
         }
-        _ => Err("usage: ajar on [minutes | until <hour>]".into()),
+        _ => Err("usage: ajar on [minutes | --for 2h | until <hour>]".into()),
     }
 }
 
@@ -464,6 +491,24 @@ fn journal_lines(root: &std::path::Path) -> Vec<String> {
             "lid-close action set to Do nothing (was {ac} plugged in, {dc} on battery)"
         ));
     }
+    if !r.lid_more.is_empty() {
+        out.push(format!("lid-close action also set to Do nothing in {} other power plan(s)", r.lid_more.len()));
+    }
+    if r.sleep_idle.is_some() {
+        out.push("sleep timeouts set to never".into());
+    }
+    if let Some((_, v)) = r.boost_dc {
+        out.push(format!("processor boost on battery turned off (was {v})"));
+    }
+    if r.linux_tuned {
+        out.push("turbo and kernel power saving changed by Ajar's helper".into());
+    }
+    if root.join("hold").exists() {
+        out.push("keep-awake hold marker present".into());
+    }
+    if ajar::approve::is_on(&ajar::approve::Paths::new(root)) {
+        out.push("Approve everything is on: Claude Code and Codex run without asking (turn it off in the Ajar menu)".into());
+    }
     out
 }
 
@@ -523,7 +568,8 @@ fn put_everything_back(root: &std::path::Path) -> Result<(), Vec<String>> {
     }
     let mut p = platform::native();
     let r = run_watchdog(&mut p, root, true);
-    let left = journal_lines(root);
+    // Approve everything is a setting the person chose, not a change to undo here.
+    let left: Vec<String> = journal_lines(root).into_iter().filter(|l| !l.starts_with("Approve everything")).collect();
     if r == "restored" && left.is_empty() {
         Ok(())
     } else {
@@ -549,6 +595,11 @@ fn rescue(root: &std::path::Path) -> ExitCode {
 }
 
 fn uninstall(root: &std::path::Path) -> ExitCode {
+    // Approve everything goes back first: it changes other apps' settings, and nobody would see it was still on.
+    if let Err(e) = ajar::approve::turn_off(&ajar::approve::Paths::new(root)) {
+        return fail(&format!("Couldn't turn off Approve everything: {e}"));
+    }
+    ajar::ai::disconnect_all();
     // The watchdog is the safety net for undoing Ajar's changes, so it's only removed once nothing is left.
     if let Err(left) = put_everything_back(root) {
         println!("Not uninstalling yet: these changes couldn't be undone, and the watchdog stays to keep retrying:");

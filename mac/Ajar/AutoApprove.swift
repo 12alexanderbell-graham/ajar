@@ -39,14 +39,22 @@ enum AutoApprove {
         var j = Journal()
         // Read both first, so a problem with either changes nothing.
         let claude = try readClaude()
-        let codexText = (try? String(contentsOf: codexURL, encoding: .utf8)) ?? ""
-        var perms = claude["permissions"] as? [String: Any] ?? [:]
+        let codexText = try readCodex()
+        let perms = claude["permissions"] as? [String: Any] ?? [:]
         j.claudeMode = perms["defaultMode"] as? String
         j.claudeSkip = claude["skipDangerousModePermissionPrompt"] as? Bool
         j.codexApproval = topLevelLine(codexText, key: "approval_policy")
         j.codexSandbox = topLevelLine(codexText, key: "sandbox_mode")
         // Journal before touching anything: if Ajar dies halfway, turning it off still puts things back.
         try JSONEncoder().encode(j).write(to: journalURL, options: .atomic)
+        do { try apply(claude: claude, codexText: codexText, journal: &j) } catch {
+            try? turnOff()   // put back whatever got changed, so a failure never leaves it half on
+            throw error
+        }
+    }
+
+    private static func apply(claude: [String: Any], codexText: String, journal j: inout Journal) throws {
+        var perms = claude["permissions"] as? [String: Any] ?? [:]
 
         var c = claude
         perms["defaultMode"] = "bypassPermissions"
@@ -66,10 +74,11 @@ enum AutoApprove {
     /// Turns it off: puts back what was there, but only where the value is still Ajar's (a value the person has
     /// changed since is left alone).
     static func turnOff() throws {
-        guard isOn, let d = try? Data(contentsOf: journalURL), let j = try? JSONDecoder().decode(Journal.self, from: d) else {
-            try? FileManager.default.removeItem(at: journalURL)
-            return
-        }
+        guard isOn else { return }
+        // A damaged journal still means "on": undo Ajar's own values (they can only be Ajar's) without the
+        // previous ones, rather than leaving both tools running without asking.
+        let j = (try? Data(contentsOf: journalURL)).flatMap { try? JSONDecoder().decode(Journal.self, from: $0) }
+            ?? Journal(claudeTouched: true, codexTouched: true)
         if j.claudeTouched, var c = try? readClaude() {
             var perms = c["permissions"] as? [String: Any] ?? [:]
             if perms["defaultMode"] as? String == "bypassPermissions" {
@@ -98,6 +107,15 @@ enum AutoApprove {
         if String(decoding: d, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return [:] }
         guard let obj = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] else { throw bad }
         return obj
+    }
+
+    /// Codex's config as text; "" if there is none. Throws if it exists but can't be read, so it's never overwritten.
+    private static func readCodex() throws -> String {
+        guard FileManager.default.fileExists(atPath: codexURL.path) else { return "" }
+        guard let t = try? String(contentsOf: codexURL, encoding: .utf8) else {
+            throw SetupError(message: "Couldn't read ~/.codex/config.toml, so nothing was changed.")
+        }
+        return t
     }
 
     private static func writeClaude(_ obj: [String: Any]) throws {

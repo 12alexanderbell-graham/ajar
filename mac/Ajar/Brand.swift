@@ -3,7 +3,6 @@ import SwiftUI
 
 /// Ajar's colours: the green of the app icon and the website.
 enum Brand {
-    static let deep = Color(red: 0.031, green: 0.204, blue: 0.102)    // #08341A
     static let mid = Color(red: 0.078, green: 0.424, blue: 0.251)     // #146C40
     static let mint = Color(red: 0.247, green: 0.839, blue: 0.612)    // #3FD69C
     /// The tile gradient, for filled controls on dark backgrounds (the notch island).

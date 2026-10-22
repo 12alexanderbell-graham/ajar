@@ -42,7 +42,8 @@ final class Notifier {
         if engine.lidClosed { body += " with the lid closed" }
         if let b = engine.battery { body += " · battery \(b.percent)%" }
         if c.mode == .auto && c.sleepWhenDone && engine.lidClosed && engine.holds.isEmpty {
-            body += ". Sleeps in \(c.quietMinutes) min if nothing else starts."
+            // This alert comes 2 minutes into the quiet time, so that much of it has already passed.
+            body += ". Sleeps in \(max(1, c.quietMinutes - 2)) min if nothing else starts."
         }
         let title = gone ? "\(name) closed" : "\(name) went idle"
 
