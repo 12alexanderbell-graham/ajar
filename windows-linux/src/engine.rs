@@ -580,7 +580,7 @@ impl<P: Platform> Engine<P> {
             Some(s)
                 if self
                     .wake_armed_at
-                    .is_none_or(|t| now.saturating_sub(t) >= (s as u64 / 4).max(50)) =>
+                    .is_none_or(|t| now.saturating_sub(t) >= (s / 4).max(50)) =>
             {
                 self.wake_armed_at = self.platform.arm_wake(s).then_some(now);
             }
