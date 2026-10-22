@@ -998,6 +998,7 @@ impl<P: Platform> Engine<P> {
             "battery": self.battery_line_rounded(5.0),
             "modeLine": self.mode_line(),
             "batteryLine": self.battery_summary(),
+            "numbers": self.phone_numbers(),
             "lidClosed": self.lid_closed,
             "mode": self.cfg.mode,
             "alwaysUntil": self.on_until().map(crate::format::clock),

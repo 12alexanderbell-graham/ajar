@@ -56,33 +56,69 @@ fn max_age(cmd: &str) -> u64 {
 const TOO_OLD: &str = "too old";
 const REPLAYED: &str = "already handled";
 
+/// One paired phone, with its own key: revoking it leaves the others working.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Phone {
+    pub id: String,
+    pub name: String,
+    /// Base64url, 32 bytes.
+    pub key: String,
+    pub added: u64,
+    #[serde(default)]
+    pub last_seen: Option<u64>,
+}
+
+impl Phone {
+    pub fn key_bytes(&self) -> Option<[u8; 32]> {
+        parse_key(&self.key)
+    }
+}
+
+/// More than this and the subscription URL gets long; nobody pairs this many phones.
+pub const MAX_PHONES: usize = 10;
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
     pub enabled: bool,
-    /// Base64url, 32 bytes. Empty until pairing.
-    pub key: String,
+    pub phones: Vec<Phone>,
     pub server: String,
     /// Where the phone panel page lives; the QR code links here with the key after `#`.
     pub panel_url: String,
+    /// The single shared key of older versions; moved into `phones` on load.
+    pub key: String,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Settings {
             enabled: false,
-            key: String::new(),
+            phones: vec![],
             server: DEFAULT_SERVER.into(),
             panel_url: String::new(),
+            key: String::new(),
         }
     }
 }
 
 impl Settings {
     pub fn load(root: &Path) -> Settings {
-        crate::state::load_json(&root.join("remote.json")).unwrap_or_default()
+        let mut s: Settings =
+            crate::state::load_json(&root.join("remote.json")).unwrap_or_default();
+        if s.phones.is_empty() && parse_key(&s.key).is_some() {
+            s.phones.push(Phone {
+                id: new_id(),
+                name: "Phone".into(),
+                key: s.key.clone(),
+                added: crate::now(),
+                last_seen: None,
+            });
+        }
+        s.key.clear();
+        s
     }
-    /// Saved owner-only: whoever has the key can control the laptop.
+    /// Saved owner-only: whoever has a key can control the laptop.
     pub fn save(&self, root: &Path) -> bool {
         let p = root.join("remote.json");
         let ok = crate::state::save_json(&p, self);
@@ -93,12 +129,30 @@ impl Settings {
         }
         ok
     }
-    pub fn key_bytes(&self) -> Option<[u8; 32]> {
-        parse_key(&self.key)
+    pub fn usable(&self) -> Vec<&Phone> {
+        self.phones
+            .iter()
+            .filter(|p| p.key_bytes().is_some())
+            .collect()
     }
-    /// The link inside the QR code.
-    pub fn pairing_link(&self) -> Option<String> {
-        if self.panel_url.is_empty() || self.key_bytes().is_none() {
+    /// A new phone with its own key, or None when `MAX_PHONES` are paired already.
+    pub fn add_phone(&mut self, now: u64) -> Option<Phone> {
+        if self.phones.len() >= MAX_PHONES {
+            return None;
+        }
+        let p = Phone {
+            id: new_id(),
+            name: "New phone".into(),
+            key: new_key(),
+            added: now,
+            last_seen: None,
+        };
+        self.phones.push(p.clone());
+        Some(p)
+    }
+    /// The link inside a phone's QR code.
+    pub fn pairing_link(&self, phone: &Phone) -> Option<String> {
+        if self.panel_url.is_empty() || phone.key_bytes().is_none() {
             return None;
         }
         let server = if self.server == DEFAULT_SERVER {
@@ -106,8 +160,26 @@ impl Settings {
         } else {
             format!("&s={}", crate::format::url_encode(&self.server))
         };
-        Some(format!("{}#k={}{server}", self.panel_url, self.key))
+        Some(format!("{}#k={}{server}", self.panel_url, phone.key))
     }
+}
+
+pub fn new_id() -> String {
+    let mut b = [0u8; 4];
+    getrandom::fill(&mut b).expect("the operating system's random number generator failed");
+    hex(&b)
+}
+
+/// The device name a phone sends with its commands, cleaned for display.
+pub fn device_name(v: &Value) -> Option<String> {
+    let t: String = v
+        .as_str()?
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(40)
+        .collect();
+    let t = t.trim().to_string();
+    (!t.is_empty()).then_some(t)
 }
 
 pub fn new_key() -> String {
@@ -443,26 +515,41 @@ pub fn publish(server: &str, key: &[u8; 32], topic: &str, body: &Value) -> Resul
         .map_err(|e| e.to_string())
 }
 
-/// Listens for phone commands until `stop` is set. `run` executes one allowed command and returns the reply.
-/// `cursor` stores the id of the last message handled, so a restart picks up exactly where it left off and
-/// never runs the same command twice. With no cursor yet, only new messages are read.
+/// Listens for every paired phone's commands until `stop` is set: one subscription for all their command topics;
+/// each message is opened with the key of the phone whose topic it came on and answered on that phone's reply
+/// topic. `run` executes one allowed command and returns the reply; `on_seen` gets (phone id, device name) for
+/// each valid command. `cursor` stores the relay's time of the last message handled, so a restart picks up where
+/// it left off (the replay guard drops anything from that same second already run). With no cursor, only new
+/// messages are read.
 pub fn listen(
     settings: Settings,
     cursor: std::path::PathBuf,
     stop: Arc<AtomicBool>,
     mut run: impl FnMut(&str, Value) -> Value,
     mut on_error: impl FnMut(Option<String>),
+    mut on_seen: impl FnMut(&str, Option<String>),
 ) {
-    let Some(key) = settings.key_bytes() else {
+    let phones: Vec<(String, [u8; 32], String, String)> = settings
+        .usable()
+        .into_iter()
+        .map(|p| {
+            let k = p.key_bytes().unwrap_or([0; 32]);
+            let (c, r) = topics(&k);
+            (p.id.clone(), k, c, r)
+        })
+        .collect();
+    if phones.is_empty() {
         return;
-    };
-    let (cmd_topic, reply_topic) = topics(&key);
+    }
+    let topic_list = phones
+        .iter()
+        .map(|p| p.2.as_str())
+        .collect::<Vec<_>>()
+        .join(",");
     let server = settings.server.trim_end_matches('/').to_string();
-    let valid_id =
-        |s: &str| !s.is_empty() && s.len() <= 32 && s.chars().all(|c| c.is_ascii_alphanumeric());
     let mut since: Option<String> = crate::state::read(&cursor)
         .map(|s| s.trim().to_string())
-        .filter(|s| valid_id(s));
+        .filter(|s| !s.is_empty() && s.len() <= 12 && s.chars().all(|c| c.is_ascii_digit()));
     let seen_file = cursor.with_file_name("remote-seen");
     if let Some(text) = crate::state::read(&seen_file) {
         GUARD
@@ -473,8 +560,8 @@ pub fn listen(
     let mut backoff = 5u64;
     while !stop.load(Ordering::SeqCst) {
         let url = match &since {
-            Some(id) => format!("{server}/{cmd_topic}/json?since={id}"),
-            None => format!("{server}/{cmd_topic}/json"),
+            Some(t) => format!("{server}/{topic_list}/json?since={t}"),
+            None => format!("{server}/{topic_list}/json"),
         };
         // A stream that ends without one real event (a sign-in page or proxy answering for the relay) is
         // retried with the same backoff as a failed connection, not in a tight loop.
@@ -511,27 +598,37 @@ pub fn listen(
                     if ev["event"] != "message" {
                         continue;
                     }
-                    if let Some(id) = ev["id"].as_str().filter(|id| valid_id(id)) {
-                        since = Some(id.to_string());
-                        let _ = std::fs::write(&cursor, id);
+                    if let Some(t) = ev["time"].as_u64().filter(|t| *t > 0) {
+                        since = Some(t.to_string());
+                        let _ = std::fs::write(&cursor, t.to_string());
                     }
+                    let Some((id, key, cmd_topic, reply_topic)) = phones
+                        .iter()
+                        .find(|p| ev["topic"].as_str() == Some(p.2.as_str()))
+                    else {
+                        continue;
+                    };
                     let now = crate::now();
+                    let message = ev["message"].as_str().unwrap_or("");
                     let mut guard = GUARD.lock().unwrap_or_else(|e| e.into_inner());
-                    let reply = reply_to(
-                        &key,
-                        &cmd_topic,
-                        ev["message"].as_str().unwrap_or(""),
-                        &mut guard,
-                        now,
-                        &mut run,
-                    );
+                    let mut ran = false;
+                    let reply = reply_to(key, cmd_topic, message, &mut guard, now, |cmd, args| {
+                        ran = true;
+                        run(cmd, args)
+                    });
                     let _ = std::fs::write(&seen_file, guard.seen_text());
                     drop(guard);
+                    if ran {
+                        let dev = open(key, cmd_topic, message)
+                            .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+                            .and_then(|v| device_name(&v["dev"]));
+                        on_seen(id, dev);
+                    }
                     let Some(mut body) = reply else {
                         continue;
                     };
                     body["t"] = json!(now);
-                    if let Err(e) = publish(&server, &key, &reply_topic, &body) {
+                    if let Err(e) = publish(&server, key, reply_topic, &body) {
                         on_error(Some(format!("Couldn't reach {server}: {e}")));
                     }
                 }
@@ -584,7 +681,7 @@ code{{display:block;word-break:break-all;font-size:11px;color:var(--sub);margin-
 <p>Scan with the phone's camera, then add the page to your home screen.</p>
 {qr}
 <p>Works from anywhere with internet. Messages are end-to-end encrypted; the key never leaves the link.</p>
-<p>Anyone with this code can control this laptop. Turn phone control off in Nocturnal's menu to cancel it.</p>
+<p>Anyone with this code can control this laptop. Revoke this phone in Nocturnal's menu to cancel it.</p>
 <code>{}</code>
 </main></body></html>"#,
         esc(link)
@@ -756,21 +853,57 @@ mod tests {
 
     #[test]
     fn pairing_link_and_qr() {
-        let s = Settings {
+        let mut s = Settings {
             enabled: true,
-            key: new_key(),
-            server: DEFAULT_SERVER.into(),
             panel_url: "https://example.org/panel".into(),
+            ..Default::default()
         };
-        let link = s.pairing_link().unwrap();
+        let phone = s.add_phone(1).unwrap();
+        let link = s.pairing_link(&phone).unwrap();
         assert!(link.starts_with("https://example.org/panel#k=") && !link.contains("&s="));
+        assert!(link.ends_with(&phone.key));
         assert!(qr_svg(&link).unwrap().contains("<svg"));
         assert!(Settings {
             panel_url: String::new(),
-            ..s
+            ..s.clone()
         }
-        .pairing_link()
+        .pairing_link(&phone)
         .is_none());
+    }
+
+    #[test]
+    fn each_phone_has_its_own_key_and_old_settings_carry_over() {
+        let mut s = Settings::default();
+        let a = s.add_phone(1).unwrap();
+        let b = s.add_phone(2).unwrap();
+        assert_ne!(a.key, b.key);
+        assert_ne!(
+            topics(&a.key_bytes().unwrap()),
+            topics(&b.key_bytes().unwrap())
+        );
+        for i in 2..MAX_PHONES {
+            assert!(s.add_phone(i as u64).is_some());
+        }
+        assert!(s.add_phone(99).is_none(), "at most MAX_PHONES");
+        // A remote.json from before per-phone keys: its key becomes one paired phone.
+        let root =
+            std::env::temp_dir().join(format!("nocturnal-remote-migrate-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&root);
+        let old = new_key();
+        std::fs::write(
+            root.join("remote.json"),
+            format!(r#"{{"enabled":true,"key":"{old}","server":"https://ntfy.sh","panelUrl":""}}"#),
+        )
+        .unwrap();
+        let loaded = Settings::load(&root);
+        assert_eq!(loaded.phones.len(), 1);
+        assert_eq!(loaded.phones[0].key, old);
+        assert!(loaded.key.is_empty());
+        assert_eq!(
+            device_name(&json!("  Alexander's iPhone\n")),
+            Some("Alexander's iPhone".into())
+        );
+        assert_eq!(device_name(&json!("")), None);
     }
 
     #[test]

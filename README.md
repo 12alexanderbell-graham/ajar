@@ -26,7 +26,7 @@ With the lid shut it pauses apps you aren't using and turns on Low Power Mode. I
 - **Saves power with the lid shut.** Pauses other apps, simulators and silent audio, turns on Low Power Mode. Opening the lid puts it all back.
 - **Measures it.** `nocturnal power test` reads whole-laptop power from the battery controller.
 - **Agents can use it.** MCP server and CLI, so agents keep the laptop awake for long jobs.
-- **Phone page.** Check on it from anywhere, end-to-end encrypted over ntfy.sh. While it sleeps with the lid shut it can check in every 15–60 minutes, so a Wake from the phone gets through.
+- **Phone page and iPhone app.** Check on it from anywhere, end-to-end encrypted over ntfy.sh, with a key for each phone that can be revoked on its own. Add the page to your Home Screen, or use the native iPhone app (coming to the App Store). While it sleeps with the lid shut it can check in every 15–60 minutes, so a Wake from the phone gets through.
 - **Wakes on a schedule.** `nocturnal wake-at 07:00` wakes it from sleep and keeps it awake a while.
 - **Approve everything (optional, risky).** One switch sets Claude Code and Codex to run without asking, in every project, until the work finishes (or a set time, or until you turn it off); then your settings come back. Only you can turn it on, in Nocturnal itself. It never answers macOS's own permission prompts.
 - **Battery and heat limits.** Sleeps at your battery limit or if it gets too hot. Agents can't loosen these.
@@ -41,6 +41,7 @@ Every change is written to disk before it's made, and a watchdog puts everything
 
 - [`mac/`](mac/): the macOS app (Swift, SwiftUI). Open `mac/Nocturnal.xcodeproj`, or run `mac/install.sh`. Signed and notarized release: `mac/release.sh TEAMID`.
 - [`windows-linux/`](windows-linux/): the Windows and Linux app (Rust). `cargo build --release`; tests: `cargo test`, `sh tests/e2e-linux.sh`.
+- [`ios/`](ios/): the iPhone app (SwiftUI, iOS 26+). Open `ios/NocturnalPhone.xcodeproj`; tests include the protocol vectors. Review notes: [`ios/APP_STORE.md`](ios/APP_STORE.md).
 - [`site/`](site/): the website and the phone page (`site/remote/`).
 - For agents: [`site/llms.txt`](site/llms.txt) lists every command, MCP tool and setting.
 
@@ -74,6 +75,16 @@ Both apps follow the same shape: a decision loop that reads the machine and deci
 | `approve.rs`, `ai.rs` | Approve everything; connecting agents |
 | `remote.rs`, `mcp.rs` | The phone link and the MCP server |
 | `bin/app.rs`, `bin/cli.rs`, `menu.rs` | The tray app, the `nocturnal` command, the tray menu |
+
+**iPhone** ([`ios/NocturnalPhone/`](ios/NocturnalPhone/))
+
+| File | What it does |
+|---|---|
+| `Link.swift`, `Keychain.swift` | Pairing, topics and sealing (same protocol as the computer); the key in the Keychain |
+| `Relay.swift`, `Computer.swift` | Talking to the computer through ntfy; its status, freshness and how a tap is going |
+| `Panel.swift`, `DemoComputer.swift` | The status the computer reports; the pretend computer for the demo |
+| `HomeView.swift`, `StatusCard.swift`, `ModeSlider.swift`, `CapsuleBar.swift` | The one screen, with Liquid Glass |
+| `SettingsSheet.swift`, `PairView.swift`, `QRScanner.swift` | Settings, pairing and the QR scanner |
 
 ## License
 

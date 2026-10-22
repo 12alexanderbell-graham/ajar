@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Nocturnal Privacy</title>
+<meta name="description" content="What Nocturnal, its phone page and its iPhone app collect: nothing.">
+<link rel="icon" href="favicon.png">
+<style>
+  :root { --bg: #f5f5f7; --card: #fff; --fg: #1d1d1f; --fg-2: #6e6e73; --accent: #15784a; color-scheme: light; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #000; --card: #1c1c1e; --fg: #f5f5f7; --fg-2: #a1a1a6; --accent: #30bb81; color-scheme: dark; } }
+  :root[data-theme="dark"] { --bg: #000; --card: #1c1c1e; --fg: #f5f5f7; --fg-2: #a1a1a6; --accent: #30bb81; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 17px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  main { max-width: 680px; margin: 0 auto; padding: 56px max(16px, env(safe-area-inset-right)) 64px max(16px, env(safe-area-inset-left)); }
+  h1 { font-size: 40px; line-height: 1.1; letter-spacing: -0.03em; margin: 0 0 12px; }
+  h2 { font-size: 21px; letter-spacing: -0.015em; margin: 32px 0 8px; }
+  p, li { color: var(--fg-2); }
+  .card { background: var(--card); border-radius: 22px; padding: 20px 24px; margin-top: 24px; color: var(--fg); font-size: 19px; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Privacy</h1>
+  <p>For Nocturnal on Mac, Windows and Linux, the phone page at nocturnal.tools/remote, and the Nocturnal iPhone app.</p>
+  <div class="card">Nocturnal collects nothing about you. No accounts, no analytics, no tracking, no ads.</div>
+
+  <h2>On your computer</h2>
+  <p>Everything stays on the computer: settings, the battery history it uses for estimates, and its logs. It sends nothing to us. It only talks to the internet when you turn on phone control or phone alerts.</p>
+
+  <h2>Phone control</h2>
+  <p>Your phone and your computer talk through a relay, ntfy.sh by default or one you run yourself. Every message is encrypted on the device that sends it (AES-256-GCM) with a key that only your phone and your computer hold. The relay sees sealed text it can't read, and keeps it only for a few hours, so a sleeping computer can still pick up a wake. Each phone has its own key, and you can revoke any phone on the computer.</p>
+  <p>Commands include your phone's generic device name (for example "iPhone"), so the computer can list it. That name is encrypted too.</p>
+
+  <h2>The iPhone app</h2>
+  <p>The pairing key is kept in the iPhone's Keychain, on that device only. The camera is used only to scan the pairing QR code; nothing is recorded or saved. The last status you saw is kept on the phone so it shows while the computer wakes.</p>
+
+  <h2>The phone page</h2>
+  <p>The page stores its key and the last status in your browser's storage on that phone. It loads nothing from other sites.</p>
+
+  <h2>Phone alerts</h2>
+  <p>If you set an ntfy topic for alerts, Nocturnal sends a short notice there when an agent finishes or needs you. Those notices aren't encrypted, so pick a topic name nobody can guess.</p>
+
+  <h2>Questions</h2>
+  <p>Nocturnal is open source, so you can check all of this in the code on <a href="https://github.com/12alexanderbell-graham/ajar">GitHub</a>. Questions go to the issues there.</p>
+  <p><a href="./">Back to Nocturnal</a></p>
+</main>
+</body>
+</html>

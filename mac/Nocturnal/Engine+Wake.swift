@@ -112,6 +112,11 @@ extension Engine {
         if let w = config.wakeAt { d["wakeAt"] = Date(timeIntervalSince1970: w).formatted(date: .omitted, time: .shortened) }
         if !wakeReady { d["wakeNeedsSetup"] = true }
         if let b = battery {
+            // The phone's three numbers, as numbers: it formats and animates them itself.
+            var n: [String: Any] = ["pct": b.percent, "plugged": !onBattery, "charging": b.charging]
+            if let w = systemWatts { n["w"] = (w * 10).rounded() / 10 }
+            if let h = closedHours, h > 0 { n["h"] = (h * 12).rounded() / 12 }
+            d["numbers"] = n
             if !onBattery { d["battery"] = "\(b.percent)% · plugged in" + (closedHours.map { " (≈\(PanelFormat.hm($0)) on battery, lid closed)" } ?? "") }
             else { d["battery"] = "\(b.percent)%" + (closedHours.map { " · ≈\(PanelFormat.hm($0)) left with the lid closed" } ?? "") }
         }

@@ -1352,3 +1352,40 @@ fn hook_states_drive_the_hold() {
     e.tick(now + 700 + 5 * 60 + 2, Some(running.clone()));
     assert!(!e.holding, "the quiet time after the turn ended has passed");
 }
+
+#[test]
+fn the_phone_gets_its_three_numbers_as_numbers() {
+    let mut m = Mock::laptop();
+    m.battery = Some(Battery {
+        percent: 80,
+        watts: 6.04,
+        on_ac: false,
+        charging: false,
+        full_wh: Some(60.0),
+    });
+    let mut e = engine("numbers", m);
+    let now = crate::now();
+    e.tick(now, None);
+    let n = &e.panel_json(now)["numbers"];
+    assert_eq!(n["pct"], 80);
+    assert_eq!(n["w"], 6.0);
+    assert_eq!(n["plugged"], false);
+    assert!(n["h"].as_f64().is_some_and(|h| h > 0.0), "{n}");
+    e.platform.battery = Some(Battery {
+        percent: 80,
+        watts: 0.0,
+        on_ac: true,
+        charging: true,
+        full_wh: Some(60.0),
+    });
+    e.tick(now + 2, None);
+    let n = &e.panel_json(now + 2)["numbers"];
+    assert!(n["w"].is_null(), "no draw reading on the charger");
+    assert_eq!(n["plugged"], true);
+    e.platform.battery = None;
+    e.tick(now + 4, None);
+    assert!(
+        e.panel_json(now + 4)["numbers"].is_null(),
+        "desktops have none"
+    );
+}

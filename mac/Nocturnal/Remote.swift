@@ -4,29 +4,57 @@ import CryptoKit
 import SwiftUI
 
 /// Phone control from anywhere, with ntfy.sh as a relay that can't read anything. Same protocol as the
-/// Windows/Linux app and the phone page:
-///  • a random 256-bit key, shown as a QR code (a link with the key after `#`, never sent to any server)
-///  • two unguessable topic names derived from the key: commands and replies
+/// Windows/Linux app, the phone page and the iPhone app:
+///  • each paired phone has its own random 256-bit key, shown once as a QR code (a link with the key after `#`,
+///    never sent to any server), so one lost phone can be revoked without touching the others
+///  • two unguessable topic names derived from each key: commands and replies
 ///  • every message AES-256-GCM encrypted with the topic name as associated data (nonce ‖ ciphertext ‖ tag,
 ///    base64url), carrying a timestamp and a random id: stale, future-dated and repeated commands are dropped
-/// Nocturnal only publishes when the phone asks, so normal use is a handful of messages a day. The phone can't
+/// Nocturnal only publishes when a phone asks, so normal use is a handful of messages a day. A phone can't
 /// loosen the battery limit or the heat guard (the same rules as agents and the settings file).
+struct PairedPhone: Codable, Equatable, Identifiable {
+    var id: String
+    var name: String
+    var key: String
+    var added: Double
+    var lastSeen: Double?
+
+    var keyData: Data? { RemoteCrypto.b64decode(key).flatMap { $0.count == 32 ? $0 : nil } }
+}
+
 struct RemoteSettings: Codable, Equatable {
     var enabled = false
-    var key = ""
+    var phones: [PairedPhone] = []
     var server = "https://ntfy.sh"
     var panelUrl = ""
+    /// The single shared key of older versions; moved into `phones` on load.
+    var key = ""
 
-    /// Where the phone page lives once the Nocturnal site is online. Empty until then: pairing shows the code to
-    /// paste into the page instead.
+    init() {}
+    /// Every field optional, so files written by older versions (no `phones`) still load.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+        phones = try c.decodeIfPresent([PairedPhone].self, forKey: .phones) ?? []
+        server = try c.decodeIfPresent(String.self, forKey: .server) ?? "https://ntfy.sh"
+        panelUrl = try c.decodeIfPresent(String.self, forKey: .panelUrl) ?? ""
+        key = try c.decodeIfPresent(String.self, forKey: .key) ?? ""
+    }
+
     static let defaultPanelURL = "https://nocturnal.tools/remote/"
+    /// More than this and the subscription URL gets long; nobody pairs this many phones.
+    static let maxPhones = 10
 
     static var url: URL { StateFiles.dir.appendingPathComponent("remote.json") }
     static func load() -> RemoteSettings {
-        guard let d = try? Data(contentsOf: url), let s = try? JSONDecoder().decode(RemoteSettings.self, from: d) else { return RemoteSettings() }
+        guard let d = try? Data(contentsOf: url), var s = try? JSONDecoder().decode(RemoteSettings.self, from: d) else { return RemoteSettings() }
+        if s.phones.isEmpty, RemoteCrypto.b64decode(s.key)?.count == 32 {
+            s.phones = [PairedPhone(id: RemoteCrypto.newID(), name: "Phone", key: s.key, added: Date().timeIntervalSince1970)]
+        }
+        s.key = ""
         return s
     }
-    /// Owner-only: whoever has the key can control this Mac.
+    /// Owner-only: whoever has a key can control this Mac.
     @discardableResult
     func save() -> Bool {
         guard let d = try? JSONEncoder().encode(self), StateFiles.writeDurably(d, to: Self.url, mode: 0o600) else { return false }
@@ -34,13 +62,13 @@ struct RemoteSettings: Codable, Equatable {
         return true
     }
 
-    var keyData: Data? { RemoteCrypto.b64decode(key).flatMap { $0.count == 32 ? $0 : nil } }
+    var usable: [PairedPhone] { phones.filter { $0.keyData != nil } }
 
-    var pairingLink: String? {
+    func pairingLink(for phone: PairedPhone) -> String? {
         let base = panelUrl.isEmpty ? Self.defaultPanelURL : panelUrl
-        guard !base.isEmpty, keyData != nil else { return nil }
+        guard phone.keyData != nil else { return nil }
         let s = server == "https://ntfy.sh" ? "" : "&s=" + (server.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "")
-        return "\(base)#k=\(key)\(s)"
+        return "\(base)#k=\(phone.key)\(s)"
     }
 }
 
@@ -83,6 +111,18 @@ enum RemoteCrypto {
 
     static func newKey() -> String {
         b64encode(SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) })
+    }
+
+    static func newID() -> String {
+        String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(8)).lowercased()
+    }
+
+    /// The device name a phone sends with its commands, cleaned for display.
+    static func deviceName(_ raw: Any?) -> String? {
+        guard let s = raw as? String else { return nil }
+        let t = String(s.filter { !$0.isNewline && $0.unicodeScalars.allSatisfy { !CharacterSet.controlCharacters.contains($0) } }.prefix(40))
+            .trimmingCharacters(in: .whitespaces)
+        return t.isEmpty ? nil : t
     }
 
     static func b64encode(_ d: Data) -> String {
@@ -169,16 +209,45 @@ final class RemoteControl {
         }
     }
 
-    var enabled: Bool { settings.enabled && settings.keyData != nil }
+    var enabled: Bool { settings.enabled }
 
-    /// Turns phone control on (making a key the first time) and returns the settings to show for pairing.
-    func enable(newKey: Bool = false) {
+    /// Turns phone control on.
+    func enable() {
         var s = settings
-        if s.key.isEmpty || s.keyData == nil || newKey { s.key = RemoteCrypto.newKey() }
         s.enabled = true
-        guard s.save() else { status = "Couldn't save the pairing key"; return }
+        guard s.save() else { status = "Couldn't save the phone settings"; return }
         settings = s
-        if newKey { StateFiles.remove(cursorURL) }
+        start()
+    }
+
+    /// A new phone: its own key, shown once as a QR code. Returns it, or nil if it couldn't be saved.
+    func pairNewPhone() -> PairedPhone? {
+        var s = settings
+        s.enabled = true
+        guard s.phones.count < RemoteSettings.maxPhones else { status = "\(RemoteSettings.maxPhones) phones are paired; revoke one first"; return nil }
+        let phone = PairedPhone(id: RemoteCrypto.newID(), name: "New phone", key: RemoteCrypto.newKey(), added: Date().timeIntervalSince1970)
+        s.phones.append(phone)
+        guard s.save() else { status = "Couldn't save the pairing key"; return nil }
+        settings = s
+        start()
+        return phone
+    }
+
+    /// That phone (and any copy of its link or QR code) stops working at once; the others carry on.
+    func revoke(_ id: String) {
+        var s = settings
+        s.phones.removeAll { $0.id == id }
+        guard s.save() else { return }
+        settings = s
+        start()
+    }
+
+    func revokeAll() {
+        var s = settings
+        s.phones = []
+        guard s.save() else { return }
+        settings = s
+        StateFiles.remove(cursorURL)
         start()
     }
 
@@ -198,21 +267,42 @@ final class RemoteControl {
         engine.remoteStatus = s
     }
 
+    /// A phone just sent a valid command: remember when, and its name if it sent one.
+    private func noteSeen(_ id: String, name: String?) {
+        guard let i = settings.phones.firstIndex(where: { $0.id == id }) else { return }
+        var s = settings
+        s.phones[i].lastSeen = Date().timeIntervalSince1970
+        if let name { s.phones[i].name = name }
+        // Saved at most once a minute per phone unless the name changed: a phone polls every few seconds.
+        let old = settings.phones[i]
+        settings = s
+        if name != nil && name != old.name || (old.lastSeen.map { Date().timeIntervalSince1970 - $0 > 60 } ?? true) { s.save() }
+    }
+
+    /// One subscription for every paired phone's command topic; each message is opened with the key of the
+    /// phone whose topic it arrived on, and answered on that phone's reply topic.
     private func start() {
         task?.cancel()
-        guard let key = settings.keyData else { return }
-        let (cmdTopic, replyTopic) = RemoteCrypto.topics(key)
+        task = nil
+        guard settings.enabled else { setStatus(nil); return }
+        let phones = settings.usable.map { p -> (id: String, key: Data, cmd: String, reply: String) in
+            let (c, r) = RemoteCrypto.topics(p.keyData!)
+            return (p.id, p.keyData!, c, r)
+        }
+        guard !phones.isEmpty else { setStatus("No phone paired"); return }
+        let byTopic = Dictionary(phones.map { ($0.cmd, $0) }, uniquingKeysWith: { a, _ in a })
         let server = settings.server.hasSuffix("/") ? String(settings.server.dropLast()) : settings.server
+        let topicList = phones.map(\.cmd).joined(separator: ",")
         let cursorURL = self.cursorURL
         task = Task { [weak self] in
+            // The cursor is the relay's time of the last message handled (whole seconds). Anything from that same
+            // second comes again after a reconnect; the replay guard drops what was already handled.
             var since = StateFiles.read(cursorURL)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let s = since, !(s.count <= 12 && s.allSatisfy(\.isNumber)) { since = nil }   // an older id-style cursor
             var backoff: UInt64 = 5
             while !Task.isCancelled {
                 var gotMessage = false
-                // With no cursor yet, only new messages are read; after that, exactly from the last one handled,
-                // so a restart never runs the same command twice.
-                let valid = since.map { !$0.isEmpty && $0.count <= 32 && $0.allSatisfy { $0.isLetter || $0.isNumber } } ?? false
-                guard let url = URL(string: "\(server)/\(cmdTopic)/json" + (valid ? "?since=\(since!)" : "")) else { return }
+                guard let url = URL(string: "\(server)/\(topicList)/json" + (since.map { "?since=\($0)" } ?? "")) else { return }
                 var req = URLRequest(url: url)
                 req.timeoutInterval = 120   // ntfy sends a keepalive every ~45 s; silence beyond this means a dead link
                 do {
@@ -227,12 +317,13 @@ final class RemoteControl {
                         if ev["event"] as? String == "keepalive" { gotMessage = true; backoff = 5 }
                         guard ev["event"] as? String == "message" else { continue }
                         gotMessage = true; backoff = 5
-                        if let id = ev["id"] as? String, id.count <= 32, id.allSatisfy({ $0.isLetter || $0.isNumber }) {
-                            since = id
-                            StateFiles.write(id, to: cursorURL)
+                        if let at = (ev["time"] as? NSNumber)?.intValue, at > 0 {
+                            since = String(at)
+                            StateFiles.write(String(at), to: cursorURL)
                         }
-                        guard let text = RemoteCrypto.open(key, topic: cmdTopic, ev["message"] as? String ?? ""),
-                              let msg = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] else { continue }   // not from the phone: no reply
+                        guard let phone = byTopic[ev["topic"] as? String ?? ""],
+                              let text = RemoteCrypto.open(phone.key, topic: phone.cmd, ev["message"] as? String ?? ""),
+                              let msg = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] else { continue }   // not from a paired phone: no reply
                         let n = msg["n"] as? String ?? ""
                         let cmd = msg["cmd"] as? String ?? ""
                         var args = msg["args"] as? [String: Any] ?? [:]
@@ -250,13 +341,14 @@ final class RemoteControl {
                         if !n.isEmpty, me.guardian.seen[n] != nil {
                             _ = StateFiles.writeDurably((try? JSONEncoder().encode(me.guardian.seen)) ?? Data(), to: RemoteControl.seenURL)
                         }
+                        if problem == nil { me.noteSeen(phone.id, name: RemoteCrypto.deviceName(msg["dev"])) }
                         var reply: [String: Any] = problem.map { ["ok": false, "error": $0] } ?? [:]
                         if problem == nil, let me = self {
                             reply = await me.execute(cmd, args)
                         }
                         reply["re"] = n
                         reply["t"] = Int(Date().timeIntervalSince1970)
-                        if let sealed = RemoteCrypto.seal(key, topic: replyTopic, Wire.compact(reply)), let purl = URL(string: "\(server)/\(replyTopic)") {
+                        if let sealed = RemoteCrypto.seal(phone.key, topic: phone.reply, Wire.compact(reply)), let purl = URL(string: "\(server)/\(phone.reply)") {
                             var p = URLRequest(url: purl)
                             p.httpMethod = "POST"
                             p.httpBody = Data(sealed.utf8)
@@ -294,44 +386,59 @@ final class RemoteControl {
 
 // MARK: - UI
 
-/// Settings › Phone Control.
+/// Settings › Phone: the paired phones (each can be revoked on its own), pairing another, and the switch.
 struct PhoneControlSection: View {
     @Bindable var engine: Engine
-    @State private var showPairing = false
+    /// The phone whose QR code is showing (just paired).
+    @State private var pairing: PairedPhone?
 
     var body: some View {
         let remote = NocturnalShared.remote
-        if let remote, remote.enabled {
+        if let remote, remote.enabled, !remote.settings.phones.isEmpty || pairing != nil {
+            Section {
+                if let p = pairing {
+                    // Inline rather than a sheet: Settings live in the menu bar panel, which can't host sheets.
+                    PairingView(link: remote.settings.pairingLink(for: p), key: p.key) { pairing = nil }
+                        .frame(maxWidth: .infinity)
+                }
+                ForEach(remote.settings.phones) { p in
+                    LabeledContent {
+                        Button(role: .destructive) { remote.revoke(p.id); if pairing?.id == p.id { pairing = nil } } label: { Text("Revoke") }
+                            .help("This phone, and any copy of its QR code, stops working at once")
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(p.name)
+                            Text(p.lastSeen.map { "Used " + Date(timeIntervalSince1970: $0).formatted(.relative(presentation: .named)) } ?? "Not used yet")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                Button("Pair Another Phone") { pairing = remote.pairNewPhone() }
+                    .disabled(pairing != nil)
+            } header: {
+                Text("Your Phones")
+            }
             Section {
                 LabeledContent("Status") { Text(remote.status ?? "Starting…").foregroundStyle(.secondary) }
-                if showPairing {
-                    // Inline rather than a sheet: Settings live in the menu bar panel, which can't host sheets.
-                    PairingView(settings: remote.settings) { showPairing = false }
-                        .frame(maxWidth: .infinity)
-                } else {
-                    Button("Show QR Code") { showPairing = true }
-                }
                 Toggle("Phone control", isOn: Binding(get: { remote.enabled }, set: { on in
-                    if on { remote.enable() } else { remote.disable(); showPairing = false }
+                    if on { remote.enable() } else { remote.disable(); pairing = nil }
                 }))
-                Button("Revoke All Phones", role: .destructive) { remote.enable(newKey: true); showPairing = true }
-                    .help("Makes a new key: every phone paired before (and any copy of its link or QR code) stops working")
-            } header: {
-                Text("Your Phone")
+                if remote.settings.phones.count > 1 {
+                    Button("Revoke All Phones", role: .destructive) { remote.revokeAll(); pairing = nil }
+                }
             } footer: {
-                Text("Commands are end-to-end encrypted. The phone can't loosen the battery limit or the heat guard.")
+                Text("Commands are end-to-end encrypted. A phone can't loosen the battery limit or the heat guard.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         } else {
-            // Not paired yet: the first thing on the Phone tab, one button.
+            // Nothing paired yet: the first thing on the Phone tab, one button.
             Section {
                 VStack(spacing: 10) {
                     Image(systemName: "iphone.gen3").font(.system(size: 34, weight: .light)).foregroundStyle(Color.accentColor)
                     Text("Use Nocturnal from your phone").font(.headline)
                     Text("See it working, wake it or let it sleep, from anywhere.")
                         .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                    // A fresh key every time: phones paired before phone control was switched off don't come back.
-                    Button { remote?.enable(newKey: true); showPairing = true } label: { Text("Pair a Phone").frame(maxWidth: .infinity) }
+                    Button { pairing = remote?.pairNewPhone() } label: { Text("Pair a Phone").frame(maxWidth: .infinity) }
                         .buttonStyle(.borderedProminent).controlSize(.large)
                         .disabled(remote == nil)
                 }
@@ -343,26 +450,23 @@ struct PhoneControlSection: View {
 }
 
 struct PairingView: View {
-    let settings: RemoteSettings
+    let link: String?
+    let key: String
     var done: () -> Void
 
     var body: some View {
         VStack(spacing: 10) {
-            Text("Pair Your Phone").font(.headline)
-            if let link = settings.pairingLink, let qr = Self.qr(link) {
+            if let link, let qr = Self.qr(link) {
                 Image(nsImage: qr).interpolation(.none).resizable().frame(width: 180, height: 180)
                     .padding(10).background(.white, in: RoundedRectangle(cornerRadius: 12))
-                Text("Scan with your phone's camera, then Share › Add to Home Screen.")
-                    .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
-            } else {
-                Text("The phone page isn't online yet. When it is, paste this pairing code into it:")
+                Text("Scan with the Nocturnal app or your phone's camera.")
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }
             HStack {
-                Text(settings.key).font(.system(.caption, design: .monospaced)).textSelection(.enabled).lineLimit(1).truncationMode(.middle)
+                Text(key).font(.system(.caption, design: .monospaced)).textSelection(.enabled).lineLimit(1).truncationMode(.middle)
                 Button("Copy") {
                     NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(settings.pairingLink ?? settings.key, forType: .string)
+                    NSPasteboard.general.setString(link ?? key, forType: .string)
                 }
             }
             Text("Anyone with this code can control this Mac.")

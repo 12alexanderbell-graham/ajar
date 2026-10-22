@@ -119,6 +119,29 @@ impl<P: Platform> Engine<P> {
         })
     }
 
+    /// The three numbers on the phone's status card, as numbers (the phone formats and animates them): battery
+    /// percent, whole-laptop draw now in watts, and hours left on battery with the lid closed (to 5 minutes).
+    pub fn phone_numbers(&self) -> Value {
+        let Some(b) = self.battery.as_ref() else {
+            return Value::Null;
+        };
+        let hours = if self.has_lid {
+            self.hours_left(self.closed_watts())
+                .map(|h| (h * 12.0).round() / 12.0)
+                .filter(|h| *h > 0.0)
+        } else {
+            None
+        };
+        json!({
+            "pct": b.percent,
+            "w": b.discharging().then(|| (b.watts * 10.0).round() / 10.0),
+            "h": hours,
+            "plugged": !b.on_battery(),
+            "charging": b.charging,
+            "guess": self.closed_draw_is_guess(),
+        })
+    }
+
     pub fn battery_line(&self) -> Option<String> {
         self.battery_line_rounded(1.0)
     }

@@ -41,6 +41,8 @@ enum Cmd {
     /// the deadline: the relay thread has already told the phone Nocturnal is busy, so a retry mustn't run it twice.
     Remote(String, Value, Sender<Value>, Instant),
     RemoteStatus(Option<String>),
+    /// A paired phone sent a valid command: (phone id, its device name if it sent one).
+    PhoneSeen(String, Option<String>),
     Quit,
 }
 
@@ -279,12 +281,13 @@ struct RemoteHandle {
 
 fn start_remote(root: &Path, tx: Sender<Cmd>) -> Option<RemoteHandle> {
     let settings = remote::Settings::load(root);
-    if !settings.enabled || settings.key_bytes().is_none() {
+    if !settings.enabled || settings.usable().is_empty() {
         return None;
     }
     let stop = Arc::new(AtomicBool::new(false));
     let stop2 = stop.clone();
     let tx_status = tx.clone();
+    let tx_seen = tx.clone();
     let cursor = root.join("remote-cursor");
     std::thread::Builder::new()
         .name("nocturnal-remote".into())
@@ -312,6 +315,9 @@ fn start_remote(root: &Path, tx: Sender<Cmd>) -> Option<RemoteHandle> {
                 },
                 |err| {
                     let _ = tx_status.send(Cmd::RemoteStatus(err));
+                },
+                |id, name| {
+                    let _ = tx_seen.send(Cmd::PhoneSeen(id.to_string(), name));
                 },
             )
         })
@@ -400,6 +406,23 @@ fn engine_thread(
                 e.remote_status = s;
                 changed = true;
             }
+            Ok(Cmd::PhoneSeen(id, name)) => {
+                let mut s = remote::Settings::load(&root);
+                if let Some(p) = s.phones.iter_mut().find(|p| p.id == id) {
+                    let now = nocturnal::now();
+                    // Saved at most once a minute unless the name changed: a phone polls every few seconds.
+                    let renamed = name.as_ref().is_some_and(|n| *n != p.name);
+                    let stale = p.last_seen.is_none_or(|t| now.saturating_sub(t) > 60);
+                    if let Some(n) = name {
+                        p.name = n;
+                    }
+                    p.last_seen = Some(now);
+                    if renamed || stale {
+                        s.save(&root);
+                        changed = true;
+                    }
+                }
+            }
             Err(_) => {}
         }
         if TERMINATE.load(Ordering::SeqCst) {
@@ -438,7 +461,13 @@ fn engine_thread(
         }
         if changed {
             let mut ui = UiState::from_engine(&e, nocturnal::now());
-            ui.phone_on = remote.is_some();
+            let rs = remote::Settings::load(&root);
+            ui.phone_on = rs.enabled && remote.is_some();
+            ui.phones = rs
+                .phones
+                .iter()
+                .map(|p| (p.id.clone(), p.name.clone(), p.last_seen))
+                .collect();
             ui.auto_approve = nocturnal::approve::is_on(&approve_paths);
             ui.approve_line = nocturnal::approve::ends_line(&approve_paths);
             if approve_armed.is_some_and(|t| t.elapsed() >= Duration::from_secs(30)) {
@@ -537,19 +566,22 @@ fn apply<P: Platform>(
         }
         Action::NtfyOpen => open_target(&format!("https://ntfy.sh/{}", e.cfg.ntfy_topic)),
         Action::NtfyOff => e.update(|c| c.ntfy_topic.clear()),
-        Action::PhoneOn | Action::PhoneShow | Action::PhoneNewKey => {
+        Action::PhonePair => {
             let mut s = remote::Settings::load(root);
-            // "Pair a Phone…" after phone control was off makes a fresh key, so phones paired before don't come back.
-            if s.key.is_empty()
-                || matches!(a, Action::PhoneNewKey)
-                || (matches!(a, Action::PhoneOn) && !s.enabled)
-            {
-                s.key = remote::new_key();
-            }
             if s.panel_url.is_empty() {
                 s.panel_url = default_panel_url(root);
             }
             s.enabled = true;
+            let Some(phone) = s.add_phone(nocturnal::now()) else {
+                e.outbox.push(nocturnal::engine::Announcement {
+                    title: "Phone control".into(),
+                    body: format!(
+                        "{} phones are paired; revoke one first.",
+                        remote::MAX_PHONES
+                    ),
+                });
+                return;
+            };
             if !s.save(root) {
                 e.outbox.push(nocturnal::engine::Announcement {
                     title: "Phone control".into(),
@@ -557,11 +589,27 @@ fn apply<P: Platform>(
                 });
                 return;
             }
-            if let Some(r) = remote.take() {
-                r.stop.store(true, Ordering::SeqCst);
-            }
-            *remote = start_remote(root, tx.clone());
-            show_pairing(root, &s);
+            restart_remote(root, tx, remote);
+            show_pairing(root, &s, &phone);
+        }
+        Action::PhoneRevoke(id) => {
+            let mut s = remote::Settings::load(root);
+            s.phones.retain(|p| p.id != id);
+            s.save(root);
+            restart_remote(root, tx, remote);
+        }
+        Action::PhoneRevokeAll => {
+            let mut s = remote::Settings::load(root);
+            s.phones.clear();
+            s.save(root);
+            let _ = std::fs::remove_file(root.join("remote-cursor"));
+            restart_remote(root, tx, remote);
+        }
+        Action::PhoneOn => {
+            let mut s = remote::Settings::load(root);
+            s.enabled = true;
+            s.save(root);
+            restart_remote(root, tx, remote);
         }
         Action::PhoneOff => {
             let mut s = remote::Settings::load(root);
@@ -594,9 +642,17 @@ fn default_panel_url(root: &Path) -> String {
         .to_string()
 }
 
-fn show_pairing(root: &Path, s: &remote::Settings) {
+/// Stops the phone listener and starts one for the phones paired now.
+fn restart_remote(root: &Path, tx: &Sender<Cmd>, remote: &mut Option<RemoteHandle>) {
+    if let Some(r) = remote.take() {
+        r.stop.store(true, Ordering::SeqCst);
+    }
+    *remote = start_remote(root, tx.clone());
+}
+
+fn show_pairing(root: &Path, s: &remote::Settings, phone: &remote::Phone) {
     let page = root.join("phone.html");
-    let html = match s.pairing_link() {
+    let html = match s.pairing_link(phone) {
         Some(link) => remote::pairing_page(&link),
         None => format!(
             "<!doctype html><meta charset=utf-8><title>Nocturnal phone control</title><body style=\"font:16px system-ui;max-width:520px;margin:40px auto;padding:0 16px\"><h1>One step left</h1><p>Nocturnal doesn't know the phone page's address. Add <code>\"panelUrl\": \"https://nocturnal.tools/remote/\"</code> (or your own copy of that page) to <code>{}</code> and choose Pair a Phone again.</p></body>",

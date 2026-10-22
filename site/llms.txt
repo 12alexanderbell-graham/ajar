@@ -37,6 +37,7 @@ nocturnal watch <app>              nocturnal on [--for 2h] | auto | off
 nocturnal hold / release           nocturnal run -- <command>         nocturnal connect [claude|codex]
 nocturnal prompt                   nocturnal doctor                   nocturnal rescue
 nocturnal wake-at 07:00 | off      nocturnal check-in 0|15|30|60
+nocturnal event <hook> claude-code   (run by Claude Code's hooks; reads the hook's JSON on stdin)
 ```
 
 ## Settings (keys for set / set_setting)
@@ -58,11 +59,19 @@ nocturnal wake-at 07:00 | off      nocturnal check-in 0|15|30|60
 
 The settings file (config.json) can also be edited directly and reloads instantly; edits that would weaken the battery limit or heat guard are undone.
 
+## Claude Code hooks
+
+`nocturnal connect` also adds hooks to ~/.claude/settings.json (SessionStart, UserPromptSubmit, Notification, Stop, SessionEnd) that run `nocturnal event`. They tell Nocturnal when Claude Code is working, waiting for the person's approval, or finished, so a quiet two-hour build still counts and a waiting question doesn't look like "done". Other agents are detected from their CPU use and running commands. Disconnecting removes the hooks.
+
+## Phone
+
+Settings › Phone › Pair a Phone shows a QR code; each phone gets its own 256-bit key and can be revoked on its own. Phone and computer talk through ntfy.sh (or the person's own relay): topics are derived from the key, every message is AES-256-GCM sealed with the topic name as associated data, and the relay can't read them. The phone page is https://nocturnal.tools/remote/ (add it to the Home Screen); a native iPhone app uses the same protocol. A phone can't loosen the battery limit or the heat guard.
+
 ## Rules agents should follow
 
 - Hold before long work, release when done. Holds from MCP end when the agent session ends.
 - Never try to turn off the heat guard, lower the battery limit or allow going below it. Nocturnal refuses; those are the person's calls in Nocturnal's own settings.
-- "Approve everything" (agents run without asking) can only be turned on by the person in Nocturnal's own window or tray menu, never by a command.
+- "Approve everything" (Claude Code and Codex run without asking) can only be turned on by the person in Nocturnal's own panel or tray menu, never by a command, the phone or the settings file. It ends when the work finishes, at a set time, or when turned off, and the person's own permission settings come back.
 - Ask before `lock_on_close on` or `nocturnal_power_test` with `screen: true`.
 - Agents, their process trees and anything a hold is tied to are never slowed or paused.
 

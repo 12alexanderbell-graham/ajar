@@ -107,6 +107,8 @@ pub struct UiState {
     pub unrestored: Vec<String>,
     pub phone_on: bool,
     pub phone_status: Option<String>,
+    /// Paired phones: (id, name, when last used).
+    pub phones: Vec<(String, String, Option<u64>)>,
     pub snoozed: bool,
     /// "Approve everything" is on (agents run without asking).
     pub auto_approve: bool,
@@ -207,6 +209,7 @@ impl UiState {
             unrestored: e.unrestored(),
             phone_on: false,
             phone_status: e.remote_status.clone(),
+            phones: vec![],
             snoozed: e.snoozed,
             auto_approve: false,
             approve_line: None,
@@ -290,10 +293,8 @@ pub fn build(s: &UiState) -> Vec<Node> {
     }
     m.push(Node::Sep);
     // Phone pairing up front, not buried in Settings (the Mac panel has its own phone button).
-    if s.phone_on {
-        m.push(text("phone:show", "Phone (show QR code)"));
-    } else {
-        m.push(text("phone:on", "Pair a Phone…"));
+    if s.phones.is_empty() {
+        m.push(text("phone:pair", "Pair a Phone…"));
     }
     m.push(sub("apps", "Apps and Agents", apps_menu(s)));
     m.push(sub("settings", "Settings", settings_menu(s)));
@@ -514,16 +515,7 @@ fn settings_menu(s: &UiState) -> Vec<Node> {
         settings.push(text("ntfy:open", format!("Phone alerts: {}", s.ntfy_topic)));
         settings.push(text("ntfy:off", "Turn off phone alerts"));
     }
-    if s.phone_on {
-        settings.push(text("phone:show", "Phone control: on (show QR code)"));
-        if let Some(st) = &s.phone_status {
-            settings.push(info("phone:status", st.clone()));
-        }
-        settings.push(text("phone:off", "Turn off phone control"));
-        settings.push(text("phone:newkey", "Unpair all phones (new QR code)"));
-    } else {
-        settings.push(text("phone:on", "Phone control…"));
-    }
+    settings.push(sub("phones", "Phones", phones_menu(s)));
     settings.push(Node::Sep);
     let mut wake_items: Vec<Node> = vec![info(
         "checkin:help",
@@ -599,6 +591,46 @@ fn settings_menu(s: &UiState) -> Vec<Node> {
     settings
 }
 
+/// Each paired phone (revocable on its own), pairing another, and the switch.
+fn phones_menu(s: &UiState) -> Vec<Node> {
+    let now = crate::now();
+    let mut m = vec![];
+    for (id, name, seen) in &s.phones {
+        let when = match seen {
+            Some(t) => format!("used {}", crate::format::when(*t, now)),
+            None => "not used yet".into(),
+        };
+        m.push(sub(
+            &format!("phonerow:{id}"),
+            format!("{name} · {when}"),
+            vec![text(&format!("phone:revoke:{id}"), "Revoke this phone")],
+        ));
+    }
+    m.push(text(
+        "phone:pair",
+        if s.phones.is_empty() {
+            "Pair a Phone…"
+        } else {
+            "Pair Another Phone…"
+        },
+    ));
+    if !s.phones.is_empty() {
+        m.push(Node::Sep);
+        if let Some(st) = &s.phone_status {
+            m.push(info("phone:status", st.clone()));
+        }
+        m.push(if s.phone_on {
+            text("phone:off", "Turn off phone control")
+        } else {
+            text("phone:on", "Turn on phone control")
+        });
+        if s.phones.len() > 1 {
+            m.push(text("phone:revokeall", "Revoke all phones"));
+        }
+    }
+    m
+}
+
 /// Two items may legitimately trigger the same action (the settings file link appears twice); give later
 /// copies a unique id with a `#n` suffix the app strips.
 fn dedupe_ids(nodes: &mut [Node]) {
@@ -658,9 +690,10 @@ pub enum Action {
     SleepNow,
     Retry,
     PhoneOn,
-    PhoneShow,
     PhoneOff,
-    PhoneNewKey,
+    PhonePair,
+    PhoneRevoke(String),
+    PhoneRevokeAll,
     NtfyOpen,
     NtfyOff,
     EditConfig,
@@ -698,9 +731,12 @@ pub fn action(id: &str) -> Option<Action> {
         ("sleepnow", _) => Action::SleepNow,
         ("retry", _) => Action::Retry,
         ("phone", "on") => Action::PhoneOn,
-        ("phone", "show") => Action::PhoneShow,
         ("phone", "off") => Action::PhoneOff,
-        ("phone", "newkey") => Action::PhoneNewKey,
+        ("phone", "pair") => Action::PhonePair,
+        ("phone", "revokeall") => Action::PhoneRevokeAll,
+        ("phone", r) if r.starts_with("revoke:") && r.len() <= 7 + 16 => {
+            Action::PhoneRevoke(r[7..].to_string())
+        }
         ("ntfy", "open") => Action::NtfyOpen,
         ("ntfy", "off") => Action::NtfyOff,
         ("editconfig", _) => Action::EditConfig,
@@ -786,6 +822,7 @@ mod tests {
             unrestored: vec![],
             phone_on: true,
             phone_status: Some("Connected".into()),
+            phones: vec![("ab12cd34".into(), "Alexander's iPhone".into(), Some(1))],
             snoozed: false,
             auto_approve: false,
             approve_line: None,
