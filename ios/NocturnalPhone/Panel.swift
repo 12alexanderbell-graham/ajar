@@ -25,6 +25,14 @@ nonisolated struct Panel: Codable, Equatable, Sendable {
     var powerTestAborted: String?
     var savings: [String: Double] = [:]
     var savingsUnclear: [String] = []
+    /// "Uses ≈2.1 W closed · 9 W open": what the lid-shut savings are worth right now.
+    var drawLine: String?
+    /// "6 h 20 min working, lid closed" and "4 sessions · ≈38 Wh saved": the week so far.
+    var weekTitle: String?
+    var weekLine: String?
+    /// The daily wake ("7:00"), and whether the computer still needs its one-time setup for wakes.
+    var wakeAt: String?
+    var wakeNeedsSetup = false
 
     struct Agent: Codable, Equatable, Sendable, Identifiable {
         var id: String
@@ -109,6 +117,11 @@ nonisolated struct Panel: Codable, Equatable, Sendable {
         powerTestAborted = o(.powerTestAborted)
         savings = v(.savings, [:])
         savingsUnclear = v(.savingsUnclear, [])
+        drawLine = o(.drawLine)
+        weekTitle = o(.weekTitle)
+        weekLine = o(.weekLine)
+        wakeAt = o(.wakeAt)
+        wakeNeedsSetup = v(.wakeNeedsSetup, false)
     }
 
     /// The numbers: sent as numbers by current versions, read from the sentence older ones sent.

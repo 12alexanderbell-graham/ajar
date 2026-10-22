@@ -1,35 +1,39 @@
 import AVFoundation
 import SwiftUI
 
-/// The camera, looking for Nocturnal's pairing QR code. Reports the first code it reads.
-struct QRScannerSheet: View {
+/// The camera, looking for Nocturnal's pairing QR code, drawn right on the page. Reports the first code it reads.
+/// Without a camera (the simulator) or without permission it says so plainly, and pasting the code still works.
+struct CameraFinder: View {
     let found: (String) -> Void
-    @Environment(\.dismiss) private var dismiss
     @State private var denied = AVCaptureDevice.authorizationStatus(for: .video) == .denied
+    private let hasCamera = AVCaptureDevice.default(for: .video) != nil
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if denied {
-                    ContentUnavailableView {
-                        Label("Camera access is off", systemImage: "camera")
-                    } description: {
-                        Text("Allow it in Settings, or paste the code instead.")
-                    } actions: {
-                        Button("Open Settings") { UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!) }
-                            .buttonStyle(.glass)
-                    }
-                } else {
-                    CameraView(found: found, denied: { denied = true })
-                        .clipShape(.rect(cornerRadius: Theme.cardRadius, style: .continuous))
-                        .padding(Theme.gutter)
-                        .accessibilityLabel("Camera viewfinder")
+        ZStack {
+            Theme.night.opacity(0.55)
+            if !hasCamera {
+                VStack(spacing: 10) {
+                    Image(systemName: "camera.fill").font(.system(size: 28, weight: .semibold))
+                    Text("No camera here").font(.headline)
                 }
+            } else if denied {
+                VStack(spacing: 14) {
+                    Image(systemName: "camera.fill").font(.system(size: 28, weight: .semibold))
+                    Text("Camera is off for Nocturnal").font(.headline)
+                    Button("Settings") { UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!) }
+                        .font(.headline)
+                        .padding(.horizontal, 20)
+                        .frame(height: 44)
+                        .glassEffect(.clear.interactive(), in: .capsule)
+                        .buttonStyle(Press())
+                }
+            } else {
+                CameraView(found: found, denied: { denied = true })
             }
-            .navigationTitle("Scan the QR code")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel", role: .cancel) { dismiss() } } }
         }
+        .foregroundStyle(.white)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Camera viewfinder")
     }
 }
 

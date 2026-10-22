@@ -80,6 +80,8 @@ final class Computer {
         ack = nil
         message = nil
         wakeSentAt = nil
+        undoHeld()
+        lastTimed = nil
         PairingStore.delete()
         UserDefaults.standard.removeObject(forKey: Self.savedPanel)
     }
@@ -105,6 +107,7 @@ final class Computer {
     }
 
     func disappeared() {
+        if held != nil { Task { await releaseHeld() } }
         relay?.stopListening()
         listening = false
     }
@@ -197,6 +200,109 @@ final class Computer {
     func wake() async {
         wakeSentAt = Date()
         await send("wake", ["minutes": 60])
+    }
+
+    // MARK: Keep awake
+
+    /// The timed stop the phone last chose, and the "until" time the computer answered with, so the lens stays on
+    /// the stop that was picked (the computer only reports the end time).
+    private var lastTimed: (stop: Stop, until: String?)?
+
+    /// Where the band's lens sits, read from the status.
+    var stop: Stop {
+        guard let p = panel else { return .busy }
+        switch p.mode {
+        case "off": return .off
+        case "on":
+            guard let until = p.alwaysUntil else { return .always }
+            if let t = lastTimed, t.until == nil || t.until == until { return t.stop }
+            if let mins = Self.minutesUntil(until) { return Stop.nearest(minutes: max(1, mins)) }
+            return .h1
+        default: return .busy
+        }
+    }
+
+    /// Words for the band at rest: what it does now, with the end time for a timed stop.
+    var stopWords: String {
+        if stop.minutes != nil, let until = panel?.alwaysUntil { return "Until \(until)" }
+        return stop.word
+    }
+
+    func choose(_ s: Stop) async {
+        var args: [String: Any]
+        switch s {
+        case .off: args = ["mode": "off"]
+        case .busy: args = ["mode": "auto"]
+        case .always: args = ["mode": "always"]
+        default: args = ["mode": "always", "minutes": s.minutes!]
+        }
+        let until = s.minutes.map { Date().addingTimeInterval(Double($0) * 60).formatted(date: .omitted, time: .shortened) }
+        lastTimed = s.minutes != nil ? (s, nil) : nil
+        await change("mode", args) { p in
+            p.mode = s == .off ? "off" : s == .busy ? "auto" : "on"
+            p.alwaysUntil = until
+            if s != .busy { p.keeps = s != .off }
+        }
+        if s.minutes != nil, lastTimed?.stop == s { lastTimed = (s, panel?.alwaysUntil) }
+    }
+
+    /// "14:30" or "2:30 PM" from the computer's clock, as minutes from now (the next time the clock shows it).
+    static func minutesUntil(_ text: String, now: Date = Date()) -> Double? {
+        guard let m = text.firstMatch(of: /(\d{1,2})[:.](\d{2})\s*([AaPp])?/), var h = Int(m.1), let min = Int(m.2) else { return nil }
+        if let ap = m.3?.lowercased() { h = h % 12 + (ap == "p" ? 12 : 0) }
+        var c = Calendar.current.dateComponents([.year, .month, .day], from: now)
+        c.hour = h; c.minute = min
+        guard var d = Calendar.current.date(from: c) else { return nil }
+        if d < now { d = d.addingTimeInterval(24 * 3600) }
+        return d.timeIntervalSince(now) / 60
+    }
+
+    // MARK: Undo instead of "are you sure"
+
+    /// Sleeping the computer (or turning Nocturnal off while the lid is shut, which sleeps it) can't be taken back from
+    /// the phone once it happens: a sleeping computer can't hear it. So it waits a few seconds with an Undo.
+    enum Held: Equatable { case sleep, off }
+    private(set) var held: Held?
+    private(set) var heldUntil: Date?
+    private var heldTask: Task<Void, Never>?
+    static let holdFor: TimeInterval = 4
+
+    func hold(_ h: Held) {
+        heldTask?.cancel()
+        held = h
+        heldUntil = Date().addingTimeInterval(Self.holdFor)
+        heldTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.holdFor))
+            guard !Task.isCancelled else { return }
+            await self?.releaseHeld()
+        }
+    }
+
+    func undoHeld() {
+        heldTask?.cancel()
+        heldTask = nil
+        held = nil
+        heldUntil = nil
+    }
+
+    /// Sends the held action now (also when the app goes to the background before the Undo runs out).
+    func releaseHeld() async {
+        guard let h = held else { return }
+        heldTask?.cancel()
+        heldTask = nil
+        held = nil
+        heldUntil = nil
+        switch h {
+        case .sleep: await send("sleep_now")
+        case .off: await choose(.off)
+        }
+    }
+
+    // MARK: Wakes
+
+    /// The daily wake: "07:00" (24-hour, the computer's clock) or nil to turn it off.
+    func setWakeAt(_ time: String?) async {
+        await change("wake_at", ["time": time ?? "off"]) { $0.wakeAt = time }
     }
 
     private func draw(_ p: Panel) {

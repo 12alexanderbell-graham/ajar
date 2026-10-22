@@ -1,7 +1,7 @@
 import Foundation
 
 /// A pretend computer for the demo: answers commands the way Nocturnal does, without any network. Lets App Review
-/// (and anyone without Nocturnal yet) see every screen.
+/// (and anyone without Nocturnal yet) see every screen. It plays a MacBook working with its lid shut.
 @MainActor
 final class DemoComputer {
     private var panel: Panel = {
@@ -9,28 +9,38 @@ final class DemoComputer {
         p.host = "Demo MacBook Pro"
         p.keeps = true
         p.holding = true
+        p.lidClosed = true
         p.mode = "auto"
         p.detail = "Claude Code is working"
         p.checkIn = 15
         p.numbers = .init(pct: 82, w: 3.1, h: 19.25)
         p.agents = [.init(id: "claude-code", name: "Claude Code", working: true, instances: 2, state: "working"),
-                    .init(id: "codex", name: "Codex", state: "idle")]
+                    .init(id: "codex", name: "Codex", state: "waiting")]
         p.watch = [.init(id: "xcode", name: "Xcode", on: false), .init(id: "ffmpeg", name: "ffmpeg", on: true)]
+        p.drawLine = "Uses ≈3.1 W shut · 11 W open"
+        p.weekTitle = "6 h 20 min working, lid shut"
+        p.weekLine = "4 sessions · ≈38 Wh saved"
+        p.savings = ["total": 7.9, "low_power": 1.2, "apps": 2.4, "simulators": 3.6, "audio": 0.7]
+        p.canMeasure = true
         return p
     }()
 
     private var settings: [String: Any] = [
-        "screen_off": false, "lock_on_close": false, "low_power": true, "pause_simulators": true, "battery_floor": 10,
-        "heat_guard": true, "sleep_when_done": true, "quiet_minutes": 5, "notify_done": true,
+        "low_power": true, "pause_simulators": true, "shut_down_simulators": false, "pause_background_audio": true,
+        "screen_off": false, "lock_on_close": false,
+        "sleep_when_done": true, "quiet_minutes": 5, "battery_floor": 10, "only_on_power": false, "heat_guard": true,
+        "claude_app": true, "downloads": true, "notify_done": true, "done_chime": false,
+        "check_in_minutes": "15",
     ]
-    private static let kinds: [String: String] = ["battery_floor": "int", "quiet_minutes": "int"]
+    private static let kinds: [String: String] = ["battery_floor": "int", "quiet_minutes": "int", "check_in_minutes": "enum"]
+    private static let allowed: [String: [String]] = ["check_in_minutes": ["0", "15", "30", "60"]]
 
     func handle(_ cmd: String, _ args: [String: Any]) -> Relay.Reply {
         switch cmd {
         case "mode":
             let m = args["mode"] as? String ?? "auto"
             panel.mode = m == "always" ? "on" : m
-            panel.alwaysUntil = (args["until_hour"] as? Int).map { "\($0):00" }
+            panel.alwaysUntil = (args["minutes"] as? Int).map { Date().addingTimeInterval(Double($0) * 60).formatted(date: .omitted, time: .shortened) }
             updateOutcome()
         case "preset":
             panel.preset = ["max_battery": "longest", "full_speed": "speed"][args["preset"] as? String ?? ""] ?? "balanced"
@@ -40,20 +50,29 @@ final class DemoComputer {
             if let i = panel.watch.firstIndex(where: { $0.id == args["app"] as? String }) { panel.watch[i].on = !(args["remove"] as? Bool ?? false) }
         case "sleep_now":
             panel.mode = panel.mode == "on" ? "auto" : panel.mode
+            panel.alwaysUntil = nil
             panel.holding = false
             updateOutcome()
         case "wake":
             panel.holding = true
             updateOutcome()
+        case "wake_at":
+            let t = args["time"] as? String ?? "off"
+            panel.wakeAt = t == "off" ? nil : t
+        case "power_test":
+            panel.canMeasure = false
+            panel.powerTest = "Measuring: step 1 of 4"
         case "set":
             guard let key = args["key"] as? String, settings[key] != nil else { return .init(ok: false, error: "Unknown setting") }
             if key == "battery_floor", let n = args["value"] as? Int, n < (settings[key] as? Int ?? 0) {
                 return .init(ok: false, error: "The battery limit can only be lowered on the computer")
             }
-            settings[key] = (args["value"] as? String).map { $0 == "on" } ?? args["value"]
+            if Self.kinds[key] == "enum" { settings[key] = "\(args["value"] ?? "")" }
+            else { settings[key] = (args["value"] as? String).map { $0 == "on" } ?? args["value"] }
+            if key == "check_in_minutes" { panel.checkIn = Int(settings[key] as? String ?? "0") }
         case "schema":
             let list = settings.keys.sorted().compactMap { k -> Setting? in
-                Setting(["key": k, "type": Self.kinds[k] ?? "bool", "value": settings[k] as Any])
+                Setting(["key": k, "type": Self.kinds[k] ?? "bool", "value": settings[k] as Any, "allowed": Self.allowed[k] as Any])
             }
             return .init(ok: true, settings: list)
         default: break
@@ -64,7 +83,14 @@ final class DemoComputer {
     private func updateOutcome() {
         let working = panel.mode == "on" || (panel.mode == "auto" && panel.holding)
         panel.keeps = working
-        panel.agents = panel.agents.map { var a = $0; a.state = working && a.id == "claude-code" ? "working" : "idle"; a.working = a.state == "working"; return a }
-        panel.detail = working ? "Claude Code is working" : panel.mode == "off" ? "Nocturnal is off" : "No agent is working right now"
+        panel.agents = panel.agents.map { a in
+            var a = a
+            if a.id == "claude-code" { a.state = working ? "working" : "idle" }
+            a.working = a.state == "working"
+            return a
+        }
+        panel.numbers?.w = working ? 3.1 : 0.4
+        panel.detail = working ? (panel.mode == "on" ? "Kept awake by you" : "Claude Code is working")
+            : panel.mode == "off" ? "Nocturnal is off" : "No agent is working right now"
     }
 }
