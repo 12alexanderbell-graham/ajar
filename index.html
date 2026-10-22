@@ -45,7 +45,7 @@
   .icon { width: 96px; height: 96px; display: block; margin: 0 auto 26px; filter: drop-shadow(0 10px 24px rgba(0,0,0,.28)); }
   h1 { font-size: clamp(40px, 7.4vw, 72px); line-height: 1.03; letter-spacing: -0.04em; font-weight: 700; margin: 0; text-wrap: balance; }
   .lede { font-size: clamp(19px, 2.4vw, 23px); line-height: 1.4; color: rgba(255,255,255,.82); max-width: 30em; margin: 18px auto 0; text-wrap: balance; }
-  .btn { display: inline-block; margin-top: 32px; text-decoration: none; font-size: 18px; font-weight: 600; padding: 14px 30px; border-radius: 980px; color: #fff;
+  .btn { display: inline-block; margin-top: 32px; border: 0; cursor: pointer; font-family: var(--font); text-decoration: none; font-size: 18px; font-weight: 600; padding: 14px 30px; border-radius: 980px; color: #fff;
     background: linear-gradient(45deg, var(--mid), #1e9a60); }
   .green .btn { background: #fff; color: var(--deep); }
   .btn:hover { filter: brightness(1.06); }
@@ -87,6 +87,8 @@
   .item:first-child { border-top: 0; }
   .item h3 { font-size: 17px; margin: 0; letter-spacing: -0.015em; }
   .item p { margin: 2px 0 0; color: var(--fg-2); font-size: 15px; }
+  #ai-h + .sub { margin: 0 auto; }
+  #prompt { text-align: left; white-space: pre-wrap; font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--card); border-radius: 18px; padding: 20px; margin-top: 20px; user-select: all; }
   .two { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 40px; align-items: center; margin-top: 36px; }
   .two .list { margin-top: 0; }
   .two img { display: block; width: 100%; height: auto; border-radius: 16px; box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 18px 48px rgba(0,0,0,.14); }
@@ -137,110 +139,96 @@
     <div class="green hero">
       <img class="icon" src="icon.png" alt="Ajar app icon" width="96" height="96">
       <h1>Close the lid.<br>Your AI keeps working.</h1>
-      <p class="lede">Ajar keeps your laptop awake with the lid shut while your AI agents work, then lets it sleep.</p>
+      <p class="lede">Awake while your agents work. Asleep when they're done.</p>
       <a class="btn" id="dl" href="downloads/Ajar-1.0.0-mac.zip">Download for Mac</a>
-      <p class="meta">Free and open source · <a href="downloads/Ajar-1.0.0-mac.zip">Mac</a> (macOS 14+) · <a href="downloads/Ajar-1.0.0-windows-x86_64.zip">Windows</a> 10 and 11 · <a href="downloads/ajar-1.0.0-linux-x86_64.tar.gz">Linux</a></p>
+      <p class="meta">Free · <a href="downloads/Ajar-1.0.0-mac.zip">Mac</a> · <a href="downloads/Ajar-1.0.0-windows-x86_64.zip">Windows</a> · <a href="downloads/ajar-1.0.0-linux-x86_64.tar.gz">Linux</a></p>
     </div>
     <figure class="shot">
-      <img src="panel-now.png" alt="Ajar's menu on the Now tab: When Busy is selected, it says 'Close the lid: it keeps working', and the battery reads 9 h 11 min left with the lid closed" width="640" height="702">
+      <img src="panel-now.png" alt="Ajar's menu: When Busy is on, and closing the lid keeps it working" width="640" height="470">
     </figure>
     <div class="install">
-      <p class="meta">Homebrew: <code>brew install --cask 12alexanderbell-graham/ajar/ajar</code></p>
-      <p class="first" id="first">First open: if macOS blocks it, go to System Settings › Privacy &amp; Security and click Open Anyway.</p>
+      <p class="meta"><code>brew install --cask 12alexanderbell-graham/ajar/ajar</code></p>
+      <p class="first" id="first">If macOS blocks it: System Settings › Privacy &amp; Security › Open Anyway.</p>
     </div>
   </header>
 
   <section aria-labelledby="how-h">
     <div class="center"><h2 id="how-h">How it works</h2></div>
     <div class="steps">
-      <div class="step"><h3>Install it</h3><p>Type your password once.</p></div>
-      <div class="step"><h3>Start your agent</h3><p>Claude Code, Codex, Gemini CLI and others are found on their own.</p></div>
-      <div class="step"><h3>Close the lid</h3><p>It keeps working, then sleeps when the agent stops.</p></div>
+      <div class="step"><h3>Install</h3><p>Password once.</p></div>
+      <div class="step"><h3>Start your agent</h3><p>Found on its own.</p></div>
+      <div class="step"><h3>Close the lid</h3><p>It keeps working.</p></div>
     </div>
   </section>
 
   <section aria-labelledby="proof-h">
     <div class="proof">
-      <h2 id="proof-h">Less battery with the lid shut</h2>
+      <h2 id="proof-h">Less battery, lid shut</h2>
       <div class="big" aria-label="18.3 watts down to 3.1 watts">18.3 W <span class="arrow">→</span> <span class="low">3.1 W</span></div>
-      <p class="sub">Ajar pauses apps you aren't using and turns on Low Power Mode. Open the lid and it all comes back.</p>
-      <p class="fine">Measured with Ajar's power test on an M5 Max MacBook Pro, lid closed, iOS simulators open.</p>
+      <p class="fine">Measured by Ajar on an M5 Max MacBook Pro.</p>
     </div>
   </section>
 
   <section aria-labelledby="feat-h">
-    <div class="center"><h2 id="feat-h">Safe to leave, and you're in control</h2><p class="sub">The Apps tab shows what keeps it awake and what closing the lid slows or pauses. Change any of it.</p></div>
+    <div class="center"><h2 id="feat-h">You're in control</h2></div>
     <div class="two">
       <div class="list">
-        <div class="item"><h3>Sleeps when it's done</h3><p>A few minutes after your agent stops.</p></div>
-        <div class="item"><h3>No lock screen</h3><p>Open the lid and you're back where you were.</p></div>
-        <div class="item"><h3>Battery and heat limits</h3><p>It sleeps at 15% battery or if it gets too hot.</p></div>
-        <div class="item"><h3>Puts everything back</h3><p>Every change is undone when you open the lid.</p></div>
+        <div class="item"><h3>Sleeps when it's done</h3></div>
+        <div class="item"><h3>No lock screen</h3></div>
+        <div class="item"><h3>Battery and heat limits</h3></div>
+        <div class="item"><h3>Puts everything back</h3></div>
       </div>
-      <img src="panel-apps.png" alt="Ajar's Apps tab: Claude app keeps the Mac awake, Max Battery is selected for when the lid is closed, and it stops at 5% battery" width="640" height="604">
+      <img src="panel-apps.png" alt="Ajar's Apps tab: what keeps it awake and what closing the lid pauses" width="640" height="606">
     </div>
   </section>
 
   <section aria-labelledby="phone-h">
     <div class="split">
-      <img src="phone.png" alt="Ajar on a phone, showing the laptop is still working" width="390" height="467">
+      <img src="phone.png" alt="Ajar on a phone" width="390" height="379">
       <div>
         <h2 id="phone-h">Check on it from your phone</h2>
-        <p class="sub">See if it's still working, let it sleep, or wake it up again. Nothing to install.</p>
-        <ol>
-          <li>On the laptop: <b>Ajar › Settings › Phone</b>.</li>
-          <li>Scan the QR code.</li>
-          <li>Tap Share › <b>Add to Home Screen</b>.</li>
-        </ol>
-        <p class="small">Already paired? <a href="remote/">Open the phone page</a>.</p>
+        <p class="sub">On the laptop: <b>Ajar › Settings › Phone</b>, then scan.</p>
+        <p class="small"><a href="remote/">Open the phone page</a></p>
       </div>
     </div>
   </section>
 
-  <section class="narrow" aria-labelledby="ai-h">
+  <section class="narrow center" aria-labelledby="ai-h">
     <h2 id="ai-h">Your AI can use it too</h2>
-    <p class="sub">Connect Claude Code, Codex or the Claude app in Settings › AI Agents. Then paste this to your agent:</p>
-    <div class="prompt">
-      <pre id="prompt">Ajar is installed on this laptop. It keeps the machine awake with the lid closed while you work, and cuts power use while the lid is shut. You can control all of it through the ajar MCP tools (or the ajar command). Set it up for me:
+    <p class="sub">Connect it in Settings › AI Agents, then give your agent this prompt.</p>
+    <button class="btn" id="copy" type="button">Copy the prompt</button>
+    <pre id="prompt" hidden>Ajar is installed on this laptop. It keeps the machine awake with the lid closed while you work, and cuts power use while the lid is shut. You can control all of it through the ajar MCP tools (or the ajar command). Set it up for me:
 1. Read Ajar's settings and power report to see every setting and what is using power right now.
 2. Ask me, in one short message: which apps must keep running at full speed with the lid shut (music, calls, a local model, Docker...), and whether it should stay awake only while agents work or always.
 3. Apply the strongest savings that don't touch what I named: preset max_battery, pausing simulators and background audio, low power, and per-app rules.
 4. If my lid is closed, run Ajar's power test and tell me what the savings are worth in watts.
 5. From now on, keep the laptop awake through Ajar before long work and release it when done.
 Never turn off the heat guard or lower the battery limit; Ajar won't let you, and that's on purpose.</pre>
-      <button class="copy" id="copy" type="button">Copy</button>
-    </div>
-    <p class="small">Tired of approving every step? Settings › AI Agents › Approve everything lets Claude Code and Codex run without asking. Risky, so only you can switch it on, and switching it off puts your settings back.</p>
-    <p class="small">For agents: <a href="llms.txt">llms.txt</a></p>
   </section>
 
   <section class="narrow" aria-labelledby="faq-h">
     <h2 id="faq-h">Questions</h2>
     <div class="faq">
-    <details><summary>Is it safe in a bag?</summary><p>It watches the temperature and sleeps if the laptop stays hot. It also sleeps at 15% battery.</p></details>
-    <details><summary>Do I type my password when I open the lid?</summary><p>No. The screen stays dark instead of sleeping, so there's no lock screen.</p></details>
-    <details><summary>What does it change?</summary><p>Sleep, Low Power Mode, brightness, Time Machine's automatic backups, and apps you aren't using. Opening the lid puts it all back. Settings › About › Remove Ajar removes it.</p></details>
-    <details><summary>Which agents?</summary><p>Claude Code, Codex, Gemini CLI, Cursor Agent, Copilot CLI, Amp, Aider, OpenCode, Ollama and the Claude app. You can add any other app with + on the Apps tab.</p></details>
-    <details><summary>It lost internet with the lid shut. Why?</summary><p>Usually an iPhone hotspot: the iPhone can switch it off by itself, and with the lid shut macOS only turns it back on if System Settings › Wi‑Fi › Ask to join hotspots is set to Automatic. Ajar reminds you while you're on a hotspot.</p></details>
-    <details><summary>Does it cost anything?</summary><p>No. It's free and open source. <a href="https://github.com/12alexanderbell-graham/ajar">Code on GitHub</a>.</p></details>
-    <details><summary>Windows and Linux?</summary><p>Yes. Windows 10 and 11, and Linux desktops with systemd. Both are newer than the Mac version, so tell us on GitHub if anything's off.</p></details>
+    <details><summary>Safe in a bag?</summary><p>It sleeps if it gets hot or the battery runs low.</p></details>
+    <details><summary>What does it change?</summary><p>Sleep, Low Power Mode, brightness, Time Machine and idle apps. Opening the lid puts it all back.</p></details>
+    <details><summary>Lost internet with the lid shut?</summary><p>On an iPhone hotspot, set System Settings › Wi‑Fi › Ask to join hotspots to Automatic.</p></details>
+    <details><summary>Free?</summary><p>Yes, and <a href="https://github.com/12alexanderbell-graham/ajar">open source</a>.</p></details>
     </div>
   </section>
 
   <section class="green final" aria-labelledby="final-h">
     <h2 id="final-h">Close the lid. Your AI keeps working.</h2>
     <a class="btn" id="dl2" href="downloads/Ajar-1.0.0-mac.zip">Download for Mac</a>
-    <p class="meta">Free · Mac, Windows and Linux · <a href="https://github.com/12alexanderbell-graham/ajar">GitHub</a></p>
   </section>
 
-  <footer>© 2026 Ajar · MIT license · <a href="https://github.com/12alexanderbell-graham/ajar">GitHub</a> · <a href="llms.txt">llms.txt</a></footer>
+  <footer>© 2026 Ajar · MIT · <a href="https://github.com/12alexanderbell-graham/ajar">GitHub</a> · <a href="llms.txt">llms.txt</a></footer>
 </div>
 <script>
   document.getElementById("copy").addEventListener("click", function () {
     var b = this, text = document.getElementById("prompt").textContent;
     (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(function () { b.textContent = "Copied"; },
-      function () { var r = document.createRange(); r.selectNodeContents(document.getElementById("prompt")); var sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); b.textContent = "Press ⌘C"; });
-    setTimeout(function () { b.textContent = "Copy"; }, 2500);
+      function () { var p = document.getElementById("prompt"); p.hidden = false; b.textContent = "Select and copy it below"; });
+    setTimeout(function () { b.textContent = "Copy the prompt"; }, 2500);
   });
   // Point the download buttons at this visitor's system. The links under the first one stay for everyone.
   (function () {
@@ -248,12 +236,12 @@ Never turn off the heat guard or lower the battery limit; Ajar won't let you, an
     function set(label, href) { btns.forEach(function (b) { b.textContent = label; b.href = href; }); }
     if (/Windows/.test(ua)) {
       set("Download for Windows", "downloads/Ajar-1.0.0-windows-x86_64.zip");
-      first.textContent = "First open: Windows may show “Windows protected your PC”. Click More info, then Run anyway.";
+      first.textContent = "If Windows warns you: More info › Run anyway.";
     } else if (/Linux/.test(ua) && !/Android/.test(ua)) {
       set("Download for Linux", "downloads/ajar-1.0.0-linux-x86_64.tar.gz");
-      first.textContent = "Unpack it and run ./install.sh. Works with GNOME, KDE and other systemd desktops.";
+      first.textContent = "Unpack it and run ./install.sh.";
     } else if (/iPhone|iPad|Android/.test(ua)) {
-      first.textContent = "Ajar runs on your laptop. Open this page there to download it, then control it from this phone.";
+      first.textContent = "Open this page on your laptop to download it.";
     }
   })();
 </script>
