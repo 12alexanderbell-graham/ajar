@@ -6,7 +6,7 @@ Nocturnal is built to be driven by agents. Everything below works from an MCP cl
 
 ## Connect
 
-- macOS: Nocturnal › Settings › Connect Your AI (one click per agent), or `nocturnal connect` in Terminal.
+- macOS: Nocturnal › Settings › Agents (one click per agent), or `nocturnal connect` in Terminal.
 - Windows / Linux: `nocturnal connect` (adds Nocturnal to Claude Code's ~/.claude.json and Codex's ~/.codex/config.toml, keeping everything else and saving a backup).
 - Any MCP client: command `nocturnal` (or the app binary with `cli mcp` on macOS), argument `mcp`, transport stdio.
 - The setup prompt: `nocturnal prompt`, the MCP tool `nocturnal_setup_prompt` (macOS) / `setup_prompt` (Windows, Linux), or https://nocturnal.tools/#ai-h
@@ -21,7 +21,7 @@ macOS names start with `nocturnal_`; Windows and Linux use the same names withou
 - `nocturnal_settings` / `settings`: every setting with value, allowed values, description and safety note. Read before changing anything.
 - `nocturnal_set_setting` / `set_setting`: change one setting by key.
 - `nocturnal_power` / `power`: power use now and a list of suspects, each with the setting that fixes it (`setting`, `suggested_value`) and, on macOS, the measured saving.
-- `nocturnal_power_test` (macOS): with the lid closed, switches each saving off and on twice (8 s each) and measures the whole-Mac difference (~4 min); savings the Mac's own load made unclear are reported as unclear. `screen: true` also measures turning the screen off, which locks the Mac; ask first.
+- `nocturnal_power_test` (macOS): with the lid closed, switches each saving off and on and reads the battery controller's whole-Mac figure over full 30-second periods (about 3 to 4 minutes); savings the Mac's own load made unclear are reported as unclear. `screen: true` also measures turning the screen off, which locks the Mac; ask first.
 - `nocturnal_set_mode` / `set_mode`: off, auto (When Busy), always (optionally for N minutes).
 - `nocturnal_set_preset` / `set_preset`: max_battery, balanced, full_speed.
 - `nocturnal_set_app_rule` / `set_app_rule`: one app → leave, slow, pause, default.
@@ -32,7 +32,7 @@ macOS names start with `nocturnal_`; Windows and Linux use the same names withou
 
 ```
 nocturnal status [--json]          nocturnal settings [--json]        nocturnal power [--json]
-nocturnal power test [--screen]    nocturnal set <key> <value>        nocturnal rule <app> leave|slow|pause|default
+nocturnal power test [--detailed] [--screen] (macOS)   nocturnal set <key> <value>        nocturnal rule <app> leave|slow|pause|default
 nocturnal watch <app>              nocturnal on [--for 2h] | auto | off
 nocturnal hold / release           nocturnal run -- <command>         nocturnal connect [claude|codex]
 nocturnal prompt                   nocturnal doctor                   nocturnal rescue
