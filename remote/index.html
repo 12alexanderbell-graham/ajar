@@ -3,974 +3,139 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<!-- No inline code, nothing from other sites. connect-src stays https: so a self-hosted relay works. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src https:; manifest-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Nocturnal">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
-<meta name="referrer" content="no-referrer">
-<meta name="robots" content="noindex">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="icon-192.png">
-<title>Nocturnal Remote</title>
-<style>
-/* Mirrors Nocturnal's Mac panel: system font, Nocturnal green, grouped rows, the same order and words. */
-:root{--bg:#f2f2f7;--card:#fff;--text:#1d1d1f;--sub:#6e6e73;--ter:#aeaeb2;--line:#e5e5ea;--accent:#15784a;--green:#1fa868;--seg:#e3e3e8;--orange:#c45500;--red:#d70015;--greenbg:rgba(31,168,104,.14);color-scheme:light}
-@media (prefers-color-scheme:dark){:root{--bg:#000;--card:#1c1c1e;--text:#f5f5f7;--sub:#98989d;--ter:#636366;--line:#2c2c2e;--accent:#30bb81;--green:#30bb81;--seg:#2c2c2e;--orange:#ff9f0a;--red:#ff453a;--greenbg:rgba(48,187,129,.18);color-scheme:dark}}
-*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html{-webkit-text-size-adjust:100%;overscroll-behavior:none}
-body{margin:0;background:var(--bg);color:var(--text);font:17px/1.35 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
-main{max-width:500px;margin:0 auto;padding:max(12px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(28px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
-button{font:inherit;color:inherit;touch-action:manipulation;cursor:pointer}
-.top{display:flex;align-items:flex-start;gap:12px;padding:8px 2px 14px}
-.who{flex:1;min-width:0}
-.name{font-size:27px;font-weight:700;letter-spacing:-.5px;line-height:1.15;overflow-wrap:anywhere}
-.iconbtn{margin-left:auto;margin-top:-2px;border:0;background:none;padding:6px;color:var(--sub);display:flex;flex:none}
-.hostline{display:flex;align-items:center;gap:6px;color:var(--sub);font-size:13px;margin:5px 0 0}
-#settings .hostline,#apps .hostline{margin:-2px 2px 4px}
-.live{width:7px;height:7px;border-radius:50%;background:var(--ter);flex:none}
-.live.ok{background:var(--green)}
-.live.wait{background:var(--accent);animation:pulse 1s ease-in-out infinite alternate}
-.live.bad{background:var(--orange)}
-@keyframes pulse{from{opacity:.35}to{opacity:1}}
-.group{background:var(--card);border-radius:14px;padding:14px 16px;margin:0 0 14px}
-.sec{font-size:13px;font-weight:600;color:var(--sub);margin:18px 16px 6px;text-transform:none}
-.seg{display:flex;background:var(--seg);border-radius:9px;padding:2px;gap:2px}
-.seg button{flex:1;border:0;background:transparent;font-size:15px;padding:7px 4px;border-radius:7px;transition:background .15s}
-.seg button.sel{background:var(--accent);color:#fff;font-weight:600}
-.explain{font-size:15px;margin:10px 2px 0}
-.sicon{flex:none;width:46px;height:46px;border-radius:13px;display:grid;place-items:center;background:var(--seg);color:var(--sub)}
-.sicon .i-laptop,.sicon.keeps .i-moon{display:none}
-.sicon.keeps .i-laptop{display:block}
-.sicon.keeps{background:var(--greenbg);color:var(--green)}
-.big{font-size:19px;font-weight:600;letter-spacing:-.2px;line-height:1.25}
-.lead{color:var(--sub);font-size:17px;margin:-4px 2px 18px}
-.sub{color:var(--sub);font-size:14px}
-.cap{color:var(--sub);font-size:13px;margin-top:6px;font-variant-numeric:tabular-nums}
-.link{border:0;background:none;padding:0;color:var(--accent);font-size:15px;white-space:nowrap}
-.seg button.confirm{background:var(--red);color:#fff;font-weight:600}
-.link.confirm{color:var(--red);font-weight:600;white-space:normal;text-align:right;max-width:9em}
-.pills{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
-.pills button{border:0;background:var(--seg);border-radius:16px;padding:6px 12px;font-size:14px}
-.warn{color:var(--orange);font-size:14px;margin:10px 0 0}
-.row{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-top:1px solid var(--line);gap:12px;min-height:44px}
-.row:first-child{border-top:0;padding-top:0}
-.row:last-child{padding-bottom:0}
-.row .sub{font-size:13px}
-.row .v{color:var(--sub);font-size:15px;font-variant-numeric:tabular-nums}
-.empty{color:var(--sub);font-size:15px}
-.btn{display:block;width:100%;border:0;background:var(--card);color:var(--accent);padding:13px;border-radius:12px;margin:0 0 14px;font-size:17px}
-.btn.primary{background:var(--accent);color:#fff;font-weight:600}
-.switch{position:relative;width:51px;height:31px;flex:none}
-.switch input{position:absolute;opacity:0;inset:0;margin:0;width:100%;height:100%;cursor:pointer}
-.switch span{position:absolute;inset:0;background:var(--seg);border-radius:31px;transition:.2s;pointer-events:none}
-.switch span:before{content:"";position:absolute;width:27px;height:27px;left:2px;top:2px;background:#fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:.2s}
-.switch input:checked+span{background:var(--green)}
-.switch input:checked+span:before{transform:translateX(20px)}
-.switch input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
-/* Laptop messages (a refused change, for example): under the host line, so they show on every page */
-.toast{background:var(--card);color:var(--orange);font-size:14px;border-radius:12px;padding:10px 14px;margin:0 0 12px}
-.fine{color:var(--sub);font-size:13px;text-align:center;margin:4px 8px 14px}
-/* Pairing: same look as the rest of the app (iOS grouped style), not a landing page */
-#pair{padding-top:28px}
-.pairbox{max-width:420px;margin:0 auto}
-.pairhead{display:flex;align-items:center;gap:14px;margin:6px 2px 22px}
-.appicon{flex:none;width:60px;height:60px;border-radius:14px;box-shadow:0 0 0 .5px rgba(0,0,0,.12)}
-#pair h1{font-size:34px;font-weight:700;letter-spacing:-.6px;line-height:1.1;margin:0}
-#pair .lead{color:var(--sub);font-size:15px;margin:2px 0 0}
-.hint{color:var(--sub);font-size:13px;margin:-6px 16px 22px;text-align:center}
-#pairform{display:flex;gap:8px;align-items:center}
-#pairform input{flex:1;min-width:0}
-#pairform button{border:0;background:none;color:var(--accent);font-size:17px;font-weight:600;padding:8px 4px}
-#cam{display:block;width:100%;aspect-ratio:1;object-fit:cover;border-radius:14px;background:#000;margin:0 0 12px}
-/* The mode sentence stays for screen readers; the segment labels and the line below say it on screen. */
-.explain.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
-input[type=text]{width:100%;font:16px ui-monospace,SFMono-Regular,Menlo,monospace;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--text);-webkit-user-select:text;user-select:text}
-.err{color:var(--red);font-size:14px;margin:8px 0 0;min-height:1em}
-.share{display:inline-block;width:15px;height:18px;vertical-align:-3px;margin:0 2px}
-.back{border:0;background:none;padding:0;color:var(--accent);font-size:17px;display:flex;align-items:center;gap:4px}
-.title{font-size:28px;font-weight:700;letter-spacing:-.4px;margin:6px 2px 8px}
-select.pick{-webkit-appearance:none;appearance:none;border:0;background:none;color:var(--sub);font:inherit;font-size:16px;text-align:right;text-align-last:right;padding:0 16px 0 0;max-width:55%;background-image:linear-gradient(45deg,transparent 50%,var(--ter) 50%),linear-gradient(135deg,var(--ter) 50%,transparent 50%);background-position:right 6px center,right 1px center;background-size:5px 5px,5px 5px;background-repeat:no-repeat}
-.row input.topic{width:55%;padding:7px 9px;font-size:14px}
-.foot{color:var(--sub);font-size:13px;margin:-8px 16px 16px}
-.row.off{opacity:.45}
-.list button.item{display:block;width:100%;text-align:left;border:0;background:none;padding:12px 0;border-top:1px solid var(--line);color:var(--accent)}
-.list button.item:first-child{border-top:0;padding-top:0}
-.list button.item:last-child{padding-bottom:0}
-.list button.item.danger{color:var(--red)}
-.list button.item.confirm{font-weight:600}
-/* Status card: Nocturnal green while it keeps the laptop working, plain while it sleeps normally. */
-.hero{position:relative;isolation:isolate;overflow:hidden;background:var(--card);border-radius:22px;padding:16px 18px 16px;margin:0 0 6px}
-.hero.keeps{color:#fff;background:radial-gradient(70% 80% at 92% 0%,rgba(63,214,156,.9),rgba(63,214,156,0) 72%),radial-gradient(50% 60% at 0% 100%,rgba(34,184,102,.45),rgba(34,184,102,0) 72%),linear-gradient(45deg,#08341a,#146c40)}
-.hero.keeps::after{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;opacity:.22;mix-blend-mode:overlay;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 1.6 -.3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
-.herohead{display:flex;align-items:center;justify-content:space-between;min-height:40px}
-.hero .sicon{width:40px;height:40px;border-radius:12px}
-.hero.keeps .sicon{background:rgba(255,255,255,.18);color:#fff}
-.hero .big{font-size:28px;font-weight:700;letter-spacing:-.5px;line-height:1.15;margin-top:14px}
-.hero .sub{font-size:15px;margin-top:3px}
-.hero.keeps .sub,.hero.keeps .herobatt,.hero.keeps .explain{color:rgba(255,255,255,.82)}
-.hero.keeps .warn{color:#fff;font-weight:600}
-.herobtn{border:0;border-radius:17px;padding:7px 14px;font-size:15px;font-weight:600;background:var(--seg);color:var(--accent)}
-.hero.keeps .herobtn{background:rgba(255,255,255,.2);color:#fff}
-.herobtn.confirm{background:var(--red)!important;color:#fff!important}
-.herobatt{display:flex;align-items:center;gap:8px;margin-top:16px;padding-top:12px;border-top:.5px solid var(--line);font-size:14px;color:var(--sub);font-variant-numeric:tabular-nums}
-.hero.keeps .herobatt{border-top-color:rgba(255,255,255,.2)}
-.hero .pills button{background:var(--seg)}
-.hero.keeps .pills button{background:rgba(255,255,255,.2);color:#fff}
-#modetext{margin:6px 16px 0}
-.row.first{border-top:0;padding-top:0;padding-bottom:0;min-height:22px}
-.row .v{color:var(--sub)}
-#approve.on{color:var(--orange);font-weight:600}
-/* Install screen */
-#install{padding-top:28px}
-#install h1{font-size:34px;font-weight:700;letter-spacing:-.6px;line-height:1.1;margin:0}
-#install .lead{color:var(--sub);font-size:15px;margin:2px 0 0}
-.steps{list-style:none;padding:4px 16px;margin:0 0 14px}
-.steps li{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--line);font-size:16px}
-.steps li:first-child{border-top:0}
-.steps .num{flex:none;width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;font-size:14px;font-weight:600;display:grid;place-items:center}
-.steps svg{vertical-align:-3px;color:var(--accent)}
-.link.center{display:block;margin:0 auto;font-size:15px}
-/* Tab bar */
-#app{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
-#tabbar{position:fixed;left:0;right:0;bottom:0;z-index:10;display:flex;padding:6px max(10px,env(safe-area-inset-right)) max(6px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left));
-  background:rgba(242,242,247,.86);background:color-mix(in srgb,var(--bg) 82%,transparent);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);border-top:.5px solid var(--line)}
-#tabbar button{flex:1;border:0;background:none;color:var(--ter);display:flex;flex-direction:column;align-items:center;gap:3px;padding:3px 0;font-size:10.5px;font-weight:500;letter-spacing:.1px}
-#tabbar button svg{height:24px}
-#tabbar button.sel{color:var(--accent)}
-
-[hidden]{display:none!important}
-@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
-</style>
+<link rel="stylesheet" href="app.css">
+<title>Nocturnal</title>
 </head>
 <body>
 <main>
-  <!-- In a phone's browser tab: Nocturnal is meant to run from the Home Screen, full screen, without the browser's bars. -->
-  <section id="install" hidden>
-    <div class="pairbox">
-      <div class="pairhead">
-        <img class="appicon" src="apple-touch-icon.png" alt="" width="60" height="60">
-        <div><h1>Nocturnal</h1><p class="lead">Add it to your Home Screen</p></div>
-      </div>
-      <ol class="group steps" id="steps"></ol>
-      <p class="hint" id="installhint"></p>
-      <button class="link center" type="button" id="inbrowser">Continue in the browser</button>
+  <!-- In a phone's browser tab: it runs best from the Home Screen, full screen. -->
+  <section id="install" class="intro" hidden>
+    <div class="brand">
+      <img src="apple-touch-icon.png" alt="" width="64" height="64">
+      <div><h1>Nocturnal</h1><p>Add it to your Home Screen</p></div>
     </div>
+    <ol class="steps" id="steps"></ol>
+    <p class="say" id="installhint"></p>
+    <button class="link" type="button" id="inbrowser">Continue in the browser</button>
   </section>
 
-  <!-- Shown until this phone has a pairing key. -->
-  <section id="pair" hidden>
-    <div class="pairbox">
-      <div class="pairhead">
-        <img class="appicon" src="apple-touch-icon.png" alt="" width="60" height="60">
-        <div><h1>Nocturnal</h1><p class="lead">Pair with your laptop</p></div>
-      </div>
-      <button class="btn primary" type="button" id="scanbtn">Scan QR Code</button>
-      <div id="scanner" hidden>
-        <video id="cam" playsinline muted autoplay></video>
-        <button class="btn" type="button" id="scanstop">Cancel</button>
-      </div>
-      <p class="hint">On your laptop, open Nocturnal and choose Pair a Phone.</p>
-      <div class="sec">Or paste the code</div>
-      <form id="pairform" class="group" autocomplete="off">
-        <input type="text" id="code" placeholder="Pairing code or link" aria-label="Pairing code or link" autocapitalize="off" autocorrect="off" spellcheck="false">
-        <button type="submit">Pair</button>
-      </form>
-      <p class="err" id="pairerr" role="alert"></p>
+  <!-- Until this phone has a key. -->
+  <section id="pair" class="intro" hidden>
+    <div class="brand">
+      <img src="apple-touch-icon.png" alt="" width="64" height="64">
+      <div><h1>Nocturnal</h1><p>Pair with your Mac or PC</p></div>
     </div>
+    <button class="big" type="button" id="scanbtn">Scan QR Code</button>
+    <div id="scanner" hidden>
+      <video id="cam" playsinline muted autoplay></video>
+      <button class="big plain" type="button" id="scanstop">Cancel</button>
+    </div>
+    <p class="say">On your computer, open Nocturnal and choose Pair a Phone.</p>
+    <form id="pairform" autocomplete="off">
+      <input type="text" id="code" placeholder="Or paste the code" aria-label="Pairing code or link" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <button type="submit">Pair</button>
+    </form>
+    <p class="err" id="pairerr" role="alert"></p>
   </section>
 
   <div id="app" hidden>
-    <header class="top">
-      <div class="who">
-        <div class="name" id="host">Laptop</div>
-        <div class="hostline"><span class="live" id="live"></span><span class="conn" id="conn">Connecting…</span></div>
-      </div>
+    <header class="head">
+      <div id="host">Your Mac</div>
+      <div class="fresh" id="fresh" aria-live="polite"><span class="dot" id="dot"></span><span id="freshtext">Connecting…</span></div>
     </header>
-    <div id="toast" class="toast" role="alert" hidden></div>
+    <div id="toast" role="alert" hidden></div>
 
-
-    <!-- The main screen: what the laptop is doing, then the switch. -->
-    <section id="home">
-      <div class="hero" id="statuscard" aria-live="polite">
-        <div class="herohead">
-          <div class="sicon" id="lidicon" aria-hidden="true">
-            <svg class="i-laptop" width="24" height="20" viewBox="0 0 26 22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="18" height="12" rx="1.8"/><path d="M1.5 18.5h23"/></svg>
-            <svg class="i-moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 14.6A8.5 8.5 0 0 1 9.4 3.5a8.5 8.5 0 1 0 11.1 11.1z"/></svg>
-          </div>
-          <button class="herobtn" id="sleepnow">Sleep Now</button>
-        </div>
-        <div class="big" id="headline">…</div>
-        <div class="sub" id="detail"></div>
-        <div id="warnings"></div>
-        <div class="pills" id="wakebox" hidden><button id="wakebtn">Wake It</button></div>
-        <p class="explain" id="waketext" hidden></p>
-        <div class="herobatt" id="batt" hidden>
-          <svg width="25" height="12" viewBox="0 0 25 12" aria-hidden="true"><rect x=".75" y=".75" width="21.5" height="10.5" rx="3" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".5"/><rect id="battfill" x="2.5" y="2.5" width="18" height="7" rx="1.6" fill="currentColor"/><path d="M24 4.3v3.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".5"/></svg>
-          <span id="battext"></span>
-        </div>
-      </div>
-
-      <div class="sec">Keep awake</div>
-      <div class="group" id="modecard">
-        <div class="seg" role="radiogroup" aria-label="Keep awake">
-          <button data-mode="off" role="radio">Off</button>
-          <button data-mode="auto" role="radio">When Busy</button>
-          <button data-mode="on" role="radio">Always</button>
-        </div>
-        <div class="pills" id="timers" hidden>
-          <button data-for="60">For 1 h</button>
-          <button data-for="240">For 4 h</button>
-          <button data-until="7">Until 7:00</button>
-        </div>
-      </div>
-      <p class="foot" id="modetext"></p>
-    </section>
-
-    <!-- Apps tab: the same as the Mac panel's Apps tab. -->
-    <section id="apps" hidden>
-      <div class="title">Apps</div>
-
-      <div class="sec">Keeps it awake</div>
-      <div class="group" id="agents"></div>
-      <div class="sec">Also while these run</div>
-      <div class="group" id="watch"></div>
-
-      <div class="sec">Agent permissions</div>
-      <div class="group"><div class="row first"><span>Approve everything</span><span class="v" id="approve">Off</span></div></div>
-      <p class="foot">Claude Code and Codex run without asking while it's on. Only the laptop can switch it, in Settings › Agents.</p>
-
-      <div class="sec">With the lid closed</div>
-      <div class="group">
-        <div class="seg" role="radiogroup" aria-label="With the lid closed">
-          <button data-preset="max_battery" role="radio">Max Battery</button>
-          <button data-preset="balanced" role="radio">Balanced</button>
-          <button data-preset="full_speed" role="radio">Full Speed</button>
-        </div>
-        <div class="cap" id="presetdetail"></div>
+    <section class="card" id="card" aria-live="polite">
+      <div id="headline">…</div>
+      <div id="line"></div>
+      <div id="warnings"></div>
+      <div class="numbers" id="numbers" hidden>
+        <div class="figure"><div class="v"><span class="num" id="pct">0</span><span class="u">%</span></div><div class="c" id="pctcap">battery</div></div>
+        <div class="figure" id="wfig"><div class="v"><span class="num" id="watts">0</span><span class="u">W</span></div><div class="c">using now</div></div>
+        <div class="figure" id="hfig"><div class="v"><span class="num" id="hours">0</span><span class="u">h</span></div><div class="c" id="hourscap">left, lid shut</div></div>
       </div>
     </section>
 
-    <section id="settings" hidden>
-      <div class="title">Settings</div>
-
-      <div id="savingsbox" hidden>
-        <div class="sec">Measure the savings</div>
-        <div class="group" id="savings"></div>
-        <button class="btn" id="measure">Measure now (about 4 min)</button>
+    <div class="controls">
+      <div class="slider" id="slider" role="radiogroup" aria-label="Keep awake">
+        <div class="thumb" id="thumb"></div>
+        <button type="button" role="radio" aria-checked="false" data-mode="off">Off</button>
+        <button type="button" role="radio" aria-checked="false" data-mode="auto">When Busy</button>
+        <button type="button" role="radio" aria-checked="false" data-mode="on">Always</button>
       </div>
-
-      <div id="settingslist"><div class="group"><div class="empty">Loading…</div></div></div>
-      <div class="sec">This phone</div>
-      <div class="group list">
-        <button class="item" id="refresh">Refresh now</button>
-        <button class="item" id="copycode">Copy pairing code</button>
-        <button class="item danger" id="unpair">Unpair this phone</button>
+      <div class="pills" id="timers" hidden>
+        <button type="button" data-for="60">1 hour</button>
+        <button type="button" data-for="240">4 hours</button>
+        <button type="button" data-until="7">Until 7:00</button>
       </div>
-      <p class="foot"><span id="updated">Not updated yet</span>. End-to-end encrypted.</p>
-    </section>
+    </div>
 
-    <!-- iOS-style tab bar: Now and Apps match the Mac panel's tabs. -->
-    <nav id="tabbar" role="tablist" aria-label="Sections">
-      <button data-nav="now" role="tab" aria-selected="true" class="sel" id="tab-now">
-        <svg width="26" height="22" viewBox="0 0 26 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="18" height="12" rx="1.8"/><path d="M1.5 18.5h23"/></svg><span>Now</span></button>
-      <button data-nav="apps" role="tab" aria-selected="false" id="tab-apps">
-        <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2.5" y="2.5" width="7" height="7" rx="2"/><rect x="12.5" y="2.5" width="7" height="7" rx="2"/><rect x="2.5" y="12.5" width="7" height="7" rx="2"/><rect x="12.5" y="12.5" width="7" height="7" rx="2"/></svg><span>Apps</span></button>
-      <button data-nav="settings" role="tab" aria-selected="false" id="tab-settings">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span>Settings</span></button>
+    <nav class="capsule" aria-label="Actions">
+      <button type="button" class="circle" id="sleepbtn" aria-label="Sleep now">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.6A8.5 8.5 0 0 1 9.4 3.5a8.5 8.5 0 1 0 11.1 11.1z"/></svg>
+        <span class="lbl">Tap to sleep</span>
+      </button>
+      <button type="button" class="circle" id="wakebtn" aria-label="Wake it for an hour">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/></svg>
+        <span class="lbl">Sent</span>
+      </button>
+      <button type="button" class="circle" id="setbtn" aria-label="Settings" aria-haspopup="dialog" aria-controls="sheet">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2.2"/><circle cx="10" cy="17" r="2.2"/></svg>
+      </button>
     </nav>
+
+    <div class="scrim" id="scrim" hidden></div>
+    <section class="sheet" id="sheet" role="dialog" aria-modal="true" aria-label="Settings" hidden>
+      <div class="grab" id="grab" aria-hidden="true"></div>
+      <div class="sheetbody" id="sheetbody" tabindex="-1">
+        <h2>Agents</h2>
+        <div class="group" id="agents"></div>
+        <h2>Also while these run</h2>
+        <div class="group" id="watch"></div>
+
+        <h2>With the lid shut</h2>
+        <div class="seg" id="presets" role="radiogroup" aria-label="With the lid shut">
+          <button type="button" role="radio" aria-checked="false" data-preset="max_battery">Max Battery</button>
+          <button type="button" role="radio" aria-checked="false" data-preset="balanced">Balanced</button>
+          <button type="button" role="radio" aria-checked="false" data-preset="full_speed">Full Speed</button>
+        </div>
+        <p class="foot" id="presetdetail"></p>
+
+        <div id="settingslist"><div class="group"><div class="empty">Loading…</div></div></div>
+
+        <div id="savingsbox" hidden>
+          <h2>What each saving is worth</h2>
+          <div class="group" id="savings"></div>
+          <div class="group"><button type="button" class="action" id="measure">Measure now</button></div>
+        </div>
+
+        <h2>Approve everything</h2>
+        <div class="group"><div class="row"><span class="name">Claude Code and Codex</span><span class="v" id="approve">Off</span></div></div>
+        <p class="foot">Only your computer can switch it on, in Nocturnal's settings.</p>
+
+        <h2>This phone</h2>
+        <div class="group">
+          <button type="button" class="action" id="refresh">Refresh</button>
+          <button type="button" class="action danger" id="forget">Forget this Mac</button>
+        </div>
+        <p class="foot"><span id="updated">Not updated yet</span>. End-to-end encrypted. To add another phone, pair it on your computer.</p>
+      </div>
+    </section>
   </div>
 </main>
-<script>
-"use strict";
-// Same protocol as Nocturnal on the laptop (Remote.swift / remote.rs): AES-256-GCM with the topic name as associated
-// data; both topic names are derived from the key, so the key is the only secret and it never leaves this phone.
-const enc = new TextEncoder(), dec = new TextDecoder();
-const b64u = {
-  enc: b => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""),
-  dec: s => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), c => c.charCodeAt(0)),
-};
-const hex = b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join("");
-const $ = id => document.getElementById(id);
-const store = {
-  get: k => { try { return localStorage.getItem(k); } catch (_) { return null; } },
-  set: (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} },
-  del: k => { try { localStorage.removeItem(k); } catch (_) {} },
-};
-const DEFAULT_SERVER = "https://ntfy.sh";
-const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
-const ios = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-
-const REFRESH_MS = 120000;   // auto refresh while on screen; taps refresh too, since every reply carries the panel
-let lastSent = 0;
-let key, cmdTopic, replyTopic, server = DEFAULT_SERVER, lastId = null, state = null, stateAt = null, pending = 0, keyText = "";
-
-/** fetch that gives up after 12 s, so a stalled connection can't leave the page waiting forever. */
-async function fetchT(url, opts = {}, ms = 12000) {
-  const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), ms);
-  const { text, ...init } = opts;
-  try {
-    const r = await fetch(url, { ...init, signal: ctl.signal });
-    return text ?{ ok: r.ok, status: r.status, text: await r.text() } : r;   // the body counts toward the 12 s too
-  }
-  catch (e) { throw e && e.name === "AbortError" ? new Error("timed out") : e; }
-  finally { clearTimeout(timer); }
-}
-
-/** Accepts a full pairing link ("…#k=KEY&s=SERVER"), just the "k=…" part, or the bare key. */
-function parsePairing(text) {
-  text = (text || "").trim();
-  const hash = text.includes("#") ? text.slice(text.indexOf("#") + 1) : text;
-  const p = new URLSearchParams(hash);
-  const k = p.get("k") || (/^[A-Za-z0-9_-]{43}$/.test(text) ? text : null);
-  const s = p.get("s");
-  return { k, s: s && /^https:\/\/[^\s]+$/.test(s) ? s.replace(/\/+$/, "") : null };
-}
-
-function keyBytes(k) {
-  try { const raw = b64u.dec(k); return raw.length === 32 ? raw : null; } catch (_) { return null; }
-}
-
-/** The connection line shows under the laptop's name and on the Settings page. */
-function setConn(t) {
-  const cls = "live " + (t === "Connected" ? "ok" : /…$/.test(t) ? "wait" : "bad");
-  document.querySelectorAll(".conn").forEach(e => { e.textContent = t; });
-  document.querySelectorAll(".live").forEach(e => { e.className = cls; });
-}
-
-async function topic(label, raw) {
-  const d = await crypto.subtle.digest("SHA-256", new Uint8Array([...enc.encode(label), ...raw]));
-  return "nocturnal-" + hex(d).slice(0, 24);
-}
-
-async function seal(topicName, obj) {
-  const nonce = crypto.getRandomValues(new Uint8Array(12));
-  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce, additionalData: enc.encode(topicName) }, key, enc.encode(JSON.stringify(obj)));
-  return b64u.enc(new Uint8Array([...nonce, ...new Uint8Array(ct)]));
-}
-
-/** ntfy turns messages over 4 KB into attachments; fetch those (still encrypted) from the same relay. */
-async function messageText(ev) {
-  const a = ev.attachment;
-  if (a && a.url && a.size < 65536) {
-    try {
-      if (new URL(a.url).origin === new URL(server).origin) return (await fetchT(a.url, { text: true })).text;
-    } catch (_) {}
-  }
-  return ev.message || "";
-}
-
-async function unseal(topicName, msg) {
-  try {
-    const raw = b64u.dec(msg);
-    const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: raw.slice(0, 12), additionalData: enc.encode(topicName) }, key, raw.slice(12));
-    return JSON.parse(dec.decode(pt));
-  } catch (_) { return null; }
-}
-
-// Replies come in on one open connection (server-sent events) instead of polling. ntfy.sh allows a burst of about
-// 60 requests per address, refilled one every 5 s, so asking every second would soon get a busy phone blocked.
-const waiters = new Map();   // nonce -> { res, at }
-let stream = null, streamReady = null;
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-/** Reopening with since= the last message seen replays anything missed (for example while the app was in the
- *  background) into requests still waiting for their answer. */
-function openStream() {
-  if (stream && stream.readyState === EventSource.CLOSED) closeStream();   // gave up for good; CONNECTING retries by itself
-  if (stream) return streamReady;
-  const oldest = Math.min(...[...waiters.values()].map(w => w.at));
-  const since = lastId || (isFinite(oldest) ? String(Math.floor(oldest / 1000) - 30) : "1m");
-  stream = new EventSource(`${server}/${replyTopic}/sse?since=${encodeURIComponent(since)}`);
-  streamReady = new Promise(res => { stream.addEventListener("open", res, { once: true }); setTimeout(res, 4000); });
-  stream.onmessage = async e => {
-    let ev; try { ev = JSON.parse(e.data); } catch (_) { return; }
-    if (ev.event !== "message") return;
-    lastId = ev.id;
-    const m = await unseal(replyTopic, await messageText(ev));
-    const w = m && waiters.get(m.re);
-    if (w) { waiters.delete(m.re); w.res(m); }
-  };
-  return streamReady;
-}
-
-function closeStream() { if (stream) { stream.close(); stream = null; streamReady = null; } }
-
-let queue = Promise.resolve();
-/** Taps wait for a request already in flight instead of being dropped; extra refreshes are skipped unless forced.
- *  Background refreshes (bg) don't show "Sending…": only the "Updated" time changes. Resolves to the reply or null. */
-function send(cmd, args = {}, { bg = false, force = false } = {}) {
-  if (cmd === "panel" && pending && !force) return queue;
-  if (!bg) setConn("Sending…");   // at once, so a tap always shows it was heard
-  pending++;
-  queue = queue.then(() => sendNow(cmd, args, bg));
-  return queue;
-}
-async function sendNow(cmd, args, bg) {
-  const n = hex(crypto.getRandomValues(new Uint8Array(8)));
-  const since = lastId || "30s";
-  const replied = new Promise(res => waiters.set(n, { res, at: Date.now() }));
-  try {
-    if (!bg) setConn("Sending…");
-    if (window.EventSource) await openStream();
-    const live = stream && stream.readyState !== EventSource.CLOSED;   // CONNECTING reconnects by itself
-    const body = await seal(cmdTopic, { t: Math.floor(Date.now() / 1000), n, cmd, args });
-    const r = await fetchT(`${server}/${cmdTopic}`, { method: "POST", body, headers: { Cache: "yes" } });
-    if (!r.ok) throw new Error(r.status === 429 ? "too many requests, try again in a minute" : "relay said " + r.status);
-    if (!bg) setConn("Waiting for laptop…");
-    const reply = live ? await Promise.race([replied, sleep(20000).then(() => null)]) : await waitFor(n, since);
-    if (!reply) { setConn("No answer. Asleep or offline?"); asleepHint(); return null; }
-    if (reply.panel) render(reply.panel);
-    if (reply.settings) renderSettings(reply.settings);
-    if (reply.ok === false && reply.error) note(reply.error);   // after drawing, so the redraw can't wipe it
-    setConn("Connected");
-    return reply;
-  } catch (e) {
-    setConn("Can't reach the relay (" + e.message + ")");
-    return null;
-  } finally {
-    waiters.delete(n);
-    pending--;
-    lastSent = Date.now();
-  }
-}
-
-/** A tap changes the screen at once; if the laptop didn't take it, show the last state it reported again. */
-async function tap(cmd, args) {
-  const r = await send(cmd, args);
-  if ((!r || r.ok === false) && state) render(state, stateAt);
-  return r;
-}
-const refresh = force => send("panel", {}, { bg: true, force });
-
-/** Fallback when the open connection isn't available: ask every 2.5 s for up to 20 s. */
-async function waitFor(n, since) {
-  const deadline = Date.now() + 20000;
-  while (Date.now() < deadline) {
-    await sleep(2500);
-    let text;
-    try {
-      text = (await fetchT(`${server}/${replyTopic}/json?poll=1&since=${encodeURIComponent(since)}`, { text: true })).text;
-    } catch (_) { continue; }
-    for (const line of text.split("\n")) {
-      if (!line.trim()) continue;
-      let ev; try { ev = JSON.parse(line); } catch (_) { continue; }
-      if (ev.event !== "message") continue;
-      lastId = ev.id; since = ev.id;
-      const m = await unseal(replyTopic, await messageText(ev));
-      if (m && m.re === n) return m;
-    }
-  }
-  return null;
-}
-
-// QR scanning on the pairing screen. A home-screen app can't receive the link the Camera app opens (that goes to
-// Safari), so it scans by itself: the built-in BarcodeDetector where there is one (Android), jsQR elsewhere (iPhone).
-let camStream = null, scanTimer = null;
-function loadScript(src) {
-  return new Promise((res, rej) => { const e = document.createElement("script"); e.src = src; e.onload = res; e.onerror = () => rej(new Error(src)); document.head.appendChild(e); });
-}
-async function startScan() {
-  $("pairerr").textContent = "";
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    $("pairerr").textContent = "This browser can't use the camera here. Scan with the Camera app, or paste the code.";
-    return;
-  }
-  let detector = null;
-  try { if ("BarcodeDetector" in window && (await BarcodeDetector.getSupportedFormats()).includes("qr_code")) detector = new BarcodeDetector({ formats: ["qr_code"] }); } catch (_) {}
-  try { if (!detector && !window.jsQR) await loadScript("jsQR.js"); }
-  catch (_) { $("pairerr").textContent = "The scanner didn't load. Check your connection, or paste the code."; return; }
-  try {
-    camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
-  } catch (e) {
-    $("pairerr").textContent = e && e.name === "NotAllowedError" ? "Camera access is off for this page. Allow it, or paste the code." : "Couldn't open the camera. Paste the code instead.";
-    return;
-  }
-  const v = $("cam");
-  v.srcObject = camStream;
-  $("scanner").hidden = false; $("scanbtn").hidden = true;
-  try { await v.play(); } catch (_) {}
-  const c = document.createElement("canvas"), g = c.getContext("2d", { willReadFrequently: true });
-  let warned = false;
-  const tick = async () => {
-    if (!camStream) return;
-    let text = null;
-    if (v.readyState >= 2 && v.videoWidth) {
-      try {
-        if (detector) { const r = await detector.detect(v); if (r.length) text = r[0].rawValue; }
-        else {
-          const sc = Math.min(1, 720 / Math.max(v.videoWidth, v.videoHeight));
-          c.width = Math.round(v.videoWidth * sc); c.height = Math.round(v.videoHeight * sc);
-          g.drawImage(v, 0, 0, c.width, c.height);
-          const r = jsQR(g.getImageData(0, 0, c.width, c.height).data, c.width, c.height, { inversionAttempts: "dontInvert" });
-          if (r) text = r.data;
-        }
-      } catch (_) {}
-    }
-    if (text) {
-      const { k, s } = parsePairing(text);
-      if (k && keyBytes(k)) { stopScan(); save(k, s); await begin(k, s); return; }
-      if (!warned) { warned = true; $("pairerr").textContent = "That QR code isn't from Nocturnal. Point at the one in Nocturnal's Settings › Phone."; }
-    }
-    scanTimer = setTimeout(tick, 120);
-  };
-  tick();
-}
-function stopScan() {
-  clearTimeout(scanTimer); scanTimer = null;
-  if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
-  $("cam").srcObject = null;
-  $("scanner").hidden = true; $("scanbtn").hidden = false;
-}
-
-let toastTimer = null;
-function note(msg) {
-  const t = $("toast");
-  t.textContent = msg;
-  t.hidden = false;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { t.hidden = true; }, 6000);
-}
-
-function toggleRow(label, sub, checked, onChange) {
-  const row = document.createElement("div");
-  row.className = "row";
-  const left = document.createElement("div");
-  left.textContent = label;
-  if (sub) { const s = document.createElement("div"); s.className = "sub"; s.textContent = sub; left.appendChild(s); }
-  const sw = document.createElement("label");
-  sw.className = "switch";
-  const input = document.createElement("input");
-  input.type = "checkbox";
-  input.checked = checked;
-  input.setAttribute("aria-label", label);
-  input.addEventListener("change", onChange);
-  sw.append(input, document.createElement("span"));
-  row.append(left, sw);
-  return row;
-}
-
-function empty(el, text) { const e = document.createElement("div"); e.className = "empty"; e.textContent = text; el.appendChild(e); }
-
-// Settings page: every setting the laptop reports, grouped like Nocturnal's Settings on the Mac. Values and choices
-// come from the laptop (the same table its AI tools use); only the words live here.
-const SETTING_GROUPS = [
-  ["Screen and power", ["screen", "low_power", "pause_simulators", "shut_down_simulators", "pause_background_audio"], "Dark means no password when you open the lid."],
-  ["Sleep & Safety", ["sleep_when_done", "quiet_minutes", "battery_floor", "only_on_power", "heat_guard"], "The battery limit and heat guard can only be loosened on the laptop."],
-  ["Keep Awake For", ["claude_app", "downloads"], "Agents are found on their own."],
-  ["Notifications", ["notify_done", "done_chime"], ""],
-];
-const SETTING_LABELS = {
-  screen: "Screen", low_power: "Low Power Mode", pause_simulators: "Pause simulators and previews",
-  shut_down_simulators: "Shut simulators down instead", pause_background_audio: "Pause apps holding the speakers",
-  sleep_when_done: "Sleep when the work is done", quiet_minutes: "After nothing happens for", battery_floor: "Sleep at battery level",
-  only_on_power: "Only stay awake when plugged in", heat_guard: "Heat guard", claude_app: "Claude app (Cowork, computer use)",
-  downloads: "Downloads, exports and builds", notify_done: "Notify when an agent goes idle", done_chime: "Play a chime too",
-  ntfy_topic: "Phone alerts (ntfy topic)", menubar: "Menu bar shows", appearance: "Appearance", live_lid_icon: "Icon follows the real lid",
-  notch_island: "Notch island", show_in_dock: "Show in Dock", hotkey: "⌃⌥⌘A switches mode",
-};
-const CHOICE_LABELS = {
-  max_battery: "Max Battery", balanced: "Balanced", full_speed: "Full Speed", none: "Icon Only", battery: "Battery %", watts: "Watts",
-  timeLeft: "Time Left", timer: "Timer", system: "Match System", light: "Light", dark: "Dark",
-};
-let settingsCache = null;
-
-function settingRow(label, control, off) {
-  const row = document.createElement("div"); row.className = "row" + (off ? " off" : "");
-  const l = document.createElement("div"); l.textContent = label;
-  row.append(l, control); return row;
-}
-function picker(options, value, onPick) {
-  const sel = document.createElement("select"); sel.className = "pick";
-  options.forEach(([v, label, disabled]) => { const o = document.createElement("option"); o.value = v; o.textContent = label; o.disabled = !!disabled; sel.appendChild(o); });
-  sel.value = String(value);
-  sel.addEventListener("change", () => onPick(sel.value));
-  return sel;
-}
-function switcher(label, checked, onChange, disabled) {
-  const sw = document.createElement("label"); sw.className = "switch";
-  const input = document.createElement("input"); input.type = "checkbox"; input.checked = checked; input.disabled = !!disabled;
-  input.setAttribute("aria-label", label);
-  input.addEventListener("change", () => onChange(input.checked));
-  sw.append(input, document.createElement("span")); return sw;
-}
-/** Resolves to true when the laptop took the change. Afterwards (andRefresh) it asks for the settings again, so rows
- *  that depend on this one show up or go away; when it wasn't taken (refused, or no answer) it always does, to show the
- *  real value again. */
-async function setSetting(k, v, andRefresh = true) {
-  const r = await send("set", { key: k, value: v });
-  const ok = !!r && r.ok !== false;
-  if (ok && settingsCache) { const s = settingsCache.find(x => x.key === k); if (s) s.value = s.type === "bool" ? v === "on" : v; }
-  if (!ok || andRefresh) {
-    if (settingsCache) renderSettings(settingsCache);   // at once: last known values (rolls a failed change back)
-    send("schema");
-  }
-  return ok;
-}
-
-let settingsDeferred = false;
-function renderSettings(list) {
-  settingsCache = list;
-  const root = $("settingslist");
-  // Don't pull a menu or a text box out from under a finger: redraw once it's let go.
-  const f = document.activeElement;
-  if (f && root.contains(f) && (f.tagName === "SELECT" || (f.tagName === "INPUT" && f.type === "text"))) {
-    if (!settingsDeferred) {
-      settingsDeferred = true;
-      f.addEventListener("blur", () => { settingsDeferred = false; setTimeout(() => renderSettings(settingsCache)); }, { once: true });
-    }
-    return;
-  }
-  const by = Object.fromEntries(list.map(s => [s.key, s]));
-  root.textContent = "";
-  for (const [title, keys, foot] of SETTING_GROUPS) {
-    const rows = [];
-    for (const k of keys) {
-      if (k === "screen") {
-        if (!by.screen_off && !by.lock_on_close) continue;
-        const cur = by.lock_on_close && by.lock_on_close.value ? "locks" : (by.screen_off && by.screen_off.value ? "off" : "dark");
-        const opts = [["dark", "Dark, no lock"]];
-        if (by.screen_off) opts.push(["off", "Off, no lock (experimental)"]);
-        if (by.lock_on_close) opts.push(["locks", "Off, locks"]);
-        rows.push(settingRow("Screen", picker(opts, cur, async v => {
-          // Two settings behind one menu: stop at the first one the laptop doesn't take (that re-reads them all).
-          if (by.lock_on_close && !(await setSetting("lock_on_close", v === "locks" ? "on" : "off", !by.screen_off))) return;
-          if (by.screen_off) await setSetting("screen_off", v === "off" ? "on" : "off");
-        })));
-        continue;
-      }
-      const s = by[k]; if (!s) continue;
-      const label = SETTING_LABELS[k] || k.replace(/_/g, " ");
-      if (s.type === "bool") {
-        const locked = k === "heat_guard" && s.value;   // can only be turned on from here
-        rows.push(settingRow(label, switcher(label, !!s.value, on => setSetting(k, on ? "on" : "off"), locked)));
-      } else if (s.type === "enum") {
-        rows.push(settingRow(label, picker((s.allowed || []).map(v => [v, CHOICE_LABELS[v] || v]), s.value, v => setSetting(k, v))));
-      } else if (s.type === "int") {
-        const steps = k === "battery_floor" ? [0, 5, 10, 15, 20, 25, 30, 40, 50] : [1, 2, 5, 10, 20, 30, 60];
-        if (!steps.includes(s.value)) steps.push(s.value), steps.sort((a, b) => a - b);
-        const opts = steps.map(n => [n, k === "battery_floor" ? (n === 0 ? "Never" : n + "%") : n + " min", k === "battery_floor" && n < s.value]);
-        if (k === "quiet_minutes" && by.sleep_when_done && !by.sleep_when_done.value) continue;
-        rows.push(settingRow(label, picker(opts, s.value, v => setSetting(k, Number(v)))));
-      } else if (s.type === "string") {
-        const t = document.createElement("input"); t.type = "text"; t.className = "topic"; t.value = s.value || ""; t.placeholder = "off";
-        t.autocapitalize = "off"; t.spellcheck = false;
-        t.addEventListener("change", () => setSetting(k, t.value.trim()));
-        rows.push(settingRow(label, t));
-      }
-    }
-    if (!rows.length) continue;
-    const h = document.createElement("div"); h.className = "sec"; h.textContent = title;
-    const g = document.createElement("div"); g.className = "group"; rows.forEach(r => g.appendChild(r));
-    root.append(h, g);
-    if (foot) { const f = document.createElement("p"); f.className = "foot"; f.textContent = foot; root.appendChild(f); }
-  }
-}
-
-// Three tabs, like an iOS app: Now (the main screen), Apps, Settings.
-function showTab(t) {
-  $("home").hidden = t !== "now";
-  document.querySelector("header.top").hidden = t !== "now";
-  $("apps").hidden = t !== "apps";
-  $("settings").hidden = t !== "settings";
-  document.querySelectorAll("#tabbar button").forEach(b => { const on = b.dataset.nav === t; b.classList.toggle("sel", on); b.setAttribute("aria-selected", String(on)); });
-  window.scrollTo(0, 0);
-  if (t === "settings") send("schema");
-}
-
-const PRESET_DETAIL = { longest: "Pauses chat and background apps; music and calls keep going", balanced: "Slows background apps", speed: "Leaves apps alone" };
-function show(id, on) { $(id).hidden = !on; }
-function text(id, t) { $(id).textContent = t || ""; }
-
-const clock = at => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-// "09:41" today, "Mon 09:41" within the week, a date before that.
-const when = at => {
-  const d = new Date(at), now = new Date();
-  if (d.toDateString() === now.toDateString()) return clock(at);
-  if (now - d < 6 * 864e5) return d.toLocaleDateString([], { weekday: "short" }) + " " + clock(at);
-  return d.toLocaleDateString([], { day: "numeric", month: "short" }) + " " + clock(at);
-};
-
-// One plain sentence under the mode switch, in the Mac panel's words.
-const MODE_TEXT = { off: "Sleeps like any laptop.", auto: "Stays awake while your AI agents work, then sleeps.", on: "Stays awake until you turn it off." };
-function modeText(mode) {
-  let u = mode === "on" && state && state.mode === "on" ? state.alwaysUntil : null;
-  if (typeof u === "number") u = clock(u < 1e12 ? u * 1000 : u);   // a time stamp; laptops send the words as a rule
-  return u ? `Stays awake until ${u}.` : MODE_TEXT[mode] || "";
-}
-/** Shows a mode as picked: on a tap at once, and again whenever the laptop answers. */
-function showMode(mode) {
-  document.querySelectorAll("[data-mode]").forEach(b => { const sel = b.dataset.mode === mode; b.classList.toggle("sel", sel); b.setAttribute("aria-checked", sel); });
-  text("modetext", modeText(mode));
-  show("timers", mode === "on");   // same as the Mac: timers while it's set to Always
-}
-
-/** "95% · about 19 h with the lid closed": the laptop's own sentence, else built from its parts (older laptops send one line). */
-function batteryLine(p) {
-  if (p.batteryLine) return p.batteryLine;
-  const pct = p.batteryPercentText || p.batteryState;
-  if (p.figure) return (pct ? pct + " · about " : "About ") + p.figure + " with the lid closed";
-  return p.battery || "";
-}
-
-/** at: when the laptop sent this (now for a fresh reply, the saved time for the copy shown before the first one). */
-/* Waking a sleeping laptop: the "wake" waits at the relay until the laptop's next check-in (if they're on). */
-let wakeSentAt = 0, wakePoll = null;
-function asleepHint() {
-  // A wake only reaches a sleeping laptop at a check-in, so the button shows only when those are on.
-  show("wakebox", !wakeSentAt && !!(state && state.checkIn));
-  const every = state && state.checkIn;
-  const t = wakeSentAt
-    ? "Sent. It wakes at its next check-in" + (every ? " (within " + every + " min)" : "") + " and stays awake for an hour."
-    : every ? "If it's asleep, it checks for a wake every " + every + " min."
-            : "To wake it from here, turn on “Check for a wake from your phone” in Nocturnal's settings on the laptop.";
-  text("waketext", t); show("waketext", true);
-}
-function wakeAnswered() {
-  wakeSentAt = 0; if (wakePoll) { clearInterval(wakePoll); wakePoll = null; }
-  show("wakebox", false); show("waketext", false);
-}
-async function wakeLaptop() {
-  wakeSentAt = Date.now(); show("wakebox", false);
-  const r = await send("wake", { minutes: 60 });
-  if (r) return;   // it was awake and answered: render() already cleared the hint
-  asleepHint();
-  // Ask for the panel once a minute; the first answer means it's awake.
-  if (!wakePoll) wakePoll = setInterval(() => {
-    if (Date.now() - wakeSentAt > 3 * 3600e3) { wakeAnswered(); return; }
-    refresh(true);
-  }, 60000);
-}
-
-function render(p, at = Date.now()) {
-  const fresh = at && at > (stateAt || 0) && Date.now() - at < 60000;   // a new answer, not a redraw of the last one
-  state = p; stateAt = at;
-  if (fresh) wakeAnswered();   // it answered, so it's awake
-  store.set("nocturnal.last", JSON.stringify({ p, at }));
-  text("host", p.host || "Laptop");
-  // Plain state, the same words on every laptop version: it keeps working, or it sleeps.
-  text("headline", p.keeps ? "Keeps working" : p.lidClosed ? "Going to sleep" : "Sleeps normally");
-  text("detail", p.detail);
-  $("lidicon").classList.toggle("keeps", !!p.keeps);
-  $("statuscard").classList.toggle("keeps", !!p.keeps);
-  text("approve", p.autoApprove ? "On" : "Off");
-  $("approve").classList.toggle("on", !!p.autoApprove);
-  showMode(p.mode);
-  // Same as the Mac: Sleep Now while it's holding the laptop awake (and not set to Always).
-  show("sleepnow", p.holding && p.mode !== "on");
-  const w = $("warnings"); w.textContent = "";
-  (p.warnings || []).forEach(t => { const e = document.createElement("p"); e.className = "warn"; e.textContent = t; w.appendChild(e); });
-
-  const bl = batteryLine(p);
-  show("batt", !!bl);
-  text("battext", bl);
-  const pct = /(\d{1,3})\s*%/.exec(bl);
-  $("battfill").setAttribute("width", pct ? Math.max(1.5, 18 * Math.min(100, +pct[1]) / 100).toFixed(1) : 18);
-
-  document.querySelectorAll("[data-preset]").forEach(b => {
-    const m = { max_battery: "longest", balanced: "balanced", full_speed: "speed" }[b.dataset.preset];
-    const sel = m === p.preset; b.classList.toggle("sel", sel); b.setAttribute("aria-checked", sel);
-  });
-  text("presetdetail", PRESET_DETAIL[p.preset]);
-  const ag = $("agents"); ag.textContent = "";
-  const agents = p.agents || [];
-  if (!agents.length) empty(ag, "Claude, Codex, Gemini, Cursor and other agents show up here when they run.");
-  agents.forEach(a => ag.appendChild(toggleRow(a.name + (a.instances > 1 ? " ×" + a.instances : ""), a.working ? "Working" : "Idle", a.keeps, ev => tap("track", { agent: a.id, keeps: ev.target.checked }))));
-  const wl = $("watch"); wl.textContent = "";
-  const watch = p.watch || [];
-  if (!watch.length) empty(wl, "Busy apps on the laptop show up here.");
-  watch.forEach(a => wl.appendChild(toggleRow(a.name, null, a.on, ev => tap("watch", { app: a.id, remove: !ev.target.checked }))));
-  renderSavings(p);
-  text("updated", at ? "Updated " + when(at) : "Not updated yet");
-}
-
-const SAVING_NAMES = [["screen_off", "Screen fully off"], ["screen", "Screen off (locks)"], ["low_power", "Low Power Mode"],
-  ["apps", "Slowing other apps"], ["simulators", "Pausing simulators"], ["audio", "Pausing background audio"]];
-let measurePoll = null;
-/** Mac only: what each lid-closed saving is worth, measured on that laptop. */
-function renderSavings(p) {
-  const box = $("savingsbox"), el = $("savings"), s = p.savings || {}, unclear = p.savingsUnclear || [];
-  const has = Object.keys(s).length > 0 || unclear.length > 0;
-  box.hidden = !(has || p.powerTest || p.powerTestAborted || p.canMeasure);
-  el.textContent = "";
-  const row = (name, value) => {
-    const r = document.createElement("div"); r.className = "row";
-    const a = document.createElement("span"); a.textContent = name;
-    const b = document.createElement("span"); b.className = "v"; b.textContent = value;
-    r.append(a, b); el.appendChild(r);
-  };
-  if (p.powerTest) empty(el, p.powerTest + ". Keep the lid shut; agents keep running.");
-  else {
-    // Results from before stay below; the laptop says why the last run stopped (for example the lid was opened).
-    if (p.powerTestAborted) empty(el, "Last measurement stopped: " + String(p.powerTestAborted).replace(/\.$/, "") + ".");
-    if (has) {
-      if ("total" in s || unclear.includes("total")) {
-        row("All of Nocturnal's savings", unclear.includes("total") ? "unclear" : s.total >= 0.05 ? "saves " + s.total.toFixed(1) + " W" : "≈0 W");
-        if (s.closed_without && s.closed_with && !unclear.includes("total"))
-          row("Lid shut, without → with", s.closed_without.toFixed(1) + " → " + s.closed_with.toFixed(1) + " W");
-        if (unclear.includes("total")) empty(el, "Too much changed while measuring. Try again when it's quieter.");
-      }
-      SAVING_NAMES.filter(([k]) => k in s).forEach(([k, name]) => row(name, s[k] >= 0.05 ? "saves " + s[k].toFixed(1) + " W" : "≈0 W"));
-    }
-    else empty(el, "Close the lid, then measure.");
-  }
-  $("measure").hidden = !p.canMeasure;
-  $("measure").textContent = (has ? "Measure again" : "Measure now") + " (about 4 min)";
-  clearTimeout(measurePoll); measurePoll = null;
-  if (p.powerTest) measurePoll = setTimeout(() => refresh(true), 15000);   // follow the test more closely while it runs
-}
-
-/** Actions that let a closed laptop sleep can't be undone from the phone (a sleeping laptop can't hear it). Two taps. */
-function confirmTap(btn, warning, action) {
-  let armed = null;
-  const label = btn.textContent;
-  btn.addEventListener("click", () => {
-    if (!state || !state.lidClosed) return action();
-    if (armed) { clearTimeout(armed); armed = null; btn.textContent = label; btn.classList.remove("confirm"); return action(); }
-    btn.textContent = warning;
-    btn.classList.add("confirm");
-    armed = setTimeout(() => { armed = null; btn.textContent = label; btn.classList.remove("confirm"); }, 4000);
-  });
-}
-
-// Nocturnal is meant to be opened from the Home Screen, where it runs full screen like an app. In a phone's browser tab
-// (Safari's bars always show there) it asks for that first, once per visit; "Continue in the browser" skips it.
-const phone = ios || /Android/i.test(navigator.userAgent);
-let inBrowser = false;
-try { inBrowser = sessionStorage.getItem("nocturnal.inBrowser") === "1"; } catch (_) {}
-const needsInstall = () => phone && !standalone && !inBrowser;
-function showInstall() {
-  const share = '<svg width="15" height="18" viewBox="0 0 15 18" aria-hidden="true"><path d="M7.5 1v10M4 4.5 7.5 1 11 4.5M3 7.5H1.5v9h12v-9H12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  const steps = ios
-    ? [`Tap ${share} <b>Share</b> in Safari's bar`, "Tap <b>Add to Home Screen</b>", "Keep <b>Open as Web App</b> on, then tap <b>Add</b>"]
-    : ["Open the browser menu <b>⋮</b>", "Tap <b>Add to Home screen</b> or <b>Install app</b>", "Confirm with <b>Add</b>"];
-  $("steps").innerHTML = steps.map((t, i) => `<li><span class="num">${i + 1}</span><span>${t}</span></li>`).join("");
-  text("installhint", key ? "Then open Nocturnal from your Home Screen. It stays paired." : "Then open Nocturnal from your Home Screen and pair it there.");
-  $("pair").hidden = true; $("app").hidden = true; $("install").hidden = false;
-}
-
-async function begin(k, s) {
-  const raw = keyBytes(k);
-  if (!raw) return false;
-  keyText = k;
-  server = s || DEFAULT_SERVER;
-  key = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
-  cmdTopic = await topic("nocturnal/cmd/v1", raw);
-  replyTopic = await topic("nocturnal/reply/v1", raw);
-  $("pair").hidden = true;
-  $("app").hidden = false;
-  // The last status this phone saw, with the time it came, until the laptop answers (older pages saved just the panel).
-  try { const last = JSON.parse(store.get("nocturnal.last") || "null"); if (last) last.p ? render(last.p, last.at || null) : render(last, null); } catch (_) {}
-  if (needsInstall()) showInstall();
-  refresh(true);
-  return true;
-}
-
-function save(k, s) {
-  if (store.get("nocturnal.k") !== k) store.del("nocturnal.last");   // another laptop: don't show the old one's status
-  store.set("nocturnal.k", k);
-  store.del("nocturnal.unpaired");
-  if (s) store.set("nocturnal.s", s); else store.del("nocturnal.s");
-  // In a browser tab, keep the key in the address too: Add to Home Screen saves this address in the icon, so
-  // the app re-pairs itself on every launch even if the phone ever clears the page's storage.
-  if (!standalone) { try { history.replaceState(null, "", "#k=" + k + (s ? "&s=" + encodeURIComponent(s) : "")); } catch (_) {} }
-}
-
-async function start() {
-  if (!window.crypto || !crypto.subtle) { $("pair").hidden = false; $("pairerr").textContent = "This browser can't do the encryption Nocturnal needs. Open the page in Safari or Chrome."; return; }
-
-  const pick = (attr, b) => document.querySelectorAll(`[${attr}]`).forEach(x => x.classList.toggle("sel", x === b));   // answer the tap at once
-  document.querySelectorAll("[data-mode]").forEach(b => {
-    if (b.dataset.mode === "off") confirmTap(b, "Tap again", () => { showMode("off"); tap("mode", { mode: "off" }); });
-    else b.addEventListener("click", () => { showMode(b.dataset.mode); tap("mode", { mode: b.dataset.mode }); });
-  });
-  document.querySelectorAll("#tabbar button").forEach(b => b.addEventListener("click", () => showTab(b.dataset.nav)));
-  // Keep it fresh while it's on screen without spending the relay's daily allowance: every tap's answer already
-  // brings the status, so ask by itself only when nothing has been sent for 2 minutes.
-  setInterval(() => { if (key && !document.hidden && !pending && Date.now() - lastSent > REFRESH_MS) refresh(); }, 5000);
-  document.querySelectorAll("[data-preset]").forEach(b => b.addEventListener("click", () => { pick("data-preset", b); tap("preset", { preset: b.dataset.preset }); }));
-  document.querySelectorAll("[data-for]").forEach(b => b.addEventListener("click", () => send("mode", { mode: "always", minutes: +b.dataset.for })));
-  document.querySelectorAll("[data-until]").forEach(b => b.addEventListener("click", () => send("mode", { mode: "always", until_hour: +b.dataset.until })));
-  confirmTap($("sleepnow"), "Tap again to let it sleep", () => send("sleep_now"));
-  $("wakebtn").addEventListener("click", wakeLaptop);
-  $("refresh").addEventListener("click", () => send("panel", {}, { force: true }));
-  $("measure").addEventListener("click", async () => { await send("power_test"); setTimeout(() => refresh(true), 3000); });
-  $("inbrowser").addEventListener("click", () => {
-    inBrowser = true; try { sessionStorage.setItem("nocturnal.inBrowser", "1"); } catch (_) {}
-    $("install").hidden = true;
-    if (key) $("app").hidden = false; else $("pair").hidden = false;
-  });
-  let copied = null;
-  $("copycode").addEventListener("click", async () => {
-    // The same form the paste box takes, server included, so it pairs another phone as is.
-    const text = "k=" + keyText + (server !== DEFAULT_SERVER ? "&s=" + encodeURIComponent(server) : "");
-    try { await navigator.clipboard.writeText(text); $("copycode").textContent = "Copied"; }
-    catch (_) { prompt("Pairing code", text); }
-    clearTimeout(copied);
-    copied = setTimeout(() => { $("copycode").textContent = "Copy pairing code"; }, 2000);
-  });
-  let unpairArmed = null;
-  $("unpair").addEventListener("click", () => {
-    const b = $("unpair");
-    if (!unpairArmed) {
-      b.textContent = "Tap again to unpair"; b.classList.add("confirm");
-      unpairArmed = setTimeout(() => { unpairArmed = null; b.textContent = "Unpair this phone"; b.classList.remove("confirm"); }, 4000);
-      return;
-    }
-    clearTimeout(unpairArmed);
-    closeStream();
-    ["nocturnal.k", "nocturnal.s", "nocturnal.last"].forEach(store.del);
-    store.set("nocturnal.unpaired", "1");   // so the home-screen icon's saved link doesn't pair it again on the next launch
-    location.replace(location.pathname);
-  });
-  // In the background the open connection is closed (iPhone would drop it anyway). Back on screen: reopen it, which
-  // replays answers that came in meanwhile to a tap still waiting, and refresh even if that tap is still in flight.
-  const back = () => {
-    if (!key) return;
-    if (waiters.size && window.EventSource) openStream();
-    refresh(true);
-  };
-  document.addEventListener("visibilitychange", () => { if (document.hidden) closeStream(); else back(); });
-  window.addEventListener("pageshow", e => { if (e.persisted) back(); });
-  $("scanbtn").addEventListener("click", startScan);
-  $("scanstop").addEventListener("click", stopScan);
-  document.addEventListener("visibilitychange", () => { if (document.hidden) stopScan(); });
-  $("pairform").addEventListener("submit", async e => {
-    e.preventDefault();
-    const { k, s } = parsePairing($("code").value);
-    if (!k || !keyBytes(k)) { $("pairerr").textContent = "That doesn't look like an Nocturnal pairing code."; return; }
-    save(k, s);
-    $("pairerr").textContent = "";
-    await begin(k, s);
-  });
-
-  // 1. A link with the key in it (the QR code). Save it. In a browser tab the key stays in the address so
-  //    "Add to Home Screen" carries it into the app (on iPhone, home-screen apps don't share Safari's storage).
-  //    Inside the home-screen app it's removed from the address once saved. The icon keeps the address it was added
-  //    with, though, so every launch brings the same link back: once applied, it must not undo a newer pairing or
-  //    an unpair made in the app since.
-  const fromLink = parsePairing(location.hash.slice(1));
-  if (fromLink.k && keyBytes(fromLink.k)) {
-    const stored = store.get("nocturnal.k");
-    const stale = standalone && fromLink.k === store.get("nocturnal.linkApplied") &&
-      (store.get("nocturnal.unpaired") === "1" || (!!stored && stored !== fromLink.k));
-    if (standalone) { try { history.replaceState(null, "", location.pathname); } catch (_) {} }
-    if (!stale) {
-      save(fromLink.k, fromLink.s);
-      store.set("nocturnal.linkApplied", fromLink.k);
-      return begin(fromLink.k, fromLink.s);
-    }
-  }
-  // 2. Paired before on this phone.
-  const k = store.get("nocturnal.k");
-  if (k && await begin(k, parsePairing("s=" + (store.get("nocturnal.s") || "")).s)) return;
-  // 3. Not paired yet.
-  if (needsInstall()) showInstall(); else $("pair").hidden = false;
-}
-start();
-</script>
+<script src="app.js"></script>
 </body>
 </html>
