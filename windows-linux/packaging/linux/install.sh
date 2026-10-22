@@ -21,8 +21,6 @@ fi
 
 # Stop a running copy gracefully (it puts back anything it changed) before replacing the files.
 if [ -x "$bin/nocturnal" ]; then "$bin/nocturnal" rescue >/dev/null 2>&1 || true; fi
-# The app's old name: put back what it changed and unregister its watchdog (its files are left in place).
-if [ -x "$bin/ajar" ]; then "$bin/ajar" rescue >/dev/null 2>&1 || true; "$bin/ajar" uninstall >/dev/null 2>&1 || true; fi
 
 mkdir -p "$bin" "$apps" "$icons/256x256/apps" "$icons/128x128/apps" "$icons/48x48/apps"
 install -m 755 "$here/nocturnal" "$here/nocturnal-app" "$bin/"

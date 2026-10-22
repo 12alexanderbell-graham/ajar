@@ -3,4 +3,4 @@ xcuserdata/
 DerivedData/
 windows-linux/target/
 windows-linux/dist/
-*.ajar-backup
+*.nocturnal-backup

@@ -122,15 +122,7 @@ enum StateFiles {
     static let dir: URL = {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let u = support.appendingPathComponent("Nocturnal")
-        let fresh = !FileManager.default.fileExists(atPath: u.path)
         try? FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
-        // The app used to be called Ajar: carry its settings, history and Approve everything journal over once.
-        if fresh {
-            let old = support.appendingPathComponent("Ajar")
-            for f in ["config.json", "safety.json", "stats.json", "auto-approve.json"] {
-                try? FileManager.default.copyItem(at: old.appendingPathComponent(f), to: u.appendingPathComponent(f))
-            }
-        }
         return u
     }()
     static var hold: URL { dir.appendingPathComponent("hold") }                     // present while a hold is on
@@ -209,8 +201,7 @@ enum Setup {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/LaunchAgents/\(label).plist")
     }
 
-    /// Nocturnal's own entry is in place and sudo accepts it (the old Ajar entry granted the same commands, so
-    /// sudo alone can't tell them apart; Set Up replaces it).
+    /// Nocturnal's sudoers entry is in place and sudo accepts it.
     static var sudoReady: Bool {
         FileManager.default.fileExists(atPath: sudoersPath)
             && Shell.run("/usr/bin/sudo", ["-n", "-l", "/usr/bin/pmset", "-a", "disablesleep", "1"]).code == 0
@@ -260,9 +251,6 @@ enum Setup {
             + " && /usr/sbin/visudo -cf \(staged)"
             + " && /bin/mv -f \(staged) \(sudoersPath)"
             + " && " + cliLinkCommand
-            // Leftovers from when the app was called Ajar: its sudoers entry, and its command if it's a link.
-            + " && /bin/rm -f /private/etc/sudoers.d/ajar"
-            + " && { [ ! -L /usr/local/bin/ajar ] || /bin/rm -f /usr/local/bin/ajar; }"
         try runAsAdmin(cmd, prompt: "Nocturnal needs your password once to control sleep while the lid is closed.")
         try? FileManager.default.removeItem(at: tmp)
         guard sudoReady else { throw SetupError(message: "Installed, but sudo isn't accepting it yet. Try Set up again.") }
@@ -404,10 +392,6 @@ enum Setup {
 
     static func installWatchdog() throws {
         let fm = FileManager.default
-        // The old Ajar watchdog (same job, old name): stop and remove it.
-        let oldLabel = "com.alexander.ajar.watchdog"
-        Shell.run("/bin/launchctl", ["bootout", "gui/\(getuid())/\(oldLabel)"])
-        try? fm.removeItem(at: fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/LaunchAgents/\(oldLabel).plist"))
         try watchdogScript.write(to: StateFiles.watchdog, atomically: true, encoding: .utf8)
         try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: StateFiles.watchdog.path)
         try fm.createDirectory(at: plistURL.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -433,7 +417,6 @@ enum Setup {
         StateFiles.remove(StateFiles.watchdog)
         var cmds: [String] = []
         if FileManager.default.fileExists(atPath: sudoersPath) || sudoReady { cmds.append("/bin/rm -f \(sudoersPath)") }
-        if FileManager.default.fileExists(atPath: "/private/etc/sudoers.d/ajar") { cmds.append("/bin/rm -f /private/etc/sudoers.d/ajar") }
         if cliInstalled { cmds.append("/bin/rm -f \(cliPath)") }
         guard !cmds.isEmpty else { return }
         try runAsAdmin(cmds.joined(separator: " && "), prompt: "Nocturnal needs your password to remove its sleep permission and the nocturnal command.")

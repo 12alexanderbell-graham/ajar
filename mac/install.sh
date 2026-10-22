@@ -33,17 +33,6 @@ if running; then
   if running; then /usr/bin/pkill -KILL -f "/Applications/Nocturnal.app/Contents/MacOS/Nocturnal$"; sleep 1; fi
 fi
 
-# The app's old name: put back everything the old Ajar changed, stop it, and move it aside too. Nocturnal's Set Up
-# removes Ajar's leftovers (its sudoers entry, `ajar` command and watchdog) and carries its settings over.
-OLD=/Applications/Ajar.app
-if [ -d "$OLD" ]; then
-  "$OLD/Contents/MacOS/Ajar" cli rescue || true
-  for i in 1 2 3 4 5 6 7 8 9 10; do /usr/bin/pgrep -qf "Ajar.app/Contents/MacOS/Ajar$" || break; sleep 1; done
-  /usr/bin/pkill -TERM -f "/Applications/Ajar.app/Contents/MacOS/Ajar$" || true
-  mkdir -p _to_delete
-  mv "$OLD" "_to_delete/Ajar-$(date +%Y%m%d-%H%M%S).app"
-fi
-
 rm -rf /Applications/Nocturnal.app.new
 cp -R "$NEW" /Applications/Nocturnal.app.new
 mkdir -p _to_delete
