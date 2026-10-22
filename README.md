@@ -16,7 +16,7 @@ With the lid shut it pauses apps you aren't using and turns on Low Power Mode. O
 - **Windows / Linux:** download from the same page (Linux: unpack, run `./install.sh`).
 - **Connect your agent:** `ajar connect`, then paste the output of `ajar prompt` into Claude Code or Codex.
 
-<p align="center"><img src="docs/menu.png" width="320" alt="Ajar's menu on the Now tab: When Busy, 'Close the lid: it keeps working', battery figures"> &nbsp; <img src="docs/phone.png" width="220" alt="Ajar's phone page"></p>
+<p align="center"><img src="docs/menu.png" width="320" alt="Ajar's menu on the Now tab: When Busy, 'Keeps working', battery figures"> &nbsp; <img src="docs/phone.png" width="220" alt="Ajar's phone page"></p>
 
 ## What it does
 
