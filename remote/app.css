@@ -198,3 +198,7 @@ input[type=text] {
 .link { display: block; margin: 18px auto 0; min-height: 44px; padding: 0 12px; color: var(--accent); font-size: 17px; }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* Asleep or not answering: nothing but a wake would land. */
+.resting .slider, .resting .sheetbody .row, .resting .sheetbody .seg { filter: grayscale(1); pointer-events: none; }
+.circle:disabled { opacity: .5; }
