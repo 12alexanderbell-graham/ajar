@@ -141,14 +141,14 @@
       <h1>Close the lid.<br>Your AI keeps working.</h1>
       <p class="lede">Awake while your agents work. Asleep when they're done.</p>
       <a class="btn" id="dl" href="downloads/Nocturnal-1.0.0-mac.zip">Download for Mac</a>
-      <p class="meta">Free · <a href="downloads/Nocturnal-1.0.0-mac.zip">Mac</a> · <a href="downloads/Nocturnal-1.0.0-windows-x86_64.zip">Windows</a> · <a href="downloads/nocturnal-1.0.0-linux-x86_64.tar.gz">Linux</a></p>
+      <p class="meta">Free · <a href="downloads/Nocturnal-1.0.0-mac.zip">Mac</a> · <a href="downloads/Nocturnal-1.0.0-windows-x86_64.zip">Windows</a> and <a href="downloads/nocturnal-1.0.0-linux-x86_64.tar.gz">Linux</a> in beta</p>
     </div>
     <figure class="shot">
       <img src="panel-now.png" alt="Nocturnal's menu: When Busy is on, and closing the lid keeps it working" width="640" height="472">
     </figure>
     <div class="install">
       <p class="meta"><code>brew install --cask 12alexanderbell-graham/ajar/nocturnal</code></p>
-      <p class="first" id="first">If macOS blocks it: System Settings › Privacy &amp; Security › Open Anyway.</p>
+      <p class="first" id="first" hidden></p>
     </div>
   </header>
 
@@ -165,7 +165,7 @@
     <div class="proof">
       <h2 id="proof-h">Less battery, lid shut</h2>
       <div class="big" aria-label="18.3 watts down to 3.1 watts">18.3 W <span class="arrow">→</span> <span class="low">3.1 W</span></div>
-      <p class="fine">Measured by Nocturnal on an M5 Max MacBook Pro.</p>
+      <p class="fine">One test on an M5 Max MacBook Pro with iOS simulators open. Yours will differ, and Nocturnal measures your own.</p>
     </div>
   </section>
 
@@ -173,6 +173,7 @@
     <div class="center"><h2 id="feat-h">You're in control</h2></div>
     <div class="two">
       <div class="list">
+        <div class="item"><h3>Knows when Claude Code needs you</h3></div>
         <div class="item"><h3>Sleeps when it's done</h3></div>
         <div class="item"><h3>No lock screen</h3></div>
         <div class="item"><h3>Battery and heat limits</h3></div>
@@ -184,11 +185,11 @@
 
   <section aria-labelledby="phone-h">
     <div class="split">
-      <img src="phone.png" alt="Nocturnal on a phone" width="390" height="433">
+      <img src="phone.png" alt="Nocturnal on a phone: Keeps working, battery, the keep-awake slider" width="390" height="844">
       <div>
         <h2 id="phone-h">Check on it from your phone</h2>
-        <p class="sub">On the laptop: <b>Nocturnal › Settings › Phone</b>, then scan.</p>
-        <p class="small"><a href="remote/">Open the phone page</a></p>
+        <p class="sub">On the laptop: <b>Nocturnal › Settings › Phone</b>, then scan. Add it to your Home Screen and it opens like an app.</p>
+        <p class="small">End-to-end encrypted, a key for each phone. iPhone app coming soon. <a href="remote/">Open the phone page</a></p>
       </div>
     </div>
   </section>
@@ -210,7 +211,7 @@ Never turn off the heat guard or lower the battery limit; Nocturnal won't let yo
     <h2 id="faq-h">Questions</h2>
     <div class="faq">
     <details><summary>Safe in a bag?</summary><p>It sleeps if it gets hot or the battery runs low.</p></details>
-    <details><summary>What does it change?</summary><p>Sleep, Low Power Mode, brightness, Time Machine and idle apps. Opening the lid puts it all back.</p></details>
+    <details><summary>What does it change?</summary><p>Sleep, Low Power Mode, brightness and idle apps. Opening the lid puts it all back.</p></details>
     <details><summary>Lost internet with the lid shut?</summary><p>On an iPhone hotspot, set System Settings › Wi‑Fi › Ask to join hotspots to Automatic.</p></details>
     <details><summary>Free?</summary><p>Yes, and <a href="https://github.com/12alexanderbell-graham/ajar">open source</a>.</p></details>
     </div>
@@ -221,7 +222,7 @@ Never turn off the heat guard or lower the battery limit; Nocturnal won't let yo
     <a class="btn" id="dl2" href="downloads/Nocturnal-1.0.0-mac.zip">Download for Mac</a>
   </section>
 
-  <footer>© 2026 Nocturnal · MIT · <a href="https://github.com/12alexanderbell-graham/ajar">GitHub</a> · <a href="llms.txt">llms.txt</a></footer>
+  <footer>© 2026 Nocturnal · MIT · <a href="https://github.com/12alexanderbell-graham/ajar">GitHub</a> · <a href="privacy.html">Privacy</a> · <a href="llms.txt">llms.txt</a></footer>
 </div>
 <script>
   document.getElementById("copy").addEventListener("click", function () {
@@ -236,12 +237,12 @@ Never turn off the heat guard or lower the battery limit; Nocturnal won't let yo
     function set(label, href) { btns.forEach(function (b) { b.textContent = label; b.href = href; }); }
     if (/Windows/.test(ua)) {
       set("Download for Windows", "downloads/Nocturnal-1.0.0-windows-x86_64.zip");
-      first.textContent = "If Windows warns you: More info › Run anyway.";
+      first.textContent = "If Windows warns you: More info › Run anyway."; first.hidden = false;
     } else if (/Linux/.test(ua) && !/Android/.test(ua)) {
       set("Download for Linux", "downloads/nocturnal-1.0.0-linux-x86_64.tar.gz");
-      first.textContent = "Unpack it and run ./install.sh.";
+      first.textContent = "Unpack it and run ./install.sh."; first.hidden = false;
     } else if (/iPhone|iPad|Android/.test(ua)) {
-      first.textContent = "Open this page on your laptop to download it.";
+      first.textContent = "Open this page on your laptop to download it."; first.hidden = false;
     }
   })();
 </script>
