@@ -172,7 +172,7 @@ select.pick{-webkit-appearance:none;appearance:none;border:0;background:none;col
         <video id="cam" playsinline muted autoplay></video>
         <button class="btn" type="button" id="scanstop">Cancel</button>
       </div>
-      <p class="hint">On your laptop, click the phone button in Ajar.</p>
+      <p class="hint">On your laptop, open Ajar and choose Pair a Phone.</p>
       <div class="sec">Or paste the code</div>
       <form id="pairform" class="group" autocomplete="off">
         <input type="text" id="code" placeholder="Pairing code or link" aria-label="Pairing code or link" autocapitalize="off" autocorrect="off" spellcheck="false">
@@ -681,11 +681,18 @@ function showTab(t) {
   if (t === "settings") send("schema");
 }
 
-const PRESET_DETAIL = { longest: "Pauses other apps until you open the lid", balanced: "Slows other apps", speed: "Leaves apps alone" };
+const PRESET_DETAIL = { longest: "Pauses chat and background apps; music and calls keep going", balanced: "Slows background apps", speed: "Leaves apps alone" };
 function show(id, on) { $(id).hidden = !on; }
 function text(id, t) { $(id).textContent = t || ""; }
 
 const clock = at => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+// "09:41" today, "Mon 09:41" within the week, a date before that.
+const when = at => {
+  const d = new Date(at), now = new Date();
+  if (d.toDateString() === now.toDateString()) return clock(at);
+  if (now - d < 6 * 864e5) return d.toLocaleDateString([], { weekday: "short" }) + " " + clock(at);
+  return d.toLocaleDateString([], { day: "numeric", month: "short" }) + " " + clock(at);
+};
 
 // One plain sentence under the mode switch, in the Mac panel's words.
 const MODE_TEXT = { off: "Sleeps like any laptop.", auto: "Stays awake while your AI agents work, then sleeps.", on: "Stays awake until you turn it off." };
@@ -713,7 +720,8 @@ function batteryLine(p) {
 /* Waking a sleeping laptop: the "wake" waits at the relay until the laptop's next check-in (if they're on). */
 let wakeSentAt = 0, wakePoll = null;
 function asleepHint() {
-  show("wakebox", !wakeSentAt);
+  // A wake only reaches a sleeping laptop at a check-in, so the button shows only when those are on.
+  show("wakebox", !wakeSentAt && !!(state && state.checkIn));
   const every = state && state.checkIn;
   const t = wakeSentAt
     ? "Sent. It wakes at its next check-in" + (every ? " (within " + every + " min)" : "") + " and stays awake for an hour."
@@ -776,7 +784,7 @@ function render(p, at = Date.now()) {
   if (!watch.length) empty(wl, "Busy apps on the laptop show up here.");
   watch.forEach(a => wl.appendChild(toggleRow(a.name, null, a.on, ev => tap("watch", { app: a.id, remove: !ev.target.checked }))));
   renderSavings(p);
-  text("updated", at ? "Updated " + clock(at) : "Not updated yet");
+  text("updated", at ? "Updated " + when(at) : "Not updated yet");
 }
 
 const SAVING_NAMES = [["screen_off", "Screen fully off"], ["screen", "Screen off (locks)"], ["low_power", "Low Power Mode"],
