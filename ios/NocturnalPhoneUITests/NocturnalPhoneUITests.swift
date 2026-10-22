@@ -143,6 +143,12 @@ final class NocturnalPhoneUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Keeps it awake"].waitForExistence(timeout: 3), app.debugDescription)
         sleep(2)
         shot(app, "m2-settings")
+        app.buttons["settings"].tap()
+        sleep(1)
+        app.buttons["main"].tap()
+        XCTAssertTrue(wait(app.staticTexts["headline"], contains: "Asleep", timeout: 8), app.debugDescription)
+        sleep(2)
+        shot(app, "m3-asleep")
     }
 
     // MARK: Helpers
