@@ -56,7 +56,6 @@ impl Preset {
             _ => None,
         }
     }
-    pub const ALL: [Preset; 3] = [Preset::Longest, Preset::Balanced, Preset::Speed];
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize)]
@@ -68,6 +67,13 @@ pub enum AppRule {
 }
 
 impl AppRule {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AppRule::Leave => "leave",
+            AppRule::Slow => "slow",
+            AppRule::Pause => "pause",
+        }
+    }
     pub fn parse(s: &str) -> Option<AppRule> {
         match s.trim().to_lowercase().as_str() {
             "leave" => Some(AppRule::Leave),
@@ -78,7 +84,7 @@ impl AppRule {
     }
 }
 
-/// An app or command the person added to "keeps the Mac awake". `id` is the executable name (lowercase,
+/// An app or command the person added to "keeps the laptop awake". `id` is the executable name (lowercase,
 /// without `.exe`) so it matches on any install path.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize)]
 pub struct WatchedApp {
@@ -310,35 +316,27 @@ impl Config {
 
     /// What closing the lid does to an app under the current preset and rules.
     pub fn rule_for(&self, exe: &str, preset: Preset) -> AppRule {
-        if let Some(r) = self.app_rules.get(&exe_key(exe)) {
-            return *r;
-        }
         let key = exe_key(exe);
-        match preset {
+        let listed = |list: &[&str]| list.contains(&key.as_str());
+        let rule = self.app_rules.get(&key).copied().unwrap_or(match preset {
             Preset::Speed => AppRule::Leave,
             Preset::Balanced => {
-                if SLOW_BY_DEFAULT.contains(&key.as_str())
-                    || PAUSE_SUGGESTIONS.contains(&key.as_str())
-                {
+                if listed(SLOW_BY_DEFAULT) || listed(PAUSE_SUGGESTIONS) || listed(NEVER_PAUSE) {
                     AppRule::Slow
                 } else {
                     AppRule::Leave
                 }
             }
-            Preset::Longest => {
-                if MEDIA_AND_CALLS.contains(&key.as_str()) {
-                    // Music or a call in headphones may be going on with the lid shut.
-                    AppRule::Leave
-                } else if PAUSE_SUGGESTIONS.contains(&key.as_str())
-                    || PAUSE_ON_MAX.contains(&key.as_str())
-                {
-                    AppRule::Pause
-                } else if SLOW_BY_DEFAULT.contains(&key.as_str()) {
-                    AppRule::Slow
-                } else {
-                    AppRule::Leave
-                }
-            }
+            // Music or a call in headphones may be going on with the lid shut.
+            Preset::Longest if listed(MEDIA_AND_CALLS) => AppRule::Leave,
+            Preset::Longest if listed(PAUSE_SUGGESTIONS) || listed(PAUSE_ON_MAX) => AppRule::Pause,
+            Preset::Longest if listed(SLOW_BY_DEFAULT) || listed(NEVER_PAUSE) => AppRule::Slow,
+            Preset::Longest => AppRule::Leave,
+        });
+        if rule == AppRule::Pause && listed(NEVER_PAUSE) {
+            AppRule::Slow
+        } else {
+            rule
         }
     }
 }
@@ -382,11 +380,8 @@ pub const SLOW_BY_DEFAULT: &[&str] = &[
     "skype",
 ];
 
-/// Messaging apps: paused (frozen until the lid opens) under Max Battery only. They reconnect and catch up when
-/// resumed. Call and music apps are deliberately not here (a call or music in headphones may be going on with
-/// the lid shut); they are slowed instead.
-/// Max Battery also pauses these (documents, launchers, sync clients); they catch up when the lid opens.
-/// Browsers stay slowed rather than paused because an agent may be driving one.
+/// Mail, documents, launchers and sync clients: paused (frozen until the lid opens) under Max Battery; they catch
+/// up when it opens. Browsers stay slowed rather than paused because an agent may be driving one.
 pub const PAUSE_ON_MAX: &[&str] = &[
     "thunderbird",
     "outlook",
@@ -412,6 +407,93 @@ pub const MEDIA_AND_CALLS: &[&str] = &[
     "spotify", "vlc", "music.ui", "teams", "ms-teams", "zoom", "skype",
 ];
 
+/// Terminals and code editors: slowed with the lid shut, never paused, whatever the preset or a per-app rule says.
+/// A frozen terminal stops reading its output, so a command running in it (an agent's or not) stalls as soon as
+/// the output buffer fills; editors run terminals, language servers and agents of their own.
+pub const NEVER_PAUSE: &[&str] = &[
+    // Windows
+    "windowsterminal",
+    "wt",
+    "openconsole",
+    "conhost",
+    "mintty",
+    "tabby",
+    "hyper",
+    "warp",
+    // Linux
+    "gnome-terminal",
+    "gnome-terminal-server",
+    "kgx",
+    "ptyxis",
+    "ptyxis-agent",
+    "konsole",
+    "yakuake",
+    "xfce4-terminal",
+    "mate-terminal",
+    "lxterminal",
+    "qterminal",
+    "tilix",
+    "terminator",
+    "terminology",
+    "guake",
+    "foot",
+    "footclient",
+    "xterm",
+    "urxvt",
+    "rxvt",
+    "st",
+    "sakura",
+    "blackbox",
+    "warp-terminal",
+    // Both
+    "alacritty",
+    "kitty",
+    "wezterm",
+    "wezterm-gui",
+    "ghostty",
+    "rio",
+    // Code editors
+    "code",
+    "code-insiders",
+    "codium",
+    "cursor",
+    "windsurf",
+    "zed",
+    "zed-editor",
+    "zeditor",
+    "sublime_text",
+    "devenv",
+    "emacs",
+    "gvim",
+    "neovide",
+    "kate",
+    // JetBrains IDEs (Windows launchers end in 64; Linux launchers have the plain name)
+    "idea",
+    "idea64",
+    "pycharm",
+    "pycharm64",
+    "webstorm",
+    "webstorm64",
+    "clion",
+    "clion64",
+    "goland",
+    "goland64",
+    "rider",
+    "rider64",
+    "rustrover",
+    "rustrover64",
+    "phpstorm",
+    "phpstorm64",
+    "rubymine",
+    "rubymine64",
+    "datagrip",
+    "datagrip64",
+    "studio",
+    "studio64",
+    "fleet",
+];
+
+/// Messaging apps: slowed by Balanced, paused by Max Battery. They reconnect and catch up when resumed.
 pub const PAUSE_SUGGESTIONS: &[&str] = &[
     "slack",
     "discord",
@@ -499,6 +581,38 @@ mod tests {
             "an agent may be driving the browser"
         );
         assert_eq!(c.rule_for("chrome", Preset::Speed), AppRule::Leave);
+    }
+
+    #[test]
+    fn terminals_and_editors_are_slowed_but_never_paused() {
+        let mut c = Config::default();
+        for exe in [
+            r"C:\Program Files\WindowsApps\Microsoft.WindowsTerminal\WindowsTerminal.exe",
+            "/usr/libexec/gnome-terminal-server",
+            "konsole",
+            "wezterm-gui",
+            "Code.exe",
+            "cursor",
+            "zed-editor",
+            "idea64.exe",
+        ] {
+            for preset in [Preset::Balanced, Preset::Longest] {
+                assert_eq!(
+                    c.rule_for(exe, preset),
+                    AppRule::Slow,
+                    "{exe} on {preset:?}"
+                );
+            }
+            assert_eq!(c.rule_for(exe, Preset::Speed), AppRule::Leave, "{exe}");
+        }
+        c.app_rules.insert("alacritty".into(), AppRule::Pause);
+        c.app_rules.insert("code".into(), AppRule::Leave);
+        assert_eq!(
+            c.rule_for("alacritty", Preset::Longest),
+            AppRule::Slow,
+            "a pause rule is applied as a slow-down"
+        );
+        assert_eq!(c.rule_for("code", Preset::Longest), AppRule::Leave);
     }
 
     #[test]

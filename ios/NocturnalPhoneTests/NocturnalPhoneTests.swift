@@ -54,11 +54,38 @@ struct ProtocolTests {
 
     @Test func theDemoAnswersLikeAComputer() {
         let d = DemoComputer()
-        #expect(d.handle("mode", ["mode": "off"]).panel?.keeps == false)
+        #expect(d.handle("mode", ["mode": "off"]).panel?.keeps == true, "a hold keeps it awake even when Nocturnal is off")
         #expect(d.handle("set", ["key": "battery_floor", "value": 5]).ok == false)
         #expect(d.handle("schema", [:]).settings?.contains { $0.key == "heat_guard" } == true)
         #expect(d.handle("rule", ["app": "com.google.Chrome", "rule": "pause"]).panel?.apps.first?.rule == "pause")
         #expect(d.handle("release", ["id": "h1"]).panel?.holdList.isEmpty == true)
+        #expect(d.handle("panel", [:]).panel?.keeps == false)
+    }
+
+    @Test func sleepShowsAsleepAtOnceAndAWakeBringsItBack() async {
+        let c = Computer.preview
+        await c.choose(.always)
+        c.hold(.sleep)
+        #expect(c.shownStop == .busy, "while Sleep counts down the band shows where it lands, not Always")
+        await c.releaseHeld()
+        #expect(c.asleep && !c.reachable)
+        #expect(c.headline == "Asleep")
+        try? await Task.sleep(for: .seconds(2.2))   // "Done" shows for 2 s first
+        #expect(c.freshness(at: .now).text.hasPrefix("Asleep since"))
+        #expect(c.groundLevel == 0)
+        await c.wake()
+        #expect(c.reachable && c.headline == "Keeps working")
+        #expect(c.panel?.holdList.contains { $0.id == "wake" } == true)
+    }
+
+    @Test func theGroundFollowsTheBand() {
+        let c = Computer.preview
+        c.hovering = .off
+        let off = c.groundLevel
+        c.hovering = .h2
+        let twoHours = c.groundLevel
+        c.hovering = .always
+        #expect(off < twoHours && twoHours < c.groundLevel)
     }
 
     @Test func readsEverySettingKind() {

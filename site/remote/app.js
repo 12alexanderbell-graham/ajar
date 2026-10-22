@@ -33,6 +33,11 @@ const REPLY_WAIT_MS = 20000;
 
 let key = null, cmdTopic = "", replyTopic = "", server = DEFAULT_SERVER;
 let state = null, stateAt = 0, lastId = null, lastSent = 0, pending = 0, noAnswer = false;
+/** When the computer was seen going to sleep (it agreed to Sleep, or reported the lid shut with nothing keeping it
+ *  awake). A sleeping computer can't answer, so the page says so at once instead of "Live" until a request times out. */
+let asleepSince = 0;
+const notAnswering = () => noAnswer && !!state && !!state.keeps && !state.lidClosed;
+const isAsleep = () => !!asleepSince || (noAnswer && !notAnswering());
 
 /** fetch that gives up after 12 s, so a stalled connection can't leave the page waiting. */
 async function fetchT(url, opts = {}, ms = 12000) {
@@ -165,12 +170,13 @@ async function sendNow(cmd, args, bg) {
     const reply = live ? await Promise.race([replied, sleep(REPLY_WAIT_MS).then(() => null)]) : await waitFor(n, since);
     if (!reply) {
       noAnswer = true;
-      if (!bg) ack(cmd === "wake" && state && state.checkIn ? "Sent. It wakes at its next check-in" : "No answer", "bad", 6000);
+      if (!bg) ack("No answer", "bad", 6000);
       render(state, stateAt);
       return null;
     }
     noAnswer = false;
     if (reply.panel) render(reply.panel, Date.now());
+    if (cmd === "sleep_now" && reply.ok !== false) { asleepSince = Date.now(); render(state, stateAt); }
     if (reply.settings) renderSettings(reply.settings);
     if (reply.ok === false && reply.error) { note(reply.error); if (!bg) ack("Not done", "bad", 3000); }
     else if (!bg) ack("Done", "done", 2000);
@@ -205,6 +211,7 @@ function ago(ms) {
 function drawFresh() {
   let text, kind;
   if (ackText) { text = ackText; kind = ackKind; }
+  else if (isAsleep()) { text = "Asleep since " + clock(asleepSince || stateAt); kind = ""; }
   else if (!stateAt) { text = "Connecting…"; kind = "busy"; }
   else if (Date.now() - stateAt < LIVE_MS && !noAnswer) { text = "Live"; kind = "live"; }
   else { text = ago(Date.now() - stateAt); kind = ""; }
@@ -263,31 +270,41 @@ function agentLine(p) {
 }
 
 function headline(p) {
-  if (noAnswer) return p && p.keeps && !p.lidClosed ? "Not answering" : "Asleep";
+  if (notAnswering()) return "Not answering";
+  if (isAsleep()) return "Asleep";
   if (!p) return "…";
   return p.keeps ? "Keeps working" : p.lidClosed ? "Going to sleep" : "Sleeps normally";
 }
 
 function wakeHint() {
   const every = state && state.checkIn;
-  if (wakeSentAt && every) return `Wake sent. It wakes at its next check-in, within ${every} min.`;
+  if (wakeSentAt && every) return `Wake sent. It wakes at its next check-in, by ${clock(wakeSentAt + every * 60000)}.`;
   return every ? `It checks for a wake every ${every} min.` : "To wake it from here, turn on check-ins in Nocturnal's settings.";
 }
 
 function render(p, at) {
   if (!p) { $("headline").textContent = headline(null); drawFresh(); return; }
   const fresh = at && at > stateAt && Date.now() - at < 60000;
+  if (fresh) {
+    const wasSleeping = !!state && state.lidClosed && !state.keeps;
+    if (p.keeps || (!p.lidClosed && (!asleepSince || Date.now() - asleepSince > 30000))) asleepSince = 0;
+    else if (p.lidClosed && !p.keeps && !wasSleeping) asleepSince = Date.now();
+    if (p.keeps) wakeAnswered();
+  }
   state = p; if (at) stateAt = at;
-  if (fresh) wakeAnswered();
   store.set("nocturnal.last", JSON.stringify({ p, at: stateAt }));
 
   $("host").textContent = p.host || "Your computer";
   $("forget").textContent = armed.forget ? "Tap again to forget" : `Forget ${p.host || "this computer"}`;
-  const keeps = !!p.keeps && !noAnswer;
+  const asleep = isAsleep(), reachable = !asleep && !notAnswering();
+  const keeps = !!p.keeps && reachable;
   $("card").classList.toggle("keeps", keeps);
+  // Asleep or silent, only a wake can land: the slider, Sleep and the settings rest until it answers again.
+  document.body.classList.toggle("resting", !reachable);
+  $("sleepbtn").disabled = !reachable;
   const h = headline(p);
   if ($("headline").textContent !== h) { $("headline").textContent = h; $("announce").textContent = h; }
-  $("line").textContent = noAnswer ? wakeHint() : agentLine(p);
+  $("line").textContent = reachable ? agentLine(p) : wakeHint();
   const w = $("warnings"); w.textContent = "";
   (p.warnings || []).forEach(t => { const e = document.createElement("p"); e.textContent = t; w.appendChild(e); });
 
@@ -430,10 +447,13 @@ function capsuleSetup() {
     clearTimeout(armed.sleep); armed.sleep = null; sb.classList.remove("confirm");
     send("sleep_now");
   });
-  // Wake: a sleeping computer gets it at its next check-in (it waits at the relay); an awake one stays up an hour.
+  // Wake: a sleeping computer gets it at its next check-in (it waits at the relay), so it says "sent" at once; an
+  // awake one stays up for the daily wake's length (an hour unless set).
   $("wakebtn").addEventListener("click", async () => {
     wakeSentAt = Date.now();
-    const r = await send("wake", { minutes: 60 });
+    ack("Wake sent", "done", 6000);
+    render(state, stateAt);
+    const r = await send("wake", { minutes: (state && state.wakeFor) || 60 }, { bg: true });
     if (r) return;
     if (!wakePoll) wakePoll = setInterval(() => {
       if (Date.now() - wakeSentAt > 3 * 3600e3) { wakeAnswered(); return; }

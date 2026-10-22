@@ -14,7 +14,6 @@ struct PowerSample {
     /// Running totals the controller keeps; the difference between two samples is an exact average.
     var accumulated: Int64?
     var count: Int64?
-    var at = Date()
 }
 
 enum PowerSensor {
@@ -157,7 +156,8 @@ final class LidWatcher {
 
 /// Apps that must keep running with the lid shut even on Max Battery: music and calls (headphones, lid shut) are
 /// left alone; services agents commonly talk to (containers, local models, databases, browsers an agent may be
-/// driving) are slowed, never paused, so a running agent doesn't hang on them.
+/// driving) are slowed, never paused, so a running agent doesn't hang on them. Terminals and editors too: a frozen
+/// terminal stops reading its output, so a build or download left running in it stalls once the buffer fills.
 enum AppClasses {
     static let mediaAndCalls: Set<String> = [
         "com.apple.Music", "com.spotify.client", "com.apple.podcasts", "com.apple.TV", "org.videolan.vlc", "com.colliderli.iina",
@@ -167,9 +167,13 @@ enum AppClasses {
         "com.docker.docker", "dev.kdrag0n.MacVirt", "com.electron.ollama", "ai.elementlabs.lmstudio", "com.postgresapp.Postgres2",
         "com.google.Chrome", "com.apple.Safari", "company.thebrowser.Browser", "org.mozilla.firefox", "com.brave.Browser",
         "com.microsoft.edgemac", "com.apple.dt.Xcode", "com.utmapp.UTM", "com.parallels.desktop.console",
+        "com.apple.Terminal", "com.googlecode.iterm2", "com.mitchellh.ghostty", "dev.warp.Warp-Stable", "com.github.wez.wezterm",
+        "net.kovidgoyal.kitty", "org.alacritty", "com.microsoft.VSCode", "com.todesktop.230313mzl4w4u92", "dev.zed.Zed",
     ]
     /// Name fallback for services whose bundle id varies between versions.
     static func isAgentService(name: String) -> Bool {
-        ["Docker", "OrbStack", "Ollama", "LM Studio", "Postgres", "Redis", "UTM", "Parallels"].contains { name.localizedCaseInsensitiveContains($0) }
+        ["Docker", "OrbStack", "Ollama", "LM Studio", "Postgres", "Redis", "UTM", "Parallels",
+         "Terminal", "iTerm", "Ghostty", "Warp", "WezTerm", "kitty", "Alacritty", "Visual Studio Code", "Cursor", "Zed",
+         "IntelliJ", "PyCharm", "WebStorm", "GoLand", "RustRover", "CLion", "Android Studio"].contains { name.localizedCaseInsensitiveContains($0) }
     }
 }

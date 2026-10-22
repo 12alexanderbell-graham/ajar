@@ -32,32 +32,40 @@ final class NocturnalPhoneUITests: XCTestCase {
         XCTAssertTrue(wait(app.staticTexts["readout"], contains: "Always"), app.staticTexts["readout"].label)
         shot(app, "03-always")
 
-        // Off with the lid shut waits with an Undo.
-        tapStop(band, 0)
+        // Sleep now waits with an Undo; the band already shows where it lands (When busy, not Always).
+        app.buttons["main"].tap()
         let undo = app.buttons["undo"]
         XCTAssertTrue(undo.waitForExistence(timeout: 2), app.debugDescription)
-        shot(app, "04-off-undo")
+        XCTAssertTrue(wait(app.staticTexts["readout"], contains: "Sleeps in"), app.staticTexts["readout"].label)
+        shot(app, "04-sleep-undo")
         undo.tap()
         XCTAssertTrue(wait(app.staticTexts["readout"], contains: "Always"), app.staticTexts["readout"].label)
 
-        // Off for real: after the Undo runs out the computer goes to sleep (the ground turns to night).
-        tapStop(band, 0)
-        XCTAssertTrue(wait(headline, contains: "Going to sleep", timeout: 8), headline.label)
-        sleep(1)
-        shot(app, "05-off")
-
-        // Back to When busy.
-        tapStop(band, 1)
-        XCTAssertTrue(wait(headline, contains: "Keeps working"), headline.label)
-
-        // Sleep now: Undo first, then it sleeps.
+        // Sleep for real: once the Undo runs out it says Asleep straight away, the ground goes to night and the
+        // band rests until it wakes.
         app.buttons["main"].tap()
-        XCTAssertTrue(undo.waitForExistence(timeout: 2))
-        shot(app, "06-sleep-undo")
-        XCTAssertTrue(wait(headline, contains: "Going to sleep", timeout: 8), headline.label)
+        XCTAssertTrue(wait(headline, contains: "Asleep", timeout: 8), headline.label)
+        XCTAssertTrue(wait(app.staticTexts["readout"], contains: "Asleep"), app.staticTexts["readout"].label)
+        XCTAssertTrue((band.value as? String ?? "").contains("unavailable"), "\(band.value ?? "")")
+        sleep(1)
+        shot(app, "05-asleep")
+
+        // Settings say it's asleep and stay put until it wakes.
+        app.buttons["settings"].tap()
+        XCTAssertTrue(app.staticTexts["It's asleep. Settings change once it wakes."].waitForExistence(timeout: 3), app.debugDescription)
+        sleep(1)
+        shot(app, "05b-asleep-settings")
+        app.buttons["settings"].tap()
+        sleep(1)
+
+        // Wake it: the demo answers at once (a real sleeping computer picks it up at its next check-in).
+        XCTAssertEqual(app.buttons["main"].label, "Wake it")
+        app.buttons["main"].tap()
+        XCTAssertTrue(wait(headline, contains: "Keeps working", timeout: 4), headline.label)
+        sleep(1)
+        shot(app, "06-woken")
 
         // Settings grow out of the gear; pull up for the whole screen; tap the gear to close.
-        tapStop(band, 1)
         app.buttons["settings"].tap()
         XCTAssertTrue(app.staticTexts["Keeps it awake"].waitForExistence(timeout: 3), app.debugDescription)
         sleep(1)
@@ -119,6 +127,22 @@ final class NocturnalPhoneUITests: XCTestCase {
         XCTAssertTrue(app.buttons["demo"].waitForExistence(timeout: 3))
         app.buttons["demo"].tap()
         XCTAssertTrue(app.staticTexts["headline"].waitForExistence(timeout: 3))
+    }
+
+    /// Clean screenshots for the website and the App Store: the demo without Exit Demo, reading "Live".
+    @MainActor
+    func testMarketingShots() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-marketing"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["headline"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(app.buttons["exitDemo"].exists)
+        sleep(2)
+        shot(app, "m1-home")
+        app.buttons["settings"].tap()
+        XCTAssertTrue(app.staticTexts["Keeps it awake"].waitForExistence(timeout: 3), app.debugDescription)
+        sleep(2)
+        shot(app, "m2-settings")
     }
 
     // MARK: Helpers

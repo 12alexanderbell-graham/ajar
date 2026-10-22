@@ -30,17 +30,9 @@ pub fn start_time(pid: u32) -> Option<u64> {
     imp::start_time(pid)
 }
 
-pub fn alive(pid: u32) -> bool {
-    imp::start_time(pid).is_some()
-}
-
 /// The current working folder's name for a process (shown as the agent's project). Linux only.
 pub fn cwd_name(pid: u32) -> Option<String> {
     imp::cwd_name(pid)
-}
-
-pub fn exe_path(pid: u32) -> Option<String> {
-    imp::exe_path(pid)
 }
 
 /// (now, units per second) in the same units as `Proc::start`, so the age of a process can be computed.
@@ -213,10 +205,6 @@ mod imp {
     }
     const PROCESS_COMMAND_LINE_INFORMATION: u32 = 60;
 
-    pub fn ft_pub(f: FILETIME) -> u64 {
-        ft(f)
-    }
-
     fn ft(f: FILETIME) -> u64 {
         ((f.dwHighDateTime as u64) << 32) | f.dwLowDateTime as u64
     }
@@ -282,9 +270,9 @@ mod imp {
     }
 
     pub fn start_clock() -> Option<(u64, u64)> {
-        let mut ft: FILETIME = unsafe { zeroed() };
-        unsafe { windows_sys::Win32::System::SystemInformation::GetSystemTimeAsFileTime(&mut ft) };
-        Some((ft_pub(ft), 10_000_000))
+        let mut now: FILETIME = unsafe { zeroed() };
+        unsafe { windows_sys::Win32::System::SystemInformation::GetSystemTimeAsFileTime(&mut now) };
+        Some((ft(now), 10_000_000))
     }
 
     pub fn start_time(pid: u32) -> Option<u64> {
@@ -349,10 +337,7 @@ mod imp {
                         }
                         if mine {
                             p.exe = image(h);
-                            if matches!(
-                                p.name.as_str(),
-                                "node" | "bun" | "deno" | "python" | "python3" | "pythonw"
-                            ) {
+                            if crate::agents::is_interpreter(&p.name) {
                                 p.cmd = command_line(h);
                             }
                         }
@@ -407,6 +392,6 @@ mod tests {
 
     #[test]
     fn dead_pid_is_not_alive() {
-        assert!(!alive(4_000_000));
+        assert!(start_time(4_000_000).is_none());
     }
 }

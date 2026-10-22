@@ -445,9 +445,8 @@ fn engine_thread(
                 // Just woke: the relay connection is probably dead without knowing it. Start a fresh listener
                 // now (it carries on from the saved cursor); the old one quits at its next line or timeout
                 // without handling anything more.
-                if let Some(r) = remote.take() {
-                    r.stop.store(true, Ordering::SeqCst);
-                    remote = start_remote(&root, tx.clone());
+                if remote.is_some() {
+                    restart_remote(&root, &tx, &mut remote);
                 }
             }
             if e.ticks().is_multiple_of(5) {
@@ -576,7 +575,7 @@ fn apply<P: Platform>(
         Action::PhonePair => {
             let mut s = remote::Settings::load(root);
             if s.panel_url.is_empty() {
-                s.panel_url = default_panel_url(root);
+                s.panel_url = default_panel_url();
             }
             s.enabled = true;
             let Some(phone) = s.add_phone(nocturnal::now()) else {
@@ -642,8 +641,7 @@ fn apply<P: Platform>(
 }
 
 /// Where the phone page is served from (nocturnal.tools/remote). To host it elsewhere, set `panelUrl` in remote.json.
-fn default_panel_url(root: &Path) -> String {
-    let _ = root;
+fn default_panel_url() -> String {
     option_env!("NOCTURNAL_PANEL_URL")
         .unwrap_or("https://nocturnal.tools/remote/")
         .to_string()

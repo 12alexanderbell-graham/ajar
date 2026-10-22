@@ -72,7 +72,6 @@ struct AgentSession: Identifiable, Equatable {
     /// What the agent itself reported through its hooks (nil when it has none): working, waiting for the person,
     /// finished. Set by the engine; overrides the power-based guess.
     var state: AgentState?
-    var stateSince: Date?
 }
 
 /// A sleep blocker someone else is holding, for the "also keeping your Mac awake" list.
@@ -100,7 +99,6 @@ final class AgentWatcher {
 
     private(set) var blockers: [SleepBlocker] = []
 
-    private var extraKinds: [AgentKind] = []
     /// First time each sleep request was seen, for requests that don't say when they started.
     private var requestFirstSeen: [String: Date] = [:]
 
@@ -114,7 +112,6 @@ final class AgentWatcher {
     static let busyChildWatts = 0.05
 
     func sample(custom: [WatchedApp] = [], requests: Bool = true, extraKinds: [AgentKind] = []) {
-        self.extraKinds = extraKinds
         let now = Date()
         let dt = lastSample.map { now.timeIntervalSince($0) } ?? 0
         let previousSampleUs = lastSample.map { UInt64($0.timeIntervalSince1970 * 1_000_000) }

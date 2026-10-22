@@ -89,7 +89,7 @@ final class Hotkey {
                 return noErr
             }, 1, &spec, nil, &handler)
         }
-        let id = EventHotKeyID(signature: OSType(0x414A4152), id: 1) // 'NOCTURNAL'
+        let id = EventHotKeyID(signature: OSType(0x4E4F4354), id: 1)   // 'NOCT'
         if RegisterEventHotKey(UInt32(kVK_ANSI_A), UInt32(cmdKey | optionKey | controlKey), id, GetApplicationEventTarget(), 0, &ref) != noErr {
             ref = nil   // another app owns the shortcut; stay unregistered rather than half-registered
         }

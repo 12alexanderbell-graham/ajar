@@ -13,6 +13,8 @@ final class Computer {
 
     private(set) var pairing: Pairing?
     private(set) var isDemo = false
+    /// The demo dressed for screenshots (website, App Store): no Exit Demo, and it reads "Live".
+    private(set) var isMarketing = false
     private(set) var panel: Panel?
     private(set) var panelAt: Date?
     private(set) var noAnswer = false
@@ -20,7 +22,13 @@ final class Computer {
     private(set) var settings: [Setting]?
     private(set) var message: String?
     private(set) var wakeSentAt: Date?
+    /// When the computer was last seen going to sleep: it agreed to Sleep, or reported the lid shut with nothing
+    /// keeping it awake. A sleeping computer can't answer, so the app says so at once instead of waiting for a
+    /// request to time out.
+    private(set) var asleepSince: Date?
     private(set) var pending = 0
+    /// The stop under the finger while the band is dragged; the ground follows it.
+    var hovering: Stop?
 
     private var relay: Relay?
     private var demo: DemoComputer?
@@ -38,6 +46,7 @@ final class Computer {
     var isPaired: Bool { pairing != nil || isDemo }
 
     init() {
+        if CommandLine.arguments.contains("-marketing") { isMarketing = true; startDemo(); return }
         if CommandLine.arguments.contains("-demo") { startDemo(); return }   // UI tests and screenshots
         if CommandLine.arguments.contains("-unpaired") { return }
         if let p = PairingStore.load() { use(p) }
@@ -80,6 +89,8 @@ final class Computer {
         ack = nil
         message = nil
         wakeSentAt = nil
+        asleepSince = nil
+        hovering = nil
         undoHeld()
         lastTimed = nil
         PairingStore.delete()
@@ -156,6 +167,7 @@ final class Computer {
             }
             noAnswer = false
             if let p = reply.panel { draw(p) }
+            if cmd == "sleep_now", reply.ok { asleepSince = Date() }
             if let s = reply.settings { settings = s }
             if !reply.ok, let e = reply.error {
                 say(e)
@@ -166,7 +178,7 @@ final class Computer {
             return reply
         } catch Relay.Failure.noAnswer {
             noAnswer = true
-            if !background { show(cmd == "wake" && (panel?.checkIn ?? 0) > 0 ? .wakeQueued : .noAnswer, for: 6) }
+            if !background { show(.noAnswer, for: 6) }
             return nil
         } catch {
             let why = if case Relay.Failure.relay(let w) = error { w } else { "Can't reach the relay" }
@@ -197,9 +209,12 @@ final class Computer {
         await send("schema", background: true)
     }
 
+    /// A sleeping computer picks the wake up at its next check-in, so this says "sent" straight away rather than
+    /// waiting for an answer that can't come yet.
     func wake() async {
         wakeSentAt = Date()
-        await send("wake", ["minutes": 60])
+        show(.wakeQueued, for: 6)
+        await send("wake", ["minutes": panel?.wakeFor ?? 60], background: true)
     }
 
     // MARK: Keep awake
@@ -222,8 +237,19 @@ final class Computer {
         }
     }
 
+    /// The stop the band shows. While Sleep counts down it already shows where the computer will be afterwards:
+    /// sleeping ends Always and timers (back to When busy), and Off is Off.
+    var shownStop: Stop {
+        switch held {
+        case .off: .off
+        case .sleep: stop.minutes != nil || stop == .always ? .busy : stop
+        case nil: stop
+        }
+    }
+
     /// Words for the band at rest: what it does now, with the end time for a timed stop.
     var stopWords: String {
+        if asleep { return "Asleep" }
         if stop.minutes != nil, let until = panel?.alwaysUntil { return "Until \(until)" }
         return stop.word
     }
@@ -311,9 +337,15 @@ final class Computer {
     }
 
     private func draw(_ p: Panel) {
+        let wasSleeping = panel.map { $0.lidClosed && !$0.keeps } ?? false
+        if p.keeps || (!p.lidClosed && asleepSince.map { Date().timeIntervalSince($0) > 30 } ?? true) {
+            asleepSince = nil
+        } else if p.lidClosed && !p.keeps && !wasSleeping {
+            asleepSince = Date()
+        }
+        if p.keeps { wakeSentAt = nil }
         panel = p
         panelAt = Date()
-        wakeSentAt = nil
         if !isDemo, let data = try? JSONEncoder().encode(SavedPanel(panel: p, at: Date())) {
             UserDefaults.standard.set(data, forKey: Self.savedPanel)
         }
@@ -341,17 +373,20 @@ final class Computer {
     // MARK: Words for the screen
 
     func freshness(at now: Date) -> (text: String, kind: Freshness) {
-        if isDemo, ack == nil { return ("Demo", .live) }
         switch ack {
         case .sending: return ("Sending…", .busy)
         case .sent: return ("Sent", .busy)
         case .done: return ("Done", .done)
         case .refused: return ("Not done", .bad)
         case .noAnswer: return ("No answer", .bad)
-        case .wakeQueued: return ("Sent. It wakes at its next check-in", .bad)
+        case .wakeQueued: return ("Wake sent", .done)
         case .failed(let why): return (why, .bad)
         case nil: break
         }
+        if let since = asleepSince ?? (asleep ? panelAt : nil) {
+            return ("Asleep since " + since.formatted(date: .omitted, time: .shortened), .stale)
+        }
+        if isDemo { return (isMarketing ? "Live" : "Demo", .live) }
         guard let at = panelAt else { return ("Connecting…", .busy) }
         let age = now.timeIntervalSince(at)
         if age < Self.liveFor && !noAnswer { return ("Live", .live) }
@@ -363,22 +398,47 @@ final class Computer {
 
     enum Freshness { case live, busy, done, bad, stale }
 
+    /// Asleep, as far as the phone can tell: it went to sleep, or it stopped answering with nothing keeping it awake.
+    var asleep: Bool { asleepSince != nil || (noAnswer && !notAnswering) }
+
+    /// Kept awake with the lid open, yet silent: offline, not asleep.
+    private var notAnswering: Bool { noAnswer && panel.map { $0.keeps && !$0.lidClosed } == true }
+
+    /// It can take a command now. Asleep or silent, nothing but a wake would land.
+    var reachable: Bool { !asleep && !notAnswering }
+
+    /// Minutes between its check-ins while asleep (0: it can't be woken from here).
+    var checkIn: Int { panel?.checkIn ?? 0 }
+
     var headline: String {
-        if noAnswer { return panel.map { $0.keeps && !$0.lidClosed } == true ? "Not answering" : "Asleep" }
+        if notAnswering { return "Not answering" }
+        if asleep { return "Asleep" }
+        if held != nil { return "Going to sleep" }
         guard let p = panel else { return "…" }
         return p.keeps ? "Keeps working" : p.lidClosed ? "Going to sleep" : "Sleeps normally"
     }
 
     var line: String {
-        if noAnswer {
-            let every = panel?.checkIn ?? 0
-            if wakeSentAt != nil, every > 0 { return "Wake sent. It wakes at its next check-in, within \(every) min." }
-            return every > 0 ? "It checks for a wake every \(every) min." : "To wake it from here, turn on check-ins in Nocturnal's settings."
+        guard asleep || notAnswering else { return panel?.agentLine ?? "" }
+        if checkIn == 0 { return "To wake it from here, turn on check-ins on the computer." }
+        if let sent = wakeSentAt {
+            let by = sent.addingTimeInterval(Double(checkIn) * 60).formatted(date: .omitted, time: .shortened)
+            return "Wake sent. It wakes at its next check-in, by \(by)."
         }
-        return panel?.agentLine ?? ""
+        return "It checks for a wake every \(checkIn) min."
     }
 
-    var keepsWorking: Bool { (panel?.keeps ?? false) && !noAnswer }
+    var keepsWorking: Bool { (panel?.keeps ?? false) && reachable }
+
+    /// How awake the ground looks, from night (0) to green (1): it follows the band under the finger, goes towards
+    /// night while a sleep counts down, is night while asleep, and otherwise matches the band.
+    var groundLevel: Double {
+        guard isPaired else { return 1 }
+        if let h = hovering { return h.level(working: true) }
+        if held != nil || asleep { return 0 }
+        if notAnswering { return 0.3 }
+        return shownStop.level(working: keepsWorking)
+    }
 
     private struct SavedPanel: Codable {
         var panel: Panel

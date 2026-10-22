@@ -105,7 +105,7 @@ extension Engine {
                          "setting": "pause_background_audio", "value": config.pauseBackgroundAudio, "suggested_value": "on",
                          "measured_saving_watts": r1(powerEffects["audio"])])
         let busy = userApps.filter { !isProtected($0) && $0.watts > 0.2 }.prefix(6)
-        suspects.append(["id": "apps", "active": !busy.isEmpty, "title": busy.isEmpty ? "No other app is busy" : "Busy apps: " + busy.map { "\($0.name) \(String(format: "%.1f", $0.watts)) W (\(rule(for: $0.bundleID).rawValue))" }.joined(separator: ", "),
+        suspects.append(["id": "apps", "active": !busy.isEmpty, "title": busy.isEmpty ? "No other app is busy" : "Busy apps: " + busy.map { "\($0.name) \(String(format: "%.1f", $0.watts)) W (\(rule(for: $0.bundleID, name: $0.name).rawValue))" }.joined(separator: ", "),
                          "setting": "preset", "value": ["longest": "max_battery", "balanced": "balanced", "speed": "full_speed"][config.preset.rawValue] ?? "", "suggested_value": "max_battery",
                          "per_app": "nocturnal rule <app> pause", "measured_saving_watts": r1(powerEffects["apps"])])
         if Displays.externalConnected {
@@ -182,8 +182,8 @@ extension Engine {
 
     /// The battery controller publishes its power figures about every 30 s (an exact average of the samples it
     /// took since the last time). So a reading waits for the next update after a change (it mixes before and
-    /// after), then returns the exact average over the following full period: only the state just set.
-    /// Shorter windows saw no update at all and read a stale figure, which is how the first tests got nonsense.
+    /// after), then returns the exact average over the following full period: only the state just set. A shorter
+    /// window can see no update at all and read a stale figure.
     func cleanReading(_ done: @escaping (Double?) -> Void) {
         let start = PowerSensor.sample()?.count
         var boundary: PowerSample?
@@ -293,7 +293,7 @@ extension Engine {
             UserDefaults.standard.set(Array(powerUnclear), forKey: "powerUnclear")
         }
         // Back to exactly what the settings (and the heat guard) call for, or everything restored if the lid opened.
-        if lidClosed && holding { reapplyClosedState(forcing: heatForced ? .longest : nil) } else { restoreClosedState() }
+        if lidClosed && holding { reapplyClosedState(forcing: effectivePreset) } else { restoreClosedState() }
     }
 
     static func stepName(_ step: String) -> String {
@@ -304,15 +304,17 @@ extension Engine {
     /// Watts now, or nil on the charger.
     var drawNow: Double? { battery.flatMap { $0.discharging ? $0.watts : nil } }
 
-    /// What the Mac should draw with the lid shut under the current preset. Display off, other apps
-    /// slowed (≈ ¼ power, measured) or paused (0). The 1.6 W floor is SoC + Wi-Fi + memory with the lid shut.
+    /// What the Mac draws with the lid shut: the smoothed live figure while it is, otherwise the smoothed forecast.
     var closedEstimate: Double {
-        if lidClosed, holding, let d = systemWatts ?? drawNow { return d }
-        let others = apps.reduce(0.0) { sum, a in
-            if a.system { return sum }   // covered by the base figure
-            if isProtected(a) { return sum + a.watts }
-            switch rule(for: a.bundleID) { case .leave: return sum + a.watts; case .slow: return sum + a.watts * 0.25; case .pause: return sum }
-        }
+        if lidClosed, holding, let d = closedNow ?? systemWatts ?? drawNow { return d }
+        return closedForecast ?? closedModel
+    }
+
+    /// What the Mac should draw with the lid shut under the current preset: the learned figure from earlier
+    /// sessions, or display off plus other apps slowed (≈ ¼ power, measured) or paused (0) on a 1.6 W floor
+    /// (SoC, Wi-Fi and memory with the lid shut).
+    var closedModel: Double {
+        let others = apps.filter { !$0.system }.reduce(0.0) { $0 + closedWatts(for: $1) }   // system work is in the base figure
         let estimate = closedDraw ?? (1.6 + others)
         // Closing the lid only takes power away (screen off, apps slowed), so the estimate never exceeds what the
         // Mac draws right now with it open. (The learned figure can include heavy builds from earlier sessions.)

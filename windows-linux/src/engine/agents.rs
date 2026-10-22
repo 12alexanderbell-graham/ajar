@@ -61,7 +61,7 @@ impl<P: Platform> Engine<P> {
     /// Nocturnal can't tell success from a crash or a question waiting for an answer, so it never says "finished".
     pub(super) fn detect_finished(&mut self, now: u64) {
         let mut current: HashMap<String, (u64, String)> = HashMap::new();
-        let present: std::collections::HashSet<String> = self
+        let present: HashSet<String> = self
             .watcher
             .sessions
             .iter()
@@ -156,7 +156,7 @@ impl<P: Platform> Engine<P> {
     }
 
     pub(super) fn refresh_watch_offer(&mut self) {
-        let running: std::collections::HashSet<&str> = self
+        let running: HashSet<&str> = self
             .procs
             .iter()
             .filter(|p| p.mine)
@@ -164,7 +164,7 @@ impl<P: Platform> Engine<P> {
             .collect();
         self.watch_offer
             .retain(|(k, _)| running.contains(k.as_str()));
-        let agents: std::collections::HashSet<String> = crate::agents::known()
+        let agents: HashSet<String> = crate::agents::known()
             .into_iter()
             .flat_map(|k| k.executables)
             .collect();

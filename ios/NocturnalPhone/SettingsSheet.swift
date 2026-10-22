@@ -36,71 +36,12 @@ struct SettingsContent: View {
         let p = computer.panel ?? Panel()
         let by = Dictionary((computer.settings ?? []).map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
         VStack(alignment: .leading, spacing: 34) {
-            keepsAwake(p, by)
-
-            group("With the lid shut") {
-                Segments(options: Self.presets.map { ($0.1, $0.2) }, selection: p.preset) { wire in
-                    let arg = Self.presets.first { $0.1 == wire }!.0
-                    Task { await computer.change("preset", ["preset": arg]) { $0.preset = wire } }
-                }
-                note(Self.presetDetail[p.preset] ?? "")
-                screenRow(by)
-                settingRows(["low_power", "pause_simulators"], by)
-                if by["pause_simulators"]?.bool == true { settingRows(["shut_down_simulators"], by) }
-                settingRows(["pause_background_audio", "pause_time_machine", "slow_builds"], by)
+            if !computer.reachable {
+                note(computer.asleep ? "It's asleep. Settings change once it wakes." : "It isn't answering. Settings change once it's back.",
+                     color: Theme.amber)
             }
-
-            busyApps(p)
-
-            group("When it sleeps") {
-                settingRows(["sleep_when_done"], by)
-                if by["sleep_when_done"]?.bool != false { settingRows(["quiet_minutes"], by) }
-                settingRows(["battery_floor", "only_on_power", "heat_guard"], by)
-                note("The battery limit, heat guard and plugged-in rule only loosen on the computer.")
-            }
-
-            group("Waking it from here") {
-                checkIn(by)
-                WakeAtRow(current: p.wakeAt, minutes: p.wakeFor ?? 60) { time, minutes in
-                    Task { await computer.setWakeAt(time, minutes: minutes) }
-                }
-                if p.wakeNeedsSetup { note("Wakes need a one-time setup on the computer: Settings › General › Set Up.", color: Theme.amber) }
-            }
-
-            savings(p)
-
-            if !p.sessions.isEmpty {
-                group("Recent lid-shut sessions") {
-                    ForEach(p.sessions) { s in
-                        Row {
-                            Text(s.when).font(.body).lineLimit(1)
-                            Spacer()
-                            Text(s.line).font(.subheadline.weight(.medium)).monospacedDigit().lineLimit(1)
-                        }
-                    }
-                }
-            }
-
-            group("Notifications") { settingRows(["notify_done", "done_chime"], by) }
-
-            group("On the computer") {
-                ForEach(["menubar", "appearance"].compactMap { by[$0] }) { s in enumRow(s) }
-                settingRows(["live_lid_icon", "notch_island", "show_in_dock", "hotkey"], by)
-            }
-
-            let extra = (computer.settings ?? []).filter { !Self.handled.contains($0.key) && ($0.type == "bool" || $0.type == "int" || $0.type == "enum") }
-            if !extra.isEmpty {
-                group("More") { ForEach(extra) { s in s.type == "enum" ? AnyView(enumRow(s)) : AnyView(row(s)) } }
-            }
-
-            group("Approve everything") {
-                Row {
-                    Text("Claude Code and Codex").font(.body)
-                    Spacer()
-                    Text(p.autoApprove ? "On" : "Off").font(.headline).foregroundStyle(p.autoApprove ? Theme.amber : .white)
-                }
-                note("Only the computer can switch it on.")
-            }
+            Group { sections(p, by) }
+                .disabled(!computer.reachable)
 
             VStack(alignment: .leading, spacing: 10) {
                 if let at = computer.panelAt {
@@ -128,6 +69,74 @@ struct SettingsContent: View {
     }
 
     // MARK: Sections
+
+    @ViewBuilder private func sections(_ p: Panel, _ by: [String: Setting]) -> some View {
+        keepsAwake(p, by)
+
+        group("With the lid shut") {
+            Segments(options: Self.presets.map { ($0.1, $0.2) }, selection: p.preset) { wire in
+                let arg = Self.presets.first { $0.1 == wire }!.0
+                Task { await computer.change("preset", ["preset": arg]) { $0.preset = wire } }
+            }
+            note(Self.presetDetail[p.preset] ?? "")
+            screenRow(by)
+            settingRows(["low_power", "pause_simulators"], by)
+            if by["pause_simulators"]?.bool == true { settingRows(["shut_down_simulators"], by) }
+            settingRows(["pause_background_audio", "pause_time_machine", "slow_builds"], by)
+        }
+
+        busyApps(p)
+
+        group("When it sleeps") {
+            settingRows(["sleep_when_done"], by)
+            if by["sleep_when_done"]?.bool != false { settingRows(["quiet_minutes"], by) }
+            settingRows(["battery_floor", "only_on_power", "heat_guard"], by)
+            note("The battery limit, heat guard and plugged-in rule only loosen on the computer.")
+        }
+
+        group("Waking it from here") {
+            checkIn(by)
+            WakeAtRow(current: p.wakeAt, minutes: p.wakeFor ?? 60) { time, minutes in
+                Task { await computer.setWakeAt(time, minutes: minutes) }
+            }
+            if p.wakeNeedsSetup { note("Wakes need a one-time setup on the computer: Settings › General › Set Up.", color: Theme.amber) }
+        }
+
+        savings(p)
+
+        if !p.sessions.isEmpty {
+            group("Recent lid-shut sessions") {
+                ForEach(p.sessions) { s in
+                    Row {
+                        Text(s.when).font(.body).lineLimit(1)
+                        Spacer()
+                        Text(s.line).font(.subheadline.weight(.medium)).monospacedDigit().lineLimit(1)
+                    }
+                }
+            }
+        }
+
+        group("Notifications") { settingRows(["notify_done", "done_chime"], by) }
+
+        group("On the computer") {
+            ForEach(["menubar", "appearance"].compactMap { by[$0] }) { s in enumRow(s) }
+            settingRows(["live_lid_icon", "notch_island", "show_in_dock", "hotkey"], by)
+        }
+
+        let extra = (computer.settings ?? []).filter { !Self.handled.contains($0.key) && ($0.type == "bool" || $0.type == "int" || $0.type == "enum") }
+        if !extra.isEmpty {
+            group("More") { ForEach(extra) { s in s.type == "enum" ? AnyView(enumRow(s)) : AnyView(row(s)) } }
+        }
+
+        group("Approve everything") {
+            Row {
+                Text("Claude Code and Codex").font(.body)
+                Spacer()
+                Text(p.autoApprove ? "On" : "Off").font(.headline).foregroundStyle(p.autoApprove ? Theme.amber : .white)
+            }
+            note("Only the computer can switch it on.")
+        }
+    }
 
     /// The Mac's Apps tab: what holds it awake right now (each can be ended), the agents, and the apps that keep it
     /// awake while busy.

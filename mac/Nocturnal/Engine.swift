@@ -11,7 +11,6 @@ struct Receipt: Equatable {
     var sleepRequestedAt: Date?
     /// Set only when macOS actually went to sleep (its own will-sleep notification), never on request alone.
     var sleptAt: Date?
-    var sleptBecause: String?
     var startPercent: Int?
     var endPercent: Int?
     var agentName: String?
@@ -58,13 +57,13 @@ final class Engine {
                 if c.screenOffNoLock { switchScreenOff() }
             }
         }
-        if old.screenOffNoLock != c.screenOffNoLock && lidClosed && holding && !c.lockOnClose {
+        if old.screenOffNoLock != c.screenOffNoLock && old.lockOnClose == c.lockOnClose && lidClosed && holding && !c.lockOnClose {
             if c.screenOffNoLock { switchScreenOff() } else { DisplayPower.restoreBuiltIn(); screenOff = false }
         }
         if (old.preset != c.preset || old.appRules != c.appRules || old.lowPowerWhileClosed != c.lowPowerWhileClosed
             || old.pauseSimulators != c.pauseSimulators || old.pauseBackgroundAudio != c.pauseBackgroundAudio
             || old.shutDownSimulators != c.shutDownSimulators || old.pauseTimeMachine != c.pauseTimeMachine) && lidClosed && holding && !powerTestRunning {
-            reapplyClosedState(forcing: heatForced ? .longest : nil)
+            reapplyClosedState(forcing: effectivePreset)
         }
         evaluate()
     }
@@ -97,10 +96,8 @@ final class Engine {
     var checkInUntil: Date?
     var checkInActivity: NSObjectProtocol?
     var powerEvents: PowerEvents?
-    /// The sudoers entry has the scheduled-wake commands (added after 1.0; Set Up again adds them).
+    /// The sudoers entry has every command this version uses (scheduled wakes, Time Machine, the watchdog's clean-up).
     var wakeReady = Setup.wakeReady
-    /// When the last wake was asked for, for the panel ("next check-in about 3:40").
-    var nextWakeAt: Date?
     /// The phone listener reconnects at once on a check-in (wired by RemoteControl).
     var onCheckIn: (() -> Void)?
     private(set) var holdReason: String?
@@ -113,7 +110,6 @@ final class Engine {
     let net = NetWatch()
     /// On an iPhone's Personal Hotspot right now (see NetWatch for why that matters with the lid shut).
     private(set) var onHotspot = NetWatch.inIPhoneHotspotRange
-    var online: Bool { net.online }
     /// Previews only: show the panel as if on an iPhone hotspot (a preview engine never touches the system).
     func previewOnHotspot() { if previewOnly { onHotspot = true } }
     private(set) var fullWh: Double = UserDefaults.standard.double(forKey: "fullWh") > 20 ? UserDefaults.standard.double(forKey: "fullWh") : 70
@@ -137,6 +133,12 @@ final class Engine {
     var lastPowerSample: PowerSample?
     /// What the Mac draws with the lid closed while Nocturnal holds it, learned from real readings.
     private(set) var closedDraw: Double? = UserDefaults.standard.object(forKey: "closedDraw") as? Double
+    /// The lid-shut figures the panel and phone show, averaged over a few minutes so "hours left" doesn't swing
+    /// with every reading: while shut, from the live draw (seeded with the estimate from before it closed); while
+    /// open, from the estimate.
+    private(set) var closedNow: Double?
+    private(set) var closedForecast: Double?
+    private var smoothedAt = Date()
     /// Simulators, previews and audio holders found on the last lid-closed pass.
     var background = BackgroundWork.Found()
     var lidWatcher: LidWatcher?
@@ -165,17 +167,15 @@ final class Engine {
     private(set) var snoozed = false
     /// Something about the watchdog or a hold that the person should know.
     var warning: String?
-    /// Phone control status, set by the relay.
-    var remoteStatus: String?
     var sleepRetries = 0
     var floorLatched = false
-    /// The person chose "Keep Awake Anyway" below the battery limit. Lasts until the charger is connected.
+    /// The person chose "Keep Going" below the battery limit. Lasts until the Mac charges.
     private(set) var floorOverride = false
 
-    /// True when the battery limit is what's stopping Nocturnal, so offering "Stay Awake" makes sense.
     /// Something (mode, a hold, an agent) wants the Mac awake, before the safety limits are applied.
     private(set) var wantsHold = false
 
+    /// True when the battery limit is what's stopping Nocturnal, so offering "Keep Going" makes sense.
     var blockedByFloor: Bool {
         guard wantsHold, config.batteryFloor > 0, let b = battery, b.discharging || !b.onAC, !floorOverride else { return false }
         // Same 3% band `evaluate` uses, so the button stays while the limit is still what's stopping Nocturnal.
@@ -248,9 +248,11 @@ final class Engine {
               let edited = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let current = (try? JSONSerialization.jsonObject(with: config.encoded())) as? [String: Any],
               let merged = try? JSONSerialization.data(withJSONObject: current.merging(edited) { _, new in new }),
-              let c = try? JSONDecoder().decode(Config.self, from: merged) else { return }
+              var c = try? JSONDecoder().decode(Config.self, from: merged) else { return }
+        // Safety is checked before anything is applied, so a loosened limit never takes effect, not even for a tick.
+        let undone = Self.keepSafety(&c)
         apply(c, save: false)
-        enforceSafety()
+        if undone.isEmpty { enforceSafety() } else { saveAndExplain(undone) }   // a tightened limit is recorded
     }
 
     /// Notes waiting to be shown (from startup, before notifications are wired).
@@ -259,19 +261,29 @@ final class Engine {
     /// Undoes any loosening of the heat guard or battery limit that didn't come from Nocturnal's own UI.
     func enforceSafety() {
         guard !previewOnly else { return }
-        let mine = Safety(heatGuard: config.heatGuard, batteryFloor: config.batteryFloor, onlyOnPower: config.onlyOnPower)
-        guard let s = Safety.load() else { mine.save(); return }
-        var undone: [String] = []
         var c = config
-        if s.heatGuard && !c.heatGuard { c.heatGuard = true; undone.append("the heat guard stays on") }
-        if c.batteryFloor < s.batteryFloor { c.batteryFloor = s.batteryFloor; undone.append("the battery limit stays at \(s.batteryFloor)%") }
-        if s.onlyOnPower == true && !c.onlyOnPower { c.onlyOnPower = true; undone.append("it still only stays awake on power") }
-        if undone.isEmpty {
-            if s != mine { mine.save() }
+        let undone = Self.keepSafety(&c)
+        guard !undone.isEmpty else {
+            let mine = Safety(heatGuard: c.heatGuard, batteryFloor: c.batteryFloor, onlyOnPower: c.onlyOnPower)
+            if Safety.load() != mine { mine.save() }
             return
         }
         config = c
-        try? c.encoded().write(to: Config.url, options: .atomic)
+        saveAndExplain(undone)
+    }
+
+    /// Puts back the safety settings recorded by Nocturnal's own UI wherever `c` loosens them; says what it undid.
+    static func keepSafety(_ c: inout Config) -> [String] {
+        guard let s = Safety.load() else { return [] }
+        var undone: [String] = []
+        if s.heatGuard && !c.heatGuard { c.heatGuard = true; undone.append("the heat guard stays on") }
+        if c.batteryFloor < s.batteryFloor { c.batteryFloor = s.batteryFloor; undone.append("the battery limit stays at \(s.batteryFloor)%") }
+        if s.onlyOnPower == true && !c.onlyOnPower { c.onlyOnPower = true; undone.append("it still only stays awake on power") }
+        return undone
+    }
+
+    private func saveAndExplain(_ undone: [String]) {
+        try? config.encoded().write(to: Config.url, options: .atomic)
         let note = ("Settings file change ignored", "Safety settings can only be loosened in Nocturnal itself: " + undone.joined(separator: " and ") + ".")
         if let n = onNote { n(note.0, note.1) } else { pendingNotes.append(note) }
     }
@@ -327,6 +339,7 @@ final class Engine {
         if pendingRelease, SleepSwitch.release() {
             pendingRelease = false
             if warning == "Couldn't switch sleep back on yet; Nocturnal keeps trying." { warning = nil }
+            if lidClosed && !holding { Shell.pmsetRoot(["sleepnow"]) }   // the sleep retries may have run out meanwhile
         }
         if ticks % 5 == 0 { reloadConfigIfEdited() }
         if ticks % 5 == 0 { checkScheduledWake(); reassertSleep(); checkApprove() }
@@ -400,14 +413,18 @@ final class Engine {
     static let watchdogWarning = "The safety watchdog isn't running, so a crash wouldn't be cleaned up automatically. Run Set Up again in Settings › General."
     func checkWatchdog() {
         guard !previewOnly, setupReady else { return }
+        let repair = !watchdogRepairTried
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            let loaded = Setup.watchdogLoaded
+            var loaded = Setup.watchdogLoaded
+            if !loaded && repair {
+                try? Setup.installWatchdog()
+                loaded = Setup.watchdogLoaded
+            }
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                let mine = Self.watchdogWarning
-                if loaded { if self.warning == mine { self.warning = nil }; return }
-                if !self.watchdogRepairTried { self.watchdogRepairTried = true; try? Setup.installWatchdog(); if Setup.watchdogLoaded { if self.warning == mine { self.warning = nil }; return } }
-                if self.warning == nil { self.warning = mine }
+                if repair && !loaded { self.watchdogRepairTried = true }
+                if loaded { if self.warning == Self.watchdogWarning { self.warning = nil } }
+                else if self.warning == nil { self.warning = Self.watchdogWarning }
             }
         }
     }
@@ -419,9 +436,9 @@ final class Engine {
     /// Went quiet: (busy since, quiet since). Announced only if still quiet 2 minutes later.
     var idlePending: [String: (since: Date, quietAt: Date)] = [:]
     var finishedNames: [String: String] = [:]
-    /// Called with (agent name, minutes it was busy, whether its process is gone) once an agent that was busy
-    /// for at least a minute has been quiet for 2 minutes. Nocturnal can't tell success from a crash or a question
-    /// waiting for an answer, so this is "went idle", never "finished".
+    /// Called with (agent name, minutes it was busy, whether its process is gone, what its hooks last reported) once
+    /// an agent that was busy for at least a minute has been quiet for 2 minutes. Without hooks Nocturnal can't tell
+    /// success from a crash or a question waiting for an answer, so it only says "finished" when the agent did.
     var onFinished: ((String, Double, Bool, AgentState?) -> Void)?
 
     // MARK: Sampling
@@ -472,6 +489,7 @@ final class Engine {
         } else {
             systemWatts = b.discharging ? b.watts : nil
         }
+        smoothClosedFigures()
         if let w = systemWatts, w > 0.3 {
             if !lidClosed {
                 openDraw = openDraw.map { $0 * 0.85 + w * 0.15 } ?? w
@@ -485,6 +503,20 @@ final class Engine {
         if let m = b.minutesLeft, b.watts > 1, b.percent > 5 {
             let wh = b.watts * Double(m) / 60 / (Double(b.percent) / 100)
             if wh > 20 && wh < 140 { fullWh = fullWh * 0.8 + wh * 0.2; UserDefaults.standard.set(fullWh, forKey: "fullWh") }
+        }
+    }
+
+    /// Exponential average with a 3-minute time constant, whatever the gap between readings.
+    private func smoothClosedFigures() {
+        let now = Date()
+        let a = 1 - exp(-max(0, now.timeIntervalSince(smoothedAt)) / 180)
+        smoothedAt = now
+        if lidClosed && holding && !powerTestRunning, let w = systemWatts ?? drawNow {
+            closedNow = closedNow.map { $0 + (w - $0) * a } ?? closedForecast ?? w
+        } else if !lidClosed {
+            closedNow = nil
+            let f = closedModel
+            closedForecast = closedForecast.map { $0 + (f - $0) * a } ?? f
         }
     }
 
@@ -548,7 +580,7 @@ final class Engine {
         blockedReason = nil
         // "On power" means the charger is covering the load, not just plugged in.
         if want && config.onlyOnPower && onBattery { want = false; blockedReason = "Only on power" }
-        // Battery limit. 0 means "never stop for battery"; "Stay Awake" (override) skips it until the charger
+        // Battery limit. 0 means "never stop for battery"; "Keep Going" (override) skips it until the charger
         // is connected. With sleep disabled macOS won't sleep on its own near empty, so going below the limit
         // can end in an abrupt shutdown; that's the person's call, made explicitly.
         if want, config.batteryFloor > 0, !floorOverride, let b = battery, b.discharging || !b.onAC {
@@ -688,13 +720,12 @@ final class Engine {
 
     // MARK: Previews
 
-    static func preview(lidClosed: Bool = false, setupReady: Bool = true) -> Engine {
+    static func preview(setupReady: Bool = true) -> Engine {
         let e = Engine(passive: true)
         e.setupReady = setupReady
         Thread.sleep(forTimeInterval: 1.2)
         e.apps = Array(e.sampler.sample().prefix(40))
         e.sampleWatchers()
-        e.lidClosed = lidClosed
         e.evaluate()
         return e
     }
@@ -743,7 +774,6 @@ final class Engine {
         if wasClosed {
             sleepInfo = (Date(), drawNow ?? 0)   // on the charger, sleeping saves no battery, so it counts as 0
             receipt?.sleepRequestedAt = Date()
-            receipt?.sleptBecause = why
             receipt?.endPercent = battery?.percent
             sleepRetries = 0
             // macOS only sleeps on the lid-close edge; it's already shut, so ask directly. Confirmed (or retried)
@@ -851,7 +881,7 @@ final class Engine {
     func shutdown() {
         guard !previewOnly else { return }
         restoreClosedState()
-        if holding || pendingRelease || adoptedHoldUntil != nil {
+        if holding || pendingRelease || adoptedHoldUntil != nil || checkInUntil != nil {
             // If this fails the hold file stays, so the watchdog keeps trying after we're gone.
             SleepSwitch.release()
         } else {

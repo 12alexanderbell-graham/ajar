@@ -6,7 +6,7 @@ import Foundation
 final class DemoComputer {
     private var panel: Panel = {
         var p = Panel()
-        p.host = "Demo MacBook Pro"
+        p.host = CommandLine.arguments.contains("-marketing") ? "MacBook Pro" : "Demo MacBook Pro"
         p.keeps = true
         p.holding = true
         p.lidClosed = true
@@ -33,6 +33,10 @@ final class DemoComputer {
         return p
     }()
 
+    /// Claude Code is busy; Sleep makes agents wait until the lid opens (as on the Mac).
+    private var agentWorking = true
+    private var snoozed = false
+
     private var settings: [String: Any] = [
         "low_power": true, "pause_simulators": true, "shut_down_simulators": false, "pause_background_audio": true,
         "screen_off": false, "lock_on_close": false,
@@ -52,6 +56,7 @@ final class DemoComputer {
         case "mode":
             let m = args["mode"] as? String ?? "auto"
             panel.mode = m == "always" ? "on" : m
+            snoozed = false
             panel.alwaysUntil = (args["minutes"] as? Int).map { Date().addingTimeInterval(Double($0) * 60).formatted(date: .omitted, time: .shortened) }
             updateOutcome()
         case "preset":
@@ -68,10 +73,14 @@ final class DemoComputer {
         case "sleep_now":
             panel.mode = panel.mode == "on" ? "auto" : panel.mode
             panel.alwaysUntil = nil
-            panel.holding = false
+            panel.holdList.removeAll()
+            snoozed = true
             updateOutcome()
         case "wake":
-            panel.holding = true
+            let minutes = args["minutes"] as? Int ?? 60
+            let until = Date().addingTimeInterval(Double(minutes) * 60).formatted(date: .omitted, time: .shortened)
+            panel.holdList.append(.init(id: "wake", reason: "Woken from your phone", until: until))
+            snoozed = false
             updateOutcome()
         case "wake_at":
             let t = args["time"] as? String ?? "off"
@@ -79,7 +88,6 @@ final class DemoComputer {
             if let m = args["minutes"] as? Int { panel.wakeFor = m }
         case "release":
             panel.holdList.removeAll { $0.id == args["id"] as? String }
-            if panel.holdList.isEmpty, panel.mode == "auto", !(panel.agents.contains { $0.status == "working" }) { panel.holding = false }
             updateOutcome()
         case "rule":
             if let i = panel.apps.firstIndex(where: { $0.id == args["app"] as? String }) {
@@ -108,17 +116,23 @@ final class DemoComputer {
         return .init(ok: true, panel: panel)
     }
 
+    /// The Mac's rule: Always keeps it awake, holds keep it awake in any mode, and When busy follows the agents
+    /// unless Sleep told them to wait for the lid.
     private func updateOutcome() {
-        let working = panel.mode == "on" || (panel.mode == "auto" && panel.holding)
+        let agents = panel.mode == "auto" && !snoozed && agentWorking
+        let working = panel.mode == "on" || !panel.holdList.isEmpty || agents
         panel.keeps = working
+        panel.holding = working
         panel.agents = panel.agents.map { a in
             var a = a
-            if a.id == "claude-code" { a.state = working ? "working" : "idle" }
+            if a.id == "claude-code" { a.state = agents ? "working" : "idle" }
             a.working = a.state == "working"
             return a
         }
         panel.numbers?.w = working ? 3.1 : 0.4
-        panel.detail = working ? (panel.mode == "on" ? "Kept awake by you" : "Claude Code is working")
-            : panel.mode == "off" ? "Nocturnal is off" : "No agent is working right now"
+        panel.detail = panel.mode == "on" ? "Kept awake by you"
+            : agents ? "Claude Code is working"
+            : panel.holdList.last?.reason
+            ?? (panel.mode == "off" ? "Nocturnal is off" : snoozed ? "Sleeping until you open the lid" : "No agent is working right now")
     }
 }

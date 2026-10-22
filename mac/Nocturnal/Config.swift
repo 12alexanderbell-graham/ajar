@@ -66,7 +66,6 @@ struct Config: Codable, Equatable {
     var appRules: [String: AppRule] = [:]
     var customAgents: [CustomAgent] = []
     var menuBarText: MenuBarText = .none
-    /// Off by default: the notch island is opt-in.
     var notchIsland = false
     var showInDock = false
     var hotkey = true
@@ -150,11 +149,13 @@ struct Config: Codable, Equatable {
         shutDownSimulators = (try? c.decodeIfPresent(Bool.self, forKey: .shutDownSimulators)) ?? d.shutDownSimulators
         trackOnly = (try? c.decodeIfPresent([String].self, forKey: .trackOnly)) ?? d.trackOnly
         liveLidIcon = (try? c.decodeIfPresent(Bool.self, forKey: .liveLidIcon)) ?? d.liveLidIcon
-        alwaysUntil = (try? c.decodeIfPresent(Double.self, forKey: .alwaysUntil)).flatMap { $0.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } }
+        // Anything can edit this file; a time further out than any timer or wake allows would overflow the date maths.
+        let horizon = Date().timeIntervalSince1970 + 8 * 86_400
+        alwaysUntil = (try? c.decodeIfPresent(Double.self, forKey: .alwaysUntil)).flatMap { $0.flatMap { $0.isFinite && $0 > 0 && $0 < horizon ? $0 : nil } }
         modeBeforeAlways = (try? c.decodeIfPresent(Mode.self, forKey: .modeBeforeAlways)).flatMap { $0 == .on ? nil : $0 }
         let ci = (try? c.decodeIfPresent(Int.self, forKey: .checkInMinutes)) ?? d.checkInMinutes
         checkInMinutes = WakePlan.checkInChoices.contains(ci) ? ci : d.checkInMinutes
-        wakeAt = (try? c.decodeIfPresent(Double.self, forKey: .wakeAt)).flatMap { $0.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } }
+        wakeAt = (try? c.decodeIfPresent(Double.self, forKey: .wakeAt)).flatMap { $0.flatMap { $0.isFinite && $0 > 0 && $0 < horizon ? $0 : nil } }
         slowBuildsWhileClosed = (try? c.decodeIfPresent(Bool.self, forKey: .slowBuildsWhileClosed)) ?? d.slowBuildsWhileClosed
         pauseTimeMachine = (try? c.decodeIfPresent(Bool.self, forKey: .pauseTimeMachine)) ?? d.pauseTimeMachine
         hotspotAutomatic = (try? c.decodeIfPresent(Bool.self, forKey: .hotspotAutomatic)) ?? d.hotspotAutomatic

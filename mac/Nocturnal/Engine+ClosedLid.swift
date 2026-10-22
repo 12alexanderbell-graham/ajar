@@ -37,7 +37,7 @@ extension Engine {
             }
         }
         reapplyClosedState()
-        if config.shutDownSimulators && config.preset != .speed && !background.simulatorsInUse && background.simulatorDevices > 0 {
+        if config.pauseSimulators && config.shutDownSimulators && config.preset != .speed && !background.simulatorsInUse && background.simulatorDevices > 0 {
             DispatchQueue.global(qos: .utility).async { _ = Shell.run("/usr/bin/xcrun", ["simctl", "shutdown", "all"]) }
         }
     }
@@ -116,9 +116,12 @@ extension Engine {
         if parts.count != 2 || Shell.pmsetRoot(["-b", parts[0], parts[1]]) { StateFiles.remove(StateFiles.modeRestore) }
     }
 
-    func rule(for bundleID: String?) -> AppRule { rule(for: bundleID, preset: config.preset) }
+    func rule(for bundleID: String?, name: String? = nil) -> AppRule { rule(for: bundleID, name: name, preset: config.preset) }
 
-    func rule(for bundleID: String?, preset p: Preset) -> AppRule {
+    /// What an app gets with the lid shut: the person's own rule, else the preset's. On Max Battery, music and calls
+    /// are left alone, and services agents talk to (and terminals and editors) are slowed rather than paused. The
+    /// panel, the phone and the closed-lid pass all use this, so what they show is what happens.
+    func rule(for bundleID: String?, name: String? = nil, preset p: Preset) -> AppRule {
         if let id = bundleID, let r = config.appRules[id] { return r }
         switch p {
         case .speed: return .leave
@@ -126,7 +129,8 @@ extension Engine {
         case .longest:
             guard let id = bundleID else { return .slow }
             if AppClasses.mediaAndCalls.contains(id) { return .leave }
-            return AppClasses.agentServices.contains(id) ? .slow : .pause
+            if AppClasses.agentServices.contains(id) || name.map(AppClasses.isAgentService) == true { return .slow }
+            return .pause
         }
     }
 
@@ -192,10 +196,7 @@ extension Engine {
                 guard let url = app.bundleURL?.resolvingSymlinksInPath(), app.processIdentifier != mine,
                       app.bundleIdentifier != AgentKind.claudeAppBundleID, app.bundleIdentifier != Bundle.main.bundleIdentifier,
                       !protectedBundles.contains(url.path), !isSystemApp(url.path) else { continue }
-                var r = rule(for: app.bundleIdentifier, preset: p)
-                // Services agents talk to (containers, local models, databases) are slowed, never paused, unless the
-                // person set a rule for them.
-                if r == .pause, config.appRules[app.bundleIdentifier ?? ""] == nil, AppClasses.isAgentService(name: app.localizedName ?? "") { r = .slow }
+                let r = rule(for: app.bundleIdentifier, name: app.localizedName, preset: p)
                 if r != .leave { bundles[url.path] = r }
             }
         }

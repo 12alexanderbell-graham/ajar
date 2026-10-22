@@ -97,26 +97,22 @@ impl Linux {
         let cg = cgroup_v2_path(&text)?;
         let unit = app_unit_name(&cg, uid)?;
         let name = crate::procs::name_of(pid)?;
+        // Terminals and editors run other commands inside their unit; a limit on the unit would slow those too.
+        if crate::config::NEVER_PAUSE.contains(&name.as_str()) {
+            return None;
+        }
         // Only when the unit is clearly this app: named after it, or every process in it is the same program.
         let named = unit
             .to_lowercase()
             .replace(['_', '.'], "-")
             .contains(&crate::config::exe_key(&name).replace(['_', '.'], "-"));
-        if !named {
-            let procs = fs::read_to_string(
-                self.sys
-                    .join("fs/cgroup")
-                    .join(cg.trim_start_matches('/'))
-                    .join("cgroup.procs"),
-            )
-            .ok()?;
-            let all_same = procs
-                .lines()
-                .filter_map(|l| l.trim().parse::<u32>().ok())
-                .all(|p| crate::procs::name_of(p).as_deref() == Some(name.as_str()));
-            if !all_same {
-                return None;
-            }
+        if !named
+            && !self
+                .cgroup_pids(&cg)?
+                .into_iter()
+                .all(|p| crate::procs::name_of(p).as_deref() == Some(name.as_str()))
+        {
+            return None;
         }
         // The user manager must have the cpu controller, or the property would be accepted and do nothing.
         let controllers = fs::read_to_string(self.sys.join(format!(
@@ -131,20 +127,22 @@ impl Linux {
 
     /// Every pid in the same cgroup as `pid`.
     fn unit_pids(&self, pid: u32) -> Vec<u32> {
-        let Some(cg) = fs::read_to_string(format!("/proc/{pid}/cgroup"))
+        fs::read_to_string(format!("/proc/{pid}/cgroup"))
             .ok()
             .and_then(|t| cgroup_v2_path(&t))
-        else {
-            return vec![];
-        };
-        fs::read_to_string(
+            .and_then(|cg| self.cgroup_pids(&cg))
+            .unwrap_or_default()
+    }
+
+    fn cgroup_pids(&self, cgroup: &str) -> Option<Vec<u32>> {
+        let text = fs::read_to_string(
             self.sys
                 .join("fs/cgroup")
-                .join(cg.trim_start_matches('/'))
+                .join(cgroup.trim_start_matches('/'))
                 .join("cgroup.procs"),
         )
-        .map(|t| t.lines().filter_map(|l| l.trim().parse().ok()).collect())
-        .unwrap_or_default()
+        .ok()?;
+        Some(text.lines().filter_map(|l| l.trim().parse().ok()).collect())
     }
 
     fn set_unit_cpu(&self, unit: &str, slow: bool) -> bool {
@@ -180,6 +178,17 @@ impl Linux {
 
     fn on_ac(&mut self) -> bool {
         self.battery().is_none_or(|b| b.on_ac)
+    }
+
+    /// What logind does when the lid closes on the current power source ("suspend", "hibernate", "ignore"...).
+    fn lid_switch_action(&mut self) -> Option<String> {
+        let key = if self.on_ac() {
+            "HandleLidSwitchExternalPower"
+        } else {
+            "HandleLidSwitch"
+        };
+        self.logind_property(key)
+            .and_then(|v| String::try_from(v).ok())
     }
 }
 
@@ -338,16 +347,7 @@ impl Platform for Linux {
 
     fn sleep_now(&mut self) {
         // Do what the person's own lid setting says (hibernate, hybrid sleep...), falling back to plain suspend.
-        let key = if self.on_ac() {
-            "HandleLidSwitchExternalPower"
-        } else {
-            "HandleLidSwitch"
-        };
-        let method = match self
-            .logind_property(key)
-            .and_then(|v| String::try_from(v).ok())
-            .as_deref()
-        {
+        let method = match self.lid_switch_action().as_deref() {
             Some("hibernate") => "Hibernate",
             Some("hybrid-sleep") => "HybridSleep",
             Some("suspend-then-hibernate") => "SuspendThenHibernate",
@@ -411,21 +411,20 @@ impl Platform for Linux {
     }
 
     fn arm_wake(&mut self, secs: u64) -> bool {
-        crate::wake::STEPS.contains(&secs) && power_helper_args(&["wake", &secs.to_string()])
+        crate::wake::STEPS.contains(&secs) && power_helper(&["wake", &secs.to_string()])
     }
 
     fn disarm_wake(&mut self) {
-        power_helper_args(&["wake", "off"]);
+        power_helper(&["wake", "off"]);
     }
 
     fn set_low_power(&mut self, on: bool, restore: &mut Restore) -> bool {
-        // The optional root helper (installed by install.sh if the person agreed): turbo off and the kernel's
-        // power saving while closed. sudo -n: never prompts; if it isn't installed, nothing happens.
+        // The root helper turns turbo off and the kernel's power saving on while closed, if it's installed.
         if on && !restore.linux_tuned {
-            if power_helper("apply") {
+            if power_helper(&["apply"]) {
                 restore.linux_tuned = true;
             }
-        } else if !on && restore.linux_tuned && power_helper("restore") {
+        } else if !on && restore.linux_tuned && power_helper(&["restore"]) {
             restore.linux_tuned = false;
         }
         let Some((dest, path, current)) = self.power_profile() else {
@@ -564,17 +563,7 @@ impl Platform for Linux {
             return true; // KDE's own lid action is "Do nothing" on Nocturnal's advice; Nocturnal does the sleeping
         }
         // The person set logind to ignore the lid: they want it running with the lid shut.
-        let on_ac = self.on_ac();
-        let key = if on_ac {
-            "HandleLidSwitchExternalPower"
-        } else {
-            "HandleLidSwitch"
-        };
-        let action = self
-            .logind_property(key)
-            .and_then(|v| String::try_from(v).ok())
-            .unwrap_or_default();
-        action != "ignore"
+        self.lid_switch_action().as_deref() != Some("ignore")
     }
 
     fn notify(&mut self, title: &str, body: &str) {
@@ -634,15 +623,11 @@ impl Platform for Linux {
     }
 }
 
-/// Sends a signal only if `pid` is still the process that started at `start`. With a pidfd (Linux 5.3+) the
-/// check and the signal refer to the same process even if the pid is reused in between.
+/// The optional root helper (installed by install.sh if the person agreed), run through `sudo -n` so it never
+/// prompts. False if it isn't installed or refused.
 pub const POWER_HELPER: &str = "/usr/local/libexec/nocturnal-power";
 
-fn power_helper(action: &str) -> bool {
-    power_helper_args(&[action])
-}
-
-fn power_helper_args(args: &[&str]) -> bool {
+fn power_helper(args: &[&str]) -> bool {
     Path::new(POWER_HELPER).exists()
         && std::process::Command::new("sudo")
             .arg("-n")
@@ -655,6 +640,8 @@ fn power_helper_args(args: &[&str]) -> bool {
             .is_ok_and(|s| s.success())
 }
 
+/// Sends a signal only if `pid` is still the process that started at `start`. With a pidfd (Linux 5.3+) the
+/// check and the signal refer to the same process even if the pid is reused in between.
 pub fn signal_if_same(pid: u32, start: u64, sig: i32) -> bool {
     use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
     let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid as libc::c_int, 0) };
@@ -712,7 +699,7 @@ pub fn systemd_quote(s: &str) -> String {
     )
 }
 
-/// A freedesktop .desktop entry (autostart when `hidden_start`, otherwise the app launcher entry).
+/// A freedesktop .desktop entry: the autostart entry when `autostart`, otherwise the app launcher's.
 pub fn desktop_entry(exe: &Path, autostart: bool) -> String {
     let p = exe.to_string_lossy();
     let quoted = format!(

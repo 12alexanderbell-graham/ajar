@@ -1,14 +1,19 @@
 //! Nocturnal's folder and the small files in it. Linux: `$XDG_CONFIG_HOME/nocturnal` (usually `~/.config/nocturnal`),
 //! Windows: `%APPDATA%\Nocturnal`. Created owner-only on Linux because the command inbox lives here.
 //!
-//! | file            | what                                                              |
-//! |-----------------|-------------------------------------------------------------------|
-//! | config.json     | settings                                                          |
-//! | runtime.json    | holds, the Always timer, the mode to return to                    |
-//! | stats.json      | lid-closed sessions                                               |
-//! | alive           | heartbeat, touched every few seconds (the watchdog reads it)      |
-//! | touched.json    | apps Nocturnal slowed or paused, so they can always be put back        |
-//! | restore.json    | system settings Nocturnal changed (power profile, lid action)          |
+//! | file               | what                                                                |
+//! |--------------------|---------------------------------------------------------------------|
+//! | config.json        | settings, including the Always timer and the mode to return to      |
+//! | safety.json        | the safety settings as last set from the menu                       |
+//! | runtime.json       | holds                                                               |
+//! | stats.json         | lid-closed sessions                                                 |
+//! | learned.json       | the draw learned with the lid open and shut                         |
+//! | alive              | heartbeat, touched every few seconds (the watchdog reads it)        |
+//! | touched.json       | apps Nocturnal slowed or paused, so they can always be put back     |
+//! | restore.json       | system settings Nocturnal changed (power profile, lid action)       |
+//! | auto-approve.json  | what Approve everything changed, while it's on                      |
+//! | remote.json        | paired phones (owner-only)                                          |
+//! | agent-events/      | what agents report through their hooks                              |
 //! | requests/ replies/ | command inbox and outbox for the `nocturnal` CLI and MCP server     |
 
 use serde::{Deserialize, Serialize};
@@ -55,12 +60,6 @@ pub fn ensure_private_dir(d: &Path) {
 
 pub fn file(name: &str) -> PathBuf {
     dir().join(name)
-}
-
-pub fn subdir(name: &str) -> PathBuf {
-    let d = dir().join(name);
-    ensure_private_dir(&d);
-    d
 }
 
 /// Write via a temporary file, flush it to disk, then rename, so a crash or power loss never leaves a

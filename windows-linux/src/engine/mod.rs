@@ -14,7 +14,7 @@ use crate::procs::{self, Proc};
 use crate::state::{self, Restore, Touched};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 mod agents;
@@ -22,6 +22,8 @@ mod closed_lid;
 mod commands;
 mod figures;
 mod wake;
+
+pub use closed_lid::BusyApp;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Hold {
@@ -43,7 +45,7 @@ impl Hold {
             }
         }
         if let Some(pid) = self.pid {
-            return procs::start_time(pid).is_some() && procs::start_time(pid) == self.pid_start;
+            return self.pid_start.is_some() && procs::start_time(pid) == self.pid_start;
         }
         true
     }
@@ -157,10 +159,12 @@ pub struct Engine<P: Platform> {
     /// Learned draw with the lid open and closed (watts), smoothed.
     pub open_draw: Option<f64>,
     pub closed_draw: Option<f64>,
+    /// While the lid is shut: the running lid-shut draw estimate (watts) and when it was last updated.
+    closed_avg: Option<(f64, u64)>,
     pub outbox: Vec<Announcement>,
     /// Sessions agents reported through their hooks, from the last sample.
     pub agent_events: Vec<crate::events::AgentEvent>,
-    announced_waits: std::collections::HashSet<String>,
+    announced_waits: HashSet<String>,
     ticks: u64,
     config_mtime: Option<std::time::SystemTime>,
 }
@@ -233,6 +237,7 @@ impl<P: Platform> Engine<P> {
             watch_offer: vec![],
             open_draw: None,
             closed_draw: None,
+            closed_avg: None,
             outbox: vec![],
             agent_events: vec![],
             announced_waits: Default::default(),
@@ -460,7 +465,7 @@ impl<P: Platform> Engine<P> {
         }
         // Battery before the lid, so a lid-open receipt reports the battery as it is now.
         if let Some(b) = self.platform.battery() {
-            self.learn_draw(&b);
+            self.learn_draw(&b, now);
             if b.charging {
                 self.floor_override = false;
             }
@@ -555,20 +560,27 @@ impl<P: Platform> Engine<P> {
         self.keep_wake_armed(now);
     }
 
-    // MARK: waking while asleep (see wake.rs)
+    // MARK: battery
 
-    fn learn_draw(&mut self, b: &Battery) {
+    fn learn_draw(&mut self, b: &Battery, now: u64) {
         if !b.discharging() || !b.watts.is_finite() || b.watts <= 0.3 || b.watts > 200.0 {
             return;
         }
-        let slot = if self.lid_closed && self.holding {
-            &mut self.closed_draw
+        if self.lid_closed && self.holding {
+            // Work comes in bursts, so the live reading can swing between 3 W and 25 W from one minute to the
+            // next. The estimate follows it slowly, and the learned figure keeps that average, not the last burst.
+            let (avg, since) = self.closed_avg.unwrap_or((self.closed_watts(), now));
+            let avg = time_average(avg, since, b.watts, now);
+            self.closed_avg = Some((avg, now));
+            self.closed_draw = Some(avg);
         } else if !self.lid_closed {
-            &mut self.open_draw
+            self.open_draw = Some(
+                self.open_draw
+                    .map_or(b.watts, |w| w * 0.85 + b.watts * 0.15),
+            );
         } else {
             return;
-        };
-        *slot = Some(slot.map_or(b.watts, |w| w * 0.85 + b.watts * 0.15));
+        }
         if self.ticks.is_multiple_of(30) {
             state::save_json(
                 &self.path("learned.json"),
@@ -662,17 +674,9 @@ impl<P: Platform> Engine<P> {
     pub fn active_agent(&self, now: u64) -> Option<&Session> {
         let window = self.cfg.quiet_minutes as u64 * 60;
         self.watcher.sessions.iter().find(|s| {
-            if self.cfg.track_only.contains(&s.kind.id) {
-                return false;
-            }
-            if s.kind.is_claude_app() && !self.cfg.count_claude_app {
-                return false;
-            }
-            if self.cfg.sleep_when_done {
-                s.last_active > 0 && now.saturating_sub(s.last_active) < window
-            } else {
-                true
-            }
+            self.counts(s)
+                && (!self.cfg.sleep_when_done
+                    || s.last_active > 0 && now.saturating_sub(s.last_active) < window)
         })
     }
 
@@ -682,7 +686,7 @@ impl<P: Platform> Engine<P> {
             Err(e) => {
                 self.setup_error = Some(e);
                 if self.holding {
-                    self.end_hold("Nocturnal can't control sleep on this machine", now);
+                    self.end_hold(now);
                 }
                 return;
             }
@@ -777,14 +781,7 @@ impl<P: Platform> Engine<P> {
         if want && !self.holding {
             self.start_hold(reason.as_deref().unwrap_or("Staying awake"), now);
         } else if !want && self.holding {
-            let why = self.blocked.clone().unwrap_or_else(|| {
-                if self.cfg.mode == Mode::Off {
-                    "Turned off".into()
-                } else {
-                    "Work finished".into()
-                }
-            });
-            self.end_hold(&why, now);
+            self.end_hold(now);
         }
 
         // Heat guard: strictest rules once it gets hot with the lid closed, back once it cools.
@@ -835,7 +832,7 @@ impl<P: Platform> Engine<P> {
         }
     }
 
-    fn end_hold(&mut self, why: &str, now: u64) {
+    fn end_hold(&mut self, now: u64) {
         let was_closed = self.lid_closed;
         if was_closed {
             self.restore_closed_state();
@@ -860,14 +857,10 @@ impl<P: Platform> Engine<P> {
             } else if let Some(r) = &mut self.receipt {
                 r.sleep_requested_at = None;
             }
-        } else {
-            let _ = why;
         }
     }
 
-    // MARK: lid
-
-    // MARK: sessions and announcements
+    // MARK: sessions
 
     fn finish_session(&mut self, r: &Receipt, opened: u64) {
         let end = r.slept_at.unwrap_or(opened);
@@ -945,12 +938,14 @@ impl<P: Platform> Engine<P> {
         Ok(h)
     }
 
+    /// Ends one hold by id, or all of them. Returns how many ended.
     pub fn release_hold(&mut self, id: Option<&str>) -> usize {
+        self.end_holds_where(|h| id.is_none_or(|id| h.id == id))
+    }
+
+    pub(super) fn end_holds_where(&mut self, ends: impl Fn(&Hold) -> bool) -> usize {
         let before = self.holds.len();
-        match id {
-            Some(id) => self.holds.retain(|h| h.id != id),
-            None => self.holds.clear(),
-        }
+        self.holds.retain(|h| !ends(h));
         self.save_runtime();
         self.evaluate(crate::now());
         before - self.holds.len()
@@ -1010,16 +1005,35 @@ impl<P: Platform> Engine<P> {
                 "id": h.id, "reason": h.reason.chars().take(60).collect::<String>(),
                 "until": h.until.map(crate::format::clock),
             })).collect::<Vec<_>>(),
-            "agents": self.watcher.sessions.iter().map(|s| json!({
-                "id": s.kind.id, "name": s.kind.name, "working": s.working(now),
-                "keeps": !self.cfg.track_only.contains(&s.kind.id), "instances": s.instances,
-                "state": s.state.map(|x| x.as_str()),
-            })).collect::<Vec<_>>(),
+            "agents": self.watcher.sessions.iter().map(|s| {
+                let mut a = json!({
+                    "id": s.kind.id, "name": s.kind.name, "working": s.working(now),
+                    "keeps": !self.cfg.track_only.contains(&s.kind.id), "instances": s.instances,
+                    "state": s.state.map(|x| x.as_str()),
+                });
+                if let Some(left) = self.sleeps_in(s, now) {
+                    a["sleepsIn"] = json!(left.div_ceil(60));
+                }
+                a
+            }).collect::<Vec<_>>(),
             "watch": self.watch_candidates().into_iter().map(|(id, name, on)| json!({ "id": id, "name": name, "on": on })).collect::<Vec<_>>(),
+            // The phone's Apps tab: busy apps with their lid-shut rule, which it can change.
+            "apps": self.busy_apps(8).into_iter().map(|a| json!({
+                "id": a.id, "name": a.name, "w": a.watts.map(|w| (w * 10.0).round() / 10.0),
+                "rule": a.rule, "custom": a.custom,
+            })).collect::<Vec<_>>(),
+            "sessions": self.stats.sessions.iter().rev().take(5).map(|r| json!({
+                "when": match &r.agent {
+                    Some(a) => format!("{} · {a}", crate::format::when(r.date, now)),
+                    None => crate::format::when(r.date, now),
+                },
+                "line": session_line(r),
+            })).collect::<Vec<_>>(),
             "warnings": warnings,
             "host": hostname(),
             "checkIn": self.cfg.check_in_minutes,
             "wakeAt": self.cfg.wake_at.map(crate::format::clock),
+            "wakeFor": self.cfg.wake_for_minutes,
         })
     }
 
@@ -1038,14 +1052,20 @@ impl<P: Platform> Engine<P> {
             &(self.open_draw, self.closed_draw),
         );
     }
-
-    // MARK: figures
-
-    // MARK: command surface (CLI, MCP)
 }
 
 /// How long "serious" heat with the lid shut is tolerated before the laptop is put to sleep.
 pub const HOT_GRACE_SECS: u64 = 300;
+
+/// Time constant of the lid-shut draw estimate, in seconds.
+const CLOSED_DRAW_TAU: f64 = 180.0;
+
+/// One step of an exponential average weighted by the time since the last step.
+fn time_average(avg: f64, since: u64, reading: f64, now: u64) -> f64 {
+    // A long gap (the machine slept) counts as one minute, not as hours that agreed with this one reading.
+    let dt = now.saturating_sub(since).min(60) as f64;
+    avg + (1.0 - (-dt / CLOSED_DRAW_TAU).exp()) * (reading - avg)
+}
 
 /// Processes Nocturnal never slows or pauses, whatever the rules say: the desktop, audio, input and Nocturnal itself.
 pub const SYSTEM_NEVER: &[&str] = &[
@@ -1119,6 +1139,20 @@ pub fn receipt_line(r: &Receipt) -> String {
         if a >= b {
             s.push_str(&format!(" · used {}%", a - b));
         }
+    }
+    s
+}
+
+/// One past lid-shut session for the menu's Recent list and the phone: "1 h 05 min closed · used 12% · then slept".
+pub fn session_line(r: &SessionRecord) -> String {
+    let mut s = format!("{} closed", crate::format::minutes(r.closed_minutes));
+    if let (Some(a), Some(b)) = (r.start_percent, r.end_percent) {
+        if a >= b {
+            s.push_str(&format!(" · used {}%", a - b));
+        }
+    }
+    if r.slept {
+        s.push_str(" · then slept");
     }
     s
 }

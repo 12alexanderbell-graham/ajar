@@ -58,14 +58,8 @@ impl<P: Platform> Engine<P> {
                     },
                 };
                 let reason = s("reason").unwrap_or_else(|| "Asked to stay awake".into());
-                match self.add_hold(&reason, num("minutes", 7.0 * 24.0 * 60.0), pid) {
-                    Ok(h) => {
-                        let mut r = self.ok();
-                        r["hold"] = serde_json::to_value(&h).unwrap_or(Value::Null);
-                        r
-                    }
-                    Err(e) => fail(e),
-                }
+                let held = self.add_hold(&reason, num("minutes", 7.0 * 24.0 * 60.0), pid);
+                self.hold_reply(held)
             }
             "wake" => {
                 // From the phone while asleep (picked up at the next check-in), or any time: stay awake a while.
@@ -80,14 +74,8 @@ impl<P: Platform> Engine<P> {
                     .map(|m| m.max(5.0))
                     .unwrap_or(60.0);
                 let reason = s("reason").unwrap_or_else(|| "Woken from your phone".into());
-                match self.add_hold(&reason, Some(minutes), None) {
-                    Ok(h) => {
-                        let mut r = self.ok();
-                        r["hold"] = serde_json::to_value(&h).unwrap_or(Value::Null);
-                        r
-                    }
-                    Err(e) => fail(e),
-                }
+                let held = self.add_hold(&reason, Some(minutes), None);
+                self.hold_reply(held)
             }
             "wake_at" => {
                 // "07:00" (the next time the clock shows it), "off", or Unix seconds; optional minutes awake after.
@@ -126,11 +114,7 @@ impl<P: Platform> Engine<P> {
                 else {
                     return fail("needs id and pid".into());
                 };
-                let before = self.holds.len();
-                self.holds.retain(|h| !(h.id == id && h.pid == Some(pid)));
-                let n = before - self.holds.len();
-                self.save_runtime();
-                self.evaluate(crate::now());
+                let n = self.end_holds_where(|h| h.id == id && h.pid == Some(pid));
                 if n == 0 {
                     return fail(format!("no hold {id} made by this session"));
                 }
@@ -142,11 +126,7 @@ impl<P: Platform> Engine<P> {
                 let Some(pid) = num("pid", u32::MAX as f64).map(|p| p as u32) else {
                     return fail("needs pid".into());
                 };
-                let before = self.holds.len();
-                self.holds.retain(|h| h.pid != Some(pid));
-                let n = before - self.holds.len();
-                self.save_runtime();
-                self.evaluate(crate::now());
+                let n = self.end_holds_where(|h| h.pid == Some(pid));
                 let mut r = self.ok();
                 r["released"] = json!(n);
                 r
@@ -186,7 +166,8 @@ impl<P: Platform> Engine<P> {
                 if key.is_empty() || key.len() > 64 {
                     return fail("app must be an executable name like chrome or spotify".into());
                 }
-                if matches!(rule.to_lowercase().as_str(), "default" | "reset") {
+                let reset = matches!(rule.trim().to_lowercase().as_str(), "default" | "reset");
+                if reset {
                     self.update(|c| {
                         c.app_rules.remove(&key);
                     });
@@ -203,8 +184,14 @@ impl<P: Platform> Engine<P> {
                         c.app_rules.insert(key.clone(), r);
                     });
                 }
+                let now_rule = self.cfg.rule_for(&key, self.cfg.preset).as_str();
                 let mut out = self.ok();
                 out["app"] = json!(key);
+                out["rule"] = json!(if reset {
+                    format!("{now_rule} (preset default)")
+                } else {
+                    now_rule.to_string()
+                });
                 out
             }
             "watch" => {
@@ -271,24 +258,14 @@ impl<P: Platform> Engine<P> {
                 let Some(key) = s("key") else {
                     return fail("needs key".into());
                 };
+                let k = key.replace('-', "_");
                 // mode and preset have their own commands; accept them here too so one call can change any setting.
-                match key.replace('-', "_").as_str() {
-                    "mode" => {
-                        return self.handle(
-                            "mode",
-                            &json!({ "mode": a.get("value").cloned().unwrap_or(Value::Null) }),
-                        )
-                    }
-                    "preset" => {
-                        return self.handle(
-                            "preset",
-                            &json!({ "preset": a.get("value").cloned().unwrap_or(Value::Null) }),
-                        )
-                    }
-                    _ => {}
+                if k == "mode" || k == "preset" {
+                    let mut args = json!({});
+                    args[&k] = a.get("value").cloned().unwrap_or(Value::Null);
+                    return self.handle(&k, &args);
                 }
                 let mut bad: Option<&str> = None;
-                let k = key.replace('-', "_");
                 let v_num = num("value", 1e6);
                 let v_bool = boolean("value");
                 let v_str = s("value");
@@ -346,7 +323,19 @@ impl<P: Platform> Engine<P> {
     }
 
     pub(super) fn ok(&self) -> Value {
-        json!({ "ok": true, "status": self.outcome().1 + " · " + &self.outcome().2 })
+        let (_, head, detail) = self.outcome();
+        json!({ "ok": true, "status": format!("{head} · {detail}") })
+    }
+
+    fn hold_reply(&self, held: Result<Hold, String>) -> Value {
+        match held {
+            Ok(h) => {
+                let mut r = self.ok();
+                r["hold"] = serde_json::to_value(&h).unwrap_or(Value::Null);
+                r
+            }
+            Err(e) => json!({ "ok": false, "error": e }),
+        }
     }
 
     pub fn status_json(&self) -> Value {
@@ -402,26 +391,18 @@ impl<P: Platform> Engine<P> {
             .as_ref()
             .filter(|b| b.discharging())
             .map(|b| b.watts);
-        let protected = self.protected_pids();
+        let kept = self.protected_names();
         let busy: Vec<String> = self
             .watcher
             .cpu_by_app
             .iter()
-            .filter(|(name, cpu)| {
-                *cpu > 10.0
-                    && !self
-                        .procs
-                        .iter()
-                        .any(|p| p.name == **name && protected.contains(&p.pid))
-            })
+            .filter(|(name, cpu)| *cpu > 10.0 && !kept.contains(name.as_str()))
             .take(6)
             .map(|(name, cpu)| {
                 format!(
-                    "{name} {:.0}% CPU ({:?})",
-                    cpu,
-                    self.cfg.rule_for(name, self.cfg.preset)
+                    "{name} {cpu:.0}% cpu ({})",
+                    self.cfg.rule_for(name, self.cfg.preset).as_str()
                 )
-                .to_lowercase()
             })
             .collect();
         let preset = match self.cfg.preset {
@@ -448,13 +429,12 @@ impl<P: Platform> Engine<P> {
     }
 
     pub(super) fn energy_json(&self, limit: usize) -> Value {
-        let protected = self.protected_pids();
+        let kept = self.protected_names();
         json!(self.watcher.cpu_by_app.iter().take(limit).map(|(name, cpu)| {
-            let kept = self.procs.iter().any(|p| p.name == *name && protected.contains(&p.pid));
             json!({
                 "name": name,
                 "cpu_percent": (cpu * 10.0).round() / 10.0,
-                "while_closed": if kept { "kept (Nocturnal is keeping it awake)".to_string() } else { format!("{:?}", self.cfg.rule_for(name, self.cfg.preset)).to_lowercase() },
+                "while_closed": if kept.contains(name.as_str()) { "kept (Nocturnal is keeping it awake)" } else { self.cfg.rule_for(name, self.cfg.preset).as_str() },
             })
         }).collect::<Vec<_>>())
     }

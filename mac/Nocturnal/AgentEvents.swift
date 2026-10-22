@@ -22,7 +22,6 @@ struct AgentEvent: Codable, Equatable {
     var at: Double
     var pid: Int32?
     var pidStart: UInt64?
-    var detail: String?
 }
 
 enum AgentEvents {
@@ -48,7 +47,6 @@ enum AgentEvents {
         let t = now.timeIntervalSince1970
         var state: AgentState
         var at = t
-        var detail: String?
         switch event {
         case "UserPromptSubmit": state = .working
         case "Stop": state = .finished
@@ -66,7 +64,6 @@ enum AgentEvents {
             if type == "permission_prompt" || type == "elicitation_dialog" || type == "agent_needs_input"
                 || (type.isEmpty && (message.contains("permission") || message.contains("approve"))) {
                 state = .waiting
-                detail = type.isEmpty ? "permission_prompt" : type
             } else if type == "idle_prompt" || (type.isEmpty && message.contains("waiting for your input")) {
                 // Sent about a minute after the turn ended. Keep the real end time if we have it.
                 state = .finished
@@ -79,7 +76,7 @@ enum AgentEvents {
         }
         let (pid, start) = agentProcess(kind: agent)
         let e = AgentEvent(agent: agent, session: session, state: state, at: at,
-                           pid: pid ?? previous?.pid, pidStart: pid != nil ? start : previous?.pidStart, detail: detail)
+                           pid: pid ?? previous?.pid, pidStart: pid != nil ? start : previous?.pidStart)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         if let d = try? JSONEncoder().encode(e) { try? d.write(to: url, options: .atomic) }
         post()
@@ -114,7 +111,8 @@ enum AgentEvents {
                 try? FileManager.default.removeItem(at: url); continue
             }
             let gone = e.pid.map { Procs.startTime($0) == nil || (e.pidStart != nil && Procs.startTime($0) != e.pidStart) } ?? false
-            if gone || now.timeIntervalSince1970 - e.at > 2 * 86_400 { try? FileManager.default.removeItem(at: url); continue }
+            let age = now.timeIntervalSince1970 - e.at
+            if gone || age > 2 * 86_400 || age < -60 { try? FileManager.default.removeItem(at: url); continue }
             out.append(e)
         }
         return out

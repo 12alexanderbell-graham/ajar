@@ -2,8 +2,21 @@
 
 use super::*;
 
+/// A busy app as the phone's Apps list shows it.
+pub struct BusyApp {
+    /// Executable key, what the `rule` command takes.
+    pub id: String,
+    pub name: String,
+    pub watts: Option<f64>,
+    pub rule: AppRule,
+    /// Set for this app, not the preset's default.
+    pub custom: bool,
+}
+
 impl<P: Platform> Engine<P> {
     pub(super) fn lid_changed(&mut self, closed: bool, now: u64) {
+        // The lid-shut estimate starts from the figure shown just before, so closing the lid doesn't make it jump.
+        self.closed_avg = closed.then(|| (self.closed_watts(), now));
         self.lid_closed = closed;
         if closed && !self.holding {
             // The OS may sleep any moment now: have the check-in wake pending before it does.
@@ -135,9 +148,6 @@ impl<P: Platform> Engine<P> {
             return;
         }
         for (pid, name, start, rule) in targets {
-            if rule == AppRule::Leave {
-                continue;
-            }
             // Journal first and only act if it's safely on disk, so a crash at any point leaves a record of
             // every app Nocturnal changed (the watchdog and the next start undo it).
             let paused = rule == AppRule::Pause;
@@ -204,9 +214,54 @@ impl<P: Platform> Engine<P> {
         }
     }
 
+    /// Executable names with at least one process Nocturnal keeps running (see `protected_pids`).
+    pub(super) fn protected_names(&self) -> HashSet<&str> {
+        let protected = self.protected_pids();
+        self.procs
+            .iter()
+            .filter(|p| protected.contains(&p.pid))
+            .map(|p| p.name.as_str())
+            .collect()
+    }
+
+    /// The person's busiest apps that a lid-shut rule could apply to (not agents, anything a hold depends on, or
+    /// the system), with the rule in force. Windows and Linux have no per-app energy counter, so an app's watts
+    /// are the laptop's draw shared out by CPU use: an estimate, None when there's no draw figure at all.
+    pub fn busy_apps(&self, limit: usize) -> Vec<BusyApp> {
+        let kept = self.protected_names();
+        let draw = self
+            .battery
+            .as_ref()
+            .filter(|b| b.discharging())
+            .map(|b| b.watts)
+            .or(if self.lid_closed {
+                self.closed_draw
+            } else {
+                self.open_draw
+            });
+        let total_cpu: f64 = self.watcher.cpu_by_app.iter().map(|(_, c)| c).sum();
+        self.watcher
+            .cpu_by_app
+            .iter()
+            .filter(|(name, cpu)| {
+                *cpu >= 1.0
+                    && !kept.contains(name.as_str())
+                    && !SYSTEM_NEVER.contains(&name.as_str())
+            })
+            .take(limit)
+            .map(|(name, cpu)| BusyApp {
+                id: name.clone(),
+                name: name.clone(),
+                watts: draw.map(|w| w * cpu / total_cpu),
+                rule: self.cfg.rule_for(name, self.cfg.preset),
+                custom: self.cfg.app_rules.contains_key(name),
+            })
+            .collect()
+    }
+
     /// Agents, their trees and ancestors (from the watcher), plus anything a hold is tied to, its children
     /// and the apps above it.
-    pub(super) fn protected_pids(&self) -> std::collections::HashSet<u32> {
+    pub(super) fn protected_pids(&self) -> HashSet<u32> {
         let mut protect = self.watcher.protected.clone();
         let hold_pids: Vec<u32> = self.holds.iter().filter_map(|h| h.pid).collect();
         if hold_pids.is_empty() {

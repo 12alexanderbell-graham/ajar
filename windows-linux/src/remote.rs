@@ -41,6 +41,7 @@ pub const ALLOWED: &[&str] = &[
     "power_test",
     "wake",
     "wake_at",
+    "rule",
     "release",
 ];
 const MAX_AGE: u64 = 300;
@@ -275,17 +276,7 @@ impl Guard {
         }
     }
 
-    pub fn check(&mut self, t: u64, id: &str, now: u64) -> Result<(), &'static str> {
-        self.check_aged(t, id, now, MAX_AGE)
-    }
-
-    pub fn check_aged(
-        &mut self,
-        t: u64,
-        id: &str,
-        now: u64,
-        max_age: u64,
-    ) -> Result<(), &'static str> {
+    pub fn check(&mut self, t: u64, id: &str, now: u64, max_age: u64) -> Result<(), &'static str> {
         if t + max_age < now {
             return Err(TOO_OLD);
         }
@@ -357,7 +348,7 @@ pub fn decode_command(
         error: error.to_string(),
     };
     let t = v["t"].as_u64().ok_or_else(|| refuse("no timestamp"))?;
-    match guard.check_aged(t, &id, now, max_age(v["cmd"].as_str().unwrap_or(""))) {
+    match guard.check(t, &id, now, max_age(v["cmd"].as_str().unwrap_or(""))) {
         Err(e @ (TOO_OLD | REPLAYED)) => return Err(Rejected::Silent(e.into())),
         Err(e) => return Err(refuse(e)),
         Ok(()) => {}
@@ -448,7 +439,6 @@ fn agent() -> ureq::Agent {
         .new_agent()
 }
 
-/// Publishes one encrypted message.
 /// ntfy.sh turns messages over 4096 bytes into file attachments, which the phone page can't read as a reply.
 /// A sealed message is about 4/3 of the plaintext plus 38 bytes, so replies are kept under this many bytes.
 pub const MAX_REPLY: usize = 2800;
@@ -467,23 +457,18 @@ pub fn phone_reply(cmd: &str, result: &Value, panel: Value) -> Value {
         let keep = ["key", "type", "allowed", "category", "value"];
         let list: Vec<Value> = result["settings"]
             .as_array()
-            .map(|a| {
-                a.iter()
-                    .map(|s| {
-                        Value::Object(
-                            s.as_object()
-                                .map(|o| {
-                                    o.iter()
-                                        .filter(|(k, _)| keep.contains(&k.as_str()))
-                                        .map(|(k, v)| (k.clone(), v.clone()))
-                                        .collect()
-                                })
-                                .unwrap_or_default(),
-                        )
-                    })
-                    .collect()
+            .into_iter()
+            .flatten()
+            .map(|s| {
+                let mut o = serde_json::Map::new();
+                for k in keep {
+                    if let Some(v) = s.get(k) {
+                        o.insert(k.into(), v.clone());
+                    }
+                }
+                Value::Object(o)
             })
-            .unwrap_or_default();
+            .collect();
         r["settings"] = Value::Array(list);
         return r;
     }
@@ -503,9 +488,9 @@ pub fn phone_reply(cmd: &str, result: &Value, panel: Value) -> Value {
             o.remove("holds");
         }
     }
-    // Still too big (many watched apps, long warnings): cut until it fits, least important first. Same order as
-    // the Mac; the phone rebuilds these lines from `numbers` and its own words.
-    for cut in ["battery", "modeLine", "batteryLine"] {
+    // Still too big (many watched apps, long warnings): cut until it fits, least important first, in the Mac's
+    // order. The phone rebuilds the text lines from `numbers` and its own words.
+    for cut in ["sessions", "apps", "batteryLine", "battery", "modeLine"] {
         if size(&r) > MAX_REPLY {
             if let Some(o) = r["panel"].as_object_mut() {
                 o.remove(cut);
@@ -532,6 +517,7 @@ pub fn phone_reply(cmd: &str, result: &Value, panel: Value) -> Value {
     r
 }
 
+/// Publishes one encrypted message.
 pub fn publish(server: &str, key: &[u8; 32], topic: &str, body: &Value) -> Result<(), String> {
     let sealed = seal(key, topic, &body.to_string());
     agent()
@@ -990,22 +976,17 @@ mod tests {
         );
         assert!(r.to_string().len() < MAX_REPLY);
     }
-}
-
-#[cfg(test)]
-mod seen_tests {
-    use super::*;
 
     #[test]
     fn replay_ids_survive_a_restart() {
         let mut g = Guard::default();
         let now = 1_000_000;
-        assert!(g.check(now, "abc", now).is_ok());
+        assert!(g.check(now, "abc", now, MAX_AGE).is_ok());
         let saved = g.seen_text();
         let mut fresh = Guard::default();
         fresh.load_seen(&saved);
-        assert_eq!(fresh.check(now, "abc", now + 5), Err(REPLAYED));
+        assert_eq!(fresh.check(now, "abc", now + 5, MAX_AGE), Err(REPLAYED));
         fresh.load_seen("garbage\nno-tab\n\tx\n");
-        assert!(fresh.check(now, "new", now + 5).is_ok());
+        assert!(fresh.check(now, "new", now + 5, MAX_AGE).is_ok());
     }
 }

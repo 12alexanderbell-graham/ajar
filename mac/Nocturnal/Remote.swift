@@ -213,7 +213,6 @@ final class RemoteControl {
 
     var enabled: Bool { settings.enabled }
 
-    /// Turns phone control on.
     func enable() {
         var s = settings
         s.enabled = true
@@ -259,15 +258,11 @@ final class RemoteControl {
         task?.cancel()
         task = nil
         status = nil
-        engine.remoteStatus = nil
     }
 
     private var cursorURL: URL { StateFiles.dir.appendingPathComponent("remote-cursor") }
 
-    private func setStatus(_ s: String?) {
-        status = s
-        engine.remoteStatus = s
-    }
+    private func setStatus(_ s: String?) { status = s }
 
     /// A phone just sent a valid command: remember when, and its name if it sent one.
     private func noteSeen(_ id: String, name: String?) {
@@ -396,7 +391,7 @@ struct PhoneControlSection: View {
 
     var body: some View {
         let remote = NocturnalShared.remote
-        if let remote, remote.enabled, !remote.settings.phones.isEmpty || pairing != nil {
+        if let remote, !remote.settings.phones.isEmpty || pairing != nil {
             Section {
                 if let p = pairing {
                     // Inline rather than a sheet: Settings live in the menu bar panel, which can't host sheets.

@@ -199,11 +199,11 @@ struct EnergyRow: View {
                 Menu {
                     ForEach(AppRule.allCases, id: \.self) { r in
                         Button { engine.setRule(r, for: id) } label: {
-                            if engine.rule(for: id) == r { Label(r.menuTitle, systemImage: "checkmark") } else { Text(r.menuTitle) }
+                            if engine.rule(for: id, name: app.name) == r { Label(r.menuTitle, systemImage: "checkmark") } else { Text(r.menuTitle) }
                         }
                     }
                 } label: {
-                    Text(engine.rule(for: id).label).font(.system(size: 11, weight: .medium))
+                    Text(engine.rule(for: id, name: app.name).label).font(.system(size: 11, weight: .medium))
                 }
                 .menuStyle(.button)
                 .buttonStyle(.bordered)

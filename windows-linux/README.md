@@ -14,7 +14,7 @@ Same product and settings file as the Mac app. Windows 10/11 and Linux with syst
 
 - **When Busy** (default): awake only while an agent is working, or a command an agent started is still running (a build, a test run), plus anything you add under *Also While These Run* (Blender, ffmpeg, a Python training script…). Claude Code, once connected (`nocturnal connect claude`), reports through its own hooks when it's working, waiting for your approval, or finished. After work stops it waits the quiet time you chose (5 min by default), then lets the laptop sleep; with the lid already shut it puts it to sleep.
 - **Always**: forever, for an hour, or until 07:00. **Off**: never (holds from `nocturnal run` and agents still work).
-- **While closed**: Max Battery pauses chat, mail and office apps and slows browsers (music and calls are left alone); Balanced slows browsers and chat apps; Full Speed leaves everything alone. Only apps on a fixed list are ever touched, never the desktop or anything an agent depends on (its whole process tree and the apps above it).
+- **While closed**: Max Battery pauses chat, mail and office apps and slows browsers, terminals and code editors (music and calls are left alone; terminals and editors are never paused, since a frozen terminal stalls the command running in it); Balanced slows browsers, terminals, editors and chat apps; Full Speed leaves everything alone. Only apps on a fixed list are ever touched, never the desktop or anything an agent depends on (its whole process tree and the apps above it).
 - **Limits**: stops at your battery limit (15% default) and, on Linux, if it gets too hot. Only the menu can loosen these; agents, the phone and settings-file edits can't.
 - **Let It Sleep Now**: ends holds and timers; agents can't keep it awake until the lid next opens.
 - **Phone control** (Settings › Phone control): a QR code pairs your phone with a small control page that works from anywhere. Messages go through ntfy.sh end-to-end encrypted (AES-256-GCM, key only in the QR code).
@@ -64,8 +64,8 @@ Every change to an app or setting is written to disk before it's made. If Noctur
 ## Building
 
 ```
-cargo test                                               # 125 unit tests (the engine runs against a mock OS)
+cargo test                                               # 133 unit tests (the engine runs against a mock OS)
 cargo build --release --target x86_64-pc-windows-gnu     # Windows, from Linux with mingw
 cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.31   # Linux, runs on glibc 2.30+
-tests/e2e-linux.sh                                       # 58 end-to-end checks against a fake logind
+cargo build --bins --examples && tests/e2e-linux.sh      # 58 end-to-end checks against a fake logind
 ```

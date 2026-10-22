@@ -118,7 +118,7 @@ enum PowerMode {
 }
 
 /// Small files the watchdog script also reads, so a crashed or hung Nocturnal never leaves sleep switched off.
-enum StateFiles {
+nonisolated enum StateFiles {
     static let dir: URL = {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let u = support.appendingPathComponent("Nocturnal")
@@ -195,21 +195,21 @@ struct SetupError: LocalizedError {
 
 /// One-time install: a sudoers entry for exactly the pmset commands Nocturnal uses, and a LaunchAgent watchdog.
 enum Setup {
-    static let label = "com.alexander.nocturnal.watchdog"
-    static let sudoersPath = "/private/etc/sudoers.d/nocturnal"
-    static var plistURL: URL {
+    nonisolated static let label = "com.alexander.nocturnal.watchdog"
+    nonisolated static let sudoersPath = "/private/etc/sudoers.d/nocturnal"
+    nonisolated static var plistURL: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/LaunchAgents/\(label).plist")
     }
 
     /// Nocturnal's sudoers entry is in place and sudo accepts it.
-    static var sudoReady: Bool {
+    nonisolated static var sudoReady: Bool {
         FileManager.default.fileExists(atPath: sudoersPath)
             && Shell.run("/usr/bin/sudo", ["-n", "-l", "/usr/bin/pmset", "-a", "disablesleep", "1"]).code == 0
     }
-    static var watchdogReady: Bool { FileManager.default.fileExists(atPath: plistURL.path) && StateFiles.exists(StateFiles.watchdog) }
+    nonisolated static var watchdogReady: Bool { FileManager.default.fileExists(atPath: plistURL.path) && StateFiles.exists(StateFiles.watchdog) }
     /// launchd actually has the watchdog loaded (files on disk aren't proof it runs). Spawns launchctl: call off the main thread.
-    static var watchdogLoaded: Bool { Shell.run("/bin/launchctl", ["print", "gui/\(getuid())/\(label)"]).code == 0 }
-    static var isReady: Bool { watchdogReady && sudoReady }
+    nonisolated static var watchdogLoaded: Bool { Shell.run("/bin/launchctl", ["print", "gui/\(getuid())/\(label)"]).code == 0 }
+    nonisolated static var isReady: Bool { watchdogReady && sudoReady }
     /// The sudoers entry has every command this version uses (scheduled wakes and Time Machine came after 1.0, the
     /// watchdog's clean-up after that); an older entry lacks them until Set Up runs again.
     static var wakeReady: Bool {
@@ -257,7 +257,7 @@ enum Setup {
         if !wakeReady { NSLog("Nocturnal: sudoers installed but the wake commands aren't accepted") }
     }
 
-    static let cliPath = "/usr/local/bin/nocturnal"
+    nonisolated static let cliPath = "/usr/local/bin/nocturnal"
     static var cliInstalled: Bool {
         (try? FileManager.default.destinationOfSymbolicLink(atPath: cliPath)) == Bundle.main.executablePath
     }
@@ -266,7 +266,7 @@ enum Setup {
     }
 
     /// Single-quote a path for /bin/sh, escaping any single quotes inside it.
-    static func shellQuote(_ s: String) -> String {
+    nonisolated static func shellQuote(_ s: String) -> String {
         "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
@@ -295,7 +295,7 @@ enum Setup {
     /// switched back on, and Approve everything undone if Claude's and Codex's files are still exactly as Nocturnal
     /// left them. Once the app has been gone for 10 minutes it removes Nocturnal's password rule, its dangling
     /// command link, and itself, so nothing privileged is left behind.
-    static var watchdogScript: String {
+    nonisolated static var watchdogScript: String {
         let exe = Bundle.main.executablePath ?? "/Applications/Nocturnal.app/Contents/MacOS/Nocturnal"
         return """
         #!/bin/sh
@@ -390,7 +390,7 @@ enum Setup {
         try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: StateFiles.watchdog.path)
     }
 
-    static func installWatchdog() throws {
+    nonisolated static func installWatchdog() throws {
         let fm = FileManager.default
         try watchdogScript.write(to: StateFiles.watchdog, atomically: true, encoding: .utf8)
         try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: StateFiles.watchdog.path)

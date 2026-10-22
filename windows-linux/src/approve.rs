@@ -251,8 +251,6 @@ pub fn turn_on(p: &Paths, ends: Ends, hours: Option<f64>, now: u64) -> Result<()
     })
 }
 
-/// Puts back what was there, but only where the value is still Nocturnal's. Keeps the journal, and returns the
-/// reason, if any file couldn't be put back and checked.
 /// Nocturnal is quitting or has died: nothing is left to watch for the work finishing or the time running out,
 /// so an Approve everything that was meant to end by itself ends now. Only "When I turn it off" stays on.
 /// Returns whether it turned it off.
@@ -264,6 +262,8 @@ pub fn end_unwatched(p: &Paths) -> bool {
     turn_off(p).is_ok()
 }
 
+/// Puts back what was there, but only where the value is still Nocturnal's. Keeps the journal, and returns the
+/// reason, if any file couldn't be put back and checked.
 pub fn turn_off(p: &Paths) -> Result<(), String> {
     if !is_on(p) {
         return Ok(());

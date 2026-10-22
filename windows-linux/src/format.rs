@@ -37,16 +37,7 @@ pub fn clock(t: u64) -> String {
 
 /// The next time the local clock reads `hour`:00, as a Unix timestamp (for "Until 07:00").
 pub fn next_local_hour(now: u64, hour: u32) -> u64 {
-    let off = local_offset(now);
-    let local = now as i64 + off;
-    let midnight = local - local.rem_euclid(86_400);
-    let mut target = midnight + hour as i64 * 3600;
-    if target <= local + 60 {
-        target += 86_400;
-    }
-    // Re-check the offset at the target in case a daylight-saving change falls in between.
-    let off2 = local_offset((target - off).max(0) as u64);
-    (target - off2).max(0) as u64
+    next_local_time(now, hour, 0)
 }
 
 /// "7:00" / "07:00" / "19:30" → the next time the local clock shows it; or Unix seconds within the next week.
@@ -60,15 +51,21 @@ pub fn parse_wake_time(t: &str, now: u64) -> Option<u64> {
     if h > 23 || m > 59 {
         return None;
     }
+    Some(next_local_time(now, h, m))
+}
+
+/// The next time, more than a minute from now, that the local clock reads `hour:minute`.
+fn next_local_time(now: u64, hour: u32, minute: u32) -> u64 {
     let off = local_offset(now);
     let local = now as i64 + off;
     let midnight = local - local.rem_euclid(86_400);
-    let mut target = midnight + h as i64 * 3600 + m as i64 * 60;
+    let mut target = midnight + hour as i64 * 3600 + minute as i64 * 60;
     if target <= local + 60 {
         target += 86_400;
     }
+    // Re-check the offset at the target in case a daylight-saving change falls in between.
     let off2 = local_offset((target - off).max(0) as u64);
-    Some((target - off2).max(0) as u64)
+    (target - off2).max(0) as u64
 }
 
 /// "Today 14:05", "Yesterday 09:30", "3 days ago" for the recent-sessions list.

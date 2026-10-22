@@ -5,7 +5,7 @@ extension Engine {
     /// Battery is actually draining (on battery, or on a charger too weak to keep up).
     var onBattery: Bool { battery.map { $0.discharging || !$0.onAC } ?? false }
 
-    /// What the Mac draws with the lid open: live while open on battery, otherwise the last learned value.
+    /// What the Mac draws with the lid open: live while it's open (on battery or the charger), otherwise the last learned value.
     /// Same sensor as the closed figure (whole-Mac load), so "closed vs open" compares like with like.
     var openWatts: Double? { lidClosed ? openDraw : (systemWatts ?? drawNow ?? openDraw) }
 
@@ -14,7 +14,7 @@ extension Engine {
     var openHours: Double? { openWatts.flatMap { hoursLeft(at: $0) } }
 
     /// Battery percent used per hour at a given draw.
-    func percentPerHour(_ watts: Double) -> Double { watts / max(fullWh, 1) * 100 }
+    func percentPerHour(_ watts: Double) -> Double { percent(ofWh: watts) }
 
     /// What closing the lid does under the current rules.
     struct ClosedPlan {
@@ -29,7 +29,7 @@ extension Engine {
     var closedPlan: ClosedPlan {
         var p = ClosedPlan(lowPower: config.lowPowerWhileClosed && config.preset != .speed, watts: closedEstimate)
         for a in userApps where !isProtected(a) {
-            switch rule(for: a.bundleID) {
+            switch rule(for: a.bundleID, name: a.name) {
             case .slow: p.slowed += 1; p.slowedNames.append(a.name)
             case .pause: p.paused += 1; p.pausedNames.append(a.name)
             case .leave: break
@@ -41,7 +41,7 @@ extension Engine {
     /// An app's expected draw with the lid closed under its rule (slowed ≈ ¼, measured; paused = 0).
     func closedWatts(for a: AppUsage) -> Double {
         if isProtected(a) { return a.watts }
-        switch rule(for: a.bundleID) { case .leave: return a.watts; case .slow: return a.watts * 0.25; case .pause: return 0 }
+        switch rule(for: a.bundleID, name: a.name) { case .leave: return a.watts; case .slow: return a.watts * 0.25; case .pause: return 0 }
     }
 
     /// Seconds until Nocturnal lets the Mac sleep if this agent stays idle, or nil when that doesn't apply.
@@ -101,14 +101,13 @@ extension Engine {
         var sessions: Int
         var closedHours: Double
         var whSaved: Double
-        var percentSaved: Double
     }
 
     var weekSummary: WeekSummary? {
         let w = stats.week()
         guard w.count > 0 else { return nil }
         let wh = w.wh + w.whAvoided
-        return WeekSummary(sessions: w.count, closedHours: w.closedMinutes / 60, whSaved: wh, percentSaved: percent(ofWh: wh))
+        return WeekSummary(sessions: w.count, closedHours: w.closedMinutes / 60, whSaved: wh)
     }
 
     /// The Now tab's figures as text, so the phone page shows exactly what the Mac panel shows.

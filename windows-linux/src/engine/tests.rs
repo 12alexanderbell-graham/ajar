@@ -1245,12 +1245,12 @@ fn a_scheduled_wake_holds_for_its_minutes_and_clears_itself() {
 fn old_commands_are_dropped_but_a_wake_waits_up_to_three_hours() {
     let mut g = crate::remote::Guard::default();
     let now = crate::now();
-    assert!(g.check_aged(now - 400, "a", now, 300).is_err());
+    assert!(g.check(now - 400, "a", now, 300).is_err());
     assert!(g
-        .check_aged(now - 2 * 3600, "b", now, crate::wake::WAKE_MAX_AGE)
+        .check(now - 2 * 3600, "b", now, crate::wake::WAKE_MAX_AGE)
         .is_ok());
     assert!(
-        g.check_aged(now - 2 * 3600, "b", now, crate::wake::WAKE_MAX_AGE)
+        g.check(now - 2 * 3600, "b", now, crate::wake::WAKE_MAX_AGE)
             .is_err(),
         "never twice"
     );
@@ -1388,4 +1388,145 @@ fn the_phone_gets_its_three_numbers_as_numbers() {
         e.panel_json(now + 4)["numbers"].is_null(),
         "desktops have none"
     );
+}
+
+#[test]
+fn the_phone_panel_has_the_macs_apps_sessions_and_countdowns() {
+    let mut e = engine("panel-parity", Mock::laptop());
+    let now = crate::now();
+    e.update(|c| {
+        c.wake_for_minutes = 45;
+        c.app_rules.insert("slack".into(), AppRule::Pause);
+    });
+    e.procs = vec![
+        proc(800, 1, "slack", 1),
+        proc(801, 1, "chrome", 1),
+        proc(802, 1, "claude", 1),
+        proc(803, 1, "explorer", 1),
+    ];
+    e.watcher.protected = [802].into_iter().collect();
+    e.watcher.cpu_by_app = vec![
+        ("claude".into(), 50.0),
+        ("chrome".into(), 30.0),
+        ("explorer".into(), 15.0),
+        ("slack".into(), 5.0),
+    ];
+    // Claude Code went quiet 2 minutes ago: 3 of its 5 quiet minutes are left.
+    agent(&mut e, now - 120);
+    e.stats.sessions.push(SessionRecord {
+        date: now - 3600,
+        closed_minutes: 65.0,
+        start_percent: Some(90),
+        end_percent: Some(78),
+        agent: Some("Claude Code".into()),
+        slept: true,
+    });
+    e.tick(now, None);
+    let p = e.panel_json(now);
+    assert_eq!(p["wakeFor"], 45);
+    assert_eq!(p["agents"][0]["sleepsIn"], 3);
+    let apps = p["apps"].as_array().unwrap();
+    let ids: Vec<&str> = apps.iter().map(|a| a["id"].as_str().unwrap()).collect();
+    assert_eq!(
+        ids,
+        ["chrome", "slack"],
+        "busiest first, never an agent's process or the system"
+    );
+    assert_eq!(
+        (apps[0]["rule"].as_str(), apps[0]["custom"].as_bool()),
+        (Some("slow"), Some(false))
+    );
+    assert_eq!(
+        (apps[1]["rule"].as_str(), apps[1]["custom"].as_bool()),
+        (Some("pause"), Some(true))
+    );
+    // 8 W shared out by CPU: chrome has 30 of the 100 points.
+    assert_eq!(apps[0]["w"], 2.4);
+    assert_eq!(
+        p["sessions"][0]["line"],
+        "1 h 05 min closed · used 12% · then slept"
+    );
+    assert!(p["sessions"][0]["when"]
+        .as_str()
+        .unwrap()
+        .ends_with(" · Claude Code"));
+    // Working agents have no countdown.
+    agent(&mut e, now);
+    assert!(e.panel_json(now)["agents"][0].get("sleepsIn").is_none());
+}
+
+#[test]
+fn the_phone_can_set_an_apps_lid_shut_rule() {
+    assert!(crate::remote::ALLOWED.contains(&"rule"));
+    let mut e = engine("phone-rule", Mock::laptop());
+    let r = e.handle("rule", &json!({ "app": "chrome", "rule": "pause" }));
+    assert_eq!(
+        (r["app"].as_str(), r["rule"].as_str()),
+        (Some("chrome"), Some("pause"))
+    );
+    let r = e.handle("rule", &json!({ "app": "chrome", "rule": "default" }));
+    assert_eq!(r["rule"], "slow (preset default)");
+    assert!(e.cfg.app_rules.is_empty());
+}
+
+/// A real 20-minute test on the Mac showed hours-left jumping between 3 h and 25 h from one minute to the next,
+/// because the lid-shut figure was the instantaneous draw. It's a three-minute average now.
+#[test]
+fn hours_left_with_the_lid_shut_follows_the_draw_slowly() {
+    let mut e = engine("steady", Mock::laptop());
+    let now = crate::now();
+    agent(&mut e, now);
+    e.tick(now, None);
+    let hours = |e: &Engine<Mock>| e.hours_left(e.closed_watts()).unwrap();
+    let before = hours(&e);
+    e.platform.lid = true;
+    e.tick(now + 2, None);
+    assert!(
+        (hours(&e) - before).abs() < 1e-9,
+        "seeded with the estimate from before the lid closed, not the 8 W reading"
+    );
+    // Twenty minutes of bursty work: 3 W and 25 W alternating every minute.
+    let mut per_minute = vec![];
+    for i in 1..=600u64 {
+        let t = now + 2 + i * 2;
+        let watts = if (i / 30) % 2 == 0 { 3.0 } else { 25.0 };
+        e.platform.battery = Some(Battery {
+            watts,
+            ..Mock::laptop().battery.unwrap()
+        });
+        agent(&mut e, t);
+        e.tick(t, None);
+        if i % 30 == 0 {
+            per_minute.push(hours(&e));
+        }
+    }
+    assert!(e.holding);
+    let settled = &per_minute[5..];
+    let (lo, hi) = settled
+        .iter()
+        .fold((f64::MAX, f64::MIN), |(lo, hi), h| (lo.min(*h), hi.max(*h)));
+    // The instantaneous figure would swing 25/3 ≈ 8×; the average stays near 14 W.
+    assert!(hi / lo < 1.6, "hours left swung from {lo:.1} to {hi:.1}");
+    for pair in settled.windows(2) {
+        assert!(
+            (pair[1] / pair[0] - 1.0).abs() < 0.3,
+            "minute to minute: {:.2} h → {:.2} h",
+            pair[0],
+            pair[1]
+        );
+    }
+    // Lid open again: the learned lid-shut draw is shown, and a new reading doesn't move it.
+    e.platform.lid = false;
+    agent(&mut e, now + 1300);
+    e.tick(now + 1300, None);
+    let learned = e.closed_watts();
+    assert_eq!(Some(learned), e.closed_draw);
+    assert!(learned > 8.0 && learned < 20.0, "{learned}");
+    e.platform.battery = Some(Battery {
+        watts: 30.0,
+        ..Mock::laptop().battery.unwrap()
+    });
+    agent(&mut e, now + 1302);
+    e.tick(now + 1302, None);
+    assert_eq!(e.closed_watts(), learned);
 }

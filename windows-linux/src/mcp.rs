@@ -53,7 +53,7 @@ pub fn tools() -> Value {
     ])
 }
 
-/// Maps a tool call to an Nocturnal command and its arguments.
+/// Maps a tool call to a Nocturnal command and its arguments.
 pub fn to_command(name: &str, args: &Value, server_pid: u32) -> Option<(&'static str, Value)> {
     let mut a = args.clone();
     if !a.is_object() {
@@ -89,7 +89,7 @@ pub fn to_command(name: &str, args: &Value, server_pid: u32) -> Option<(&'static
     })
 }
 
-/// One JSON-RPC message in, at most one out. `run` executes an Nocturnal command.
+/// One JSON-RPC message in, at most one out. `run` executes a Nocturnal command.
 pub fn handle(
     msg: &Value,
     server_pid: u32,

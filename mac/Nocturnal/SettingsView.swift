@@ -231,7 +231,7 @@ struct SettingsView: View {
                     Spacer()
                     Text(engine.batteryFloor == 0 ? "Never" : "\(engine.batteryFloor)%").monospacedDigit().foregroundStyle(.secondary)
                 }
-                Slider(value: Binding(get: { Double(engine.batteryFloor) }, set: { engine.batteryFloor = Int($0) }), in: 0...50, step: 5)
+                Slider(value: Binding(get: { Double(engine.batteryFloor) }, set: { engine.batteryFloor = Int($0) }), in: 0...80, step: 5)
                     .labelsHidden()
             }
             if engine.batteryFloor == 0 {

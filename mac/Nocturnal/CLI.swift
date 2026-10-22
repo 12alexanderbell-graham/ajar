@@ -275,7 +275,7 @@ enum CLI {
 
       nocturnal status [--json]              what it's doing and why
       nocturnal auto | off                   switch mode
-      nocturnal on|always [--for 2h]         keep awake no matter what
+      nocturnal on|always [--for 2h]         keep awake (the battery limit and heat guard still apply)
       nocturnal sleep                        let it sleep now (agents wait until the lid opens again)
       nocturnal hold [--for 90m] [--reason "training"] [--pid N]
                                         keep awake until time runs out, the process exits, or release

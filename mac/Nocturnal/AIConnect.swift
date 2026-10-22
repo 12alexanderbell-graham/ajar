@@ -76,7 +76,7 @@ enum AIConnect {
 
     // MARK: Codex
 
-    nonisolated static var codexConfig: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/config.toml") }
+    nonisolated static var codexConfig: URL { AutoApprove.codexURL }
     nonisolated static var codexInstalled: Bool { FileManager.default.fileExists(atPath: codexConfig.deletingLastPathComponent().path) }
     nonisolated static var codexConnected: Bool {
         guard let text = try? String(contentsOf: codexConfig, encoding: .utf8) else { return false }

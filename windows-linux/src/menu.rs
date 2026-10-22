@@ -154,20 +154,11 @@ impl UiState {
             .rev()
             .take(5)
             .map(|r| {
-                let mut s = format!(
-                    "{} · {} closed",
+                format!(
+                    "{} · {}",
                     crate::format::when(r.date, now),
-                    crate::format::minutes(r.closed_minutes)
-                );
-                if let (Some(a), Some(b)) = (r.start_percent, r.end_percent) {
-                    if a >= b {
-                        s.push_str(&format!(" · used {}%", a - b));
-                    }
-                }
-                if r.slept {
-                    s.push_str(" · then slept");
-                }
-                s
+                    crate::engine::session_line(r)
+                )
             })
             .collect();
         UiState {
@@ -386,12 +377,12 @@ fn apps_menu(s: &UiState) -> Vec<Node> {
         vec![
             check(
                 "preset:longest",
-                "Max Battery: pause chat, mail and office apps, slow browsers",
+                "Max Battery: pause chat, mail and office apps, slow browsers and terminals",
                 s.preset == Preset::Longest,
             ),
             check(
                 "preset:balanced",
-                "Balanced: slow browsers and chat apps",
+                "Balanced: slow browsers, terminals and chat apps",
                 s.preset == Preset::Balanced,
             ),
             check(

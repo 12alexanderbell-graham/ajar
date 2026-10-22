@@ -35,6 +35,20 @@ enum Stop: Int, CaseIterable, Identifiable {
 }
 
 extension Stop {
+    /// How awake the ground looks at this stop (0 night, 1 green). When busy sits in between unless an agent is
+    /// working right now.
+    func level(working: Bool) -> Double {
+        switch self {
+        case .off: 0.05
+        case .busy: working ? 0.85 : 0.45
+        case .h1: 0.7
+        case .h2: 0.77
+        case .h4: 0.84
+        case .h8: 0.92
+        case .always: 1
+        }
+    }
+
     /// The colour of the band under this stop: night at Off, the app's greens towards Always.
     var color: Color {
         switch self {
@@ -55,6 +69,8 @@ extension Stop {
 /// is sent when the finger lifts; the words above the band say where it would land.
 struct KeepAwakeBand: View {
     let stop: Stop
+    /// Asleep or out of reach: the band greys out and takes no touches, since nothing it sent would land.
+    var enabled = true
     /// The stop under the finger while dragging (nil when not touching), for the words above the band.
     @Binding var hovering: Stop?
     let choose: (Stop) -> Void
@@ -87,7 +103,10 @@ struct KeepAwakeBand: View {
                 .allowsHitTesting(false)
             }
             .foregroundStyle(.white)
+            .saturation(enabled ? 1 : 0)
+            .animation(Theme.smooth, value: enabled)
             .contentShape(.capsule)
+            .allowsHitTesting(enabled)
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { g in
@@ -114,9 +133,10 @@ struct KeepAwakeBand: View {
         .sensoryFeedback(.selection, trigger: hovering) { _, new in new != nil }
         .accessibilityElement()
         .accessibilityLabel("Keep awake")
-        .accessibilityValue(stop.word)
+        .accessibilityValue(enabled ? stop.word : "\(stop.word), unavailable while it sleeps")
         .accessibilityIdentifier("band")
         .accessibilityAdjustableAction { direction in
+            guard enabled else { return }
             switch direction {
             case .increment: if let s = Stop(rawValue: stop.rawValue + 1) { choose(s) }
             case .decrement: if let s = Stop(rawValue: stop.rawValue - 1) { choose(s) }

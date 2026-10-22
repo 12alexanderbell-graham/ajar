@@ -14,14 +14,15 @@ struct NocturnalPhoneApp: App {
 }
 
 /// One ground under everything, so moving from pairing to the computer (or the demo) is the same green carrying on,
-/// then washing to night if the computer sleeps.
+/// then following the band and washing to night when the computer sleeps.
 private struct Root: View {
     @Environment(Computer.self) private var computer
 
     var body: some View {
         ZStack {
-            Ground(awake: computer.isPaired ? (computer.keepsWorking ? 1 : 0) : 1)
-                .animation(.smooth(duration: 1.1), value: computer.isPaired ? computer.keepsWorking : true)
+            // Slow when the computer changes state, quick while a finger drags the band.
+            Ground(awake: computer.groundLevel)
+                .animation(.smooth(duration: computer.hovering == nil ? 1.1 : 0.35), value: computer.groundLevel)
             if computer.isPaired {
                 HomeView()
                     .transition(.move(edge: .bottom))

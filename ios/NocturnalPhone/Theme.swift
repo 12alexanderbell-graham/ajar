@@ -37,9 +37,8 @@ enum Theme {
     static func freshnessColor(_ k: Computer.Freshness) -> Color {
         switch k {
         case .live: mint
-        case .done, .busy: .white
         case .bad: amber
-        case .stale: .white
+        case .done, .busy, .stale: .white
         }
     }
 }
@@ -79,7 +78,6 @@ struct HeadCircle: View {
     let symbol: String
     let label: String
     var turns: Double = 0
-    var glass = true
     let action: () -> Void
 
     var body: some View {
@@ -92,7 +90,7 @@ struct HeadCircle: View {
         }
         .buttonStyle(Press())
         .foregroundStyle(.white)
-        .glassEffect(glass ? .clear.interactive() : .identity, in: .circle)
+        .glassEffect(.clear.interactive(), in: .circle)
         .animation(Theme.grow, value: turns)
         .accessibilityLabel(label)
     }

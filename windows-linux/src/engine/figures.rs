@@ -22,34 +22,35 @@ impl<P: Platform> Engine<P> {
         Some(usable / watts)
     }
 
-    /// Lid-closed draw: the smoothed figure learned on this machine, else the live reading while closed, else a
-    /// conservative default (flagged by `closed_draw_is_guess`).
+    /// Lid-shut draw: while the lid is shut, a three-minute average of the readings (seeded with the figure from
+    /// before it closed); with it open, the figure learned on this machine, else a conservative default (flagged
+    /// by `closed_draw_is_guess`). Never the instantaneous reading, so hours-left doesn't jump about.
     pub fn closed_watts(&self) -> f64 {
-        if let Some(w) = self.closed_draw {
-            return w;
-        }
-        if self.lid_closed && self.holding {
-            if let Some(b) = &self.battery {
-                if b.discharging() {
-                    return b.watts;
-                }
-            }
-        }
-        DEFAULT_CLOSED_W
+        self.closed_avg
+            .map(|(w, _)| w)
+            .or(self.closed_draw)
+            .unwrap_or(DEFAULT_CLOSED_W)
     }
 
     pub fn closed_draw_is_guess(&self) -> bool {
         self.closed_draw.is_none()
-            && !(self.lid_closed
-                && self.holding
-                && self.battery.as_ref().is_some_and(|b| b.discharging()))
     }
 
-    pub fn open_watts(&self) -> Option<f64> {
-        match &self.battery {
-            Some(b) if !self.lid_closed && b.discharging() => Some(b.watts),
-            _ => self.open_draw,
+    /// Seconds until Nocturnal lets the laptop sleep if this agent stays quiet, or None when that doesn't apply
+    /// (it's working, it doesn't keep the laptop awake, or the mode doesn't sleep when work stops).
+    pub fn sleeps_in(&self, s: &Session, now: u64) -> Option<u64> {
+        if self.cfg.mode != Mode::Auto
+            || !self.cfg.sleep_when_done
+            || s.working(now)
+            || s.last_active == 0
+            || !self.counts(s)
+        {
+            return None;
         }
+        let left = self
+            .quiet_window()
+            .saturating_sub(now.saturating_sub(s.last_active));
+        (left > 0).then_some(left)
     }
 
     /// What the laptop is doing, in plain words: it keeps working, or it sleeps. Same words on the phone and the Mac.
@@ -96,19 +97,21 @@ impl<P: Platform> Engine<P> {
         }
     }
 
+    /// Hours left on battery with the lid closed, to 5 minutes so the figure doesn't flicker. None without a lid.
+    fn closed_hours(&self) -> Option<f64> {
+        if !self.has_lid {
+            return None;
+        }
+        self.hours_left(self.closed_watts())
+            .map(|h| (h * 12.0).round() / 12.0)
+            .filter(|h| *h > 0.0)
+    }
+
     /// One plain line about the battery (menu and phone, worded as on the Mac): "64% · about 6 h 05 min with
-    /// the lid closed". Hours are rounded to 5 minutes so the menu doesn't flicker; just the percent when there's
-    /// no estimate (or no lid).
+    /// the lid closed", or just the percent when there's no estimate (or no lid).
     pub fn battery_summary(&self) -> Option<String> {
         let b = self.battery.as_ref()?;
-        let hours = if self.has_lid {
-            self.hours_left(self.closed_watts())
-                .map(|h| (h * 12.0).round() / 12.0)
-                .filter(|h| *h > 0.0)
-        } else {
-            None
-        };
-        Some(match hours {
+        Some(match self.closed_hours() {
             Some(h) => format!(
                 "{}% · about {} with the lid closed",
                 b.percent,
@@ -120,22 +123,15 @@ impl<P: Platform> Engine<P> {
     }
 
     /// The three numbers on the phone's status card, as numbers (the phone formats and animates them): battery
-    /// percent, whole-laptop draw now in watts, and hours left on battery with the lid closed (to 5 minutes).
+    /// percent, whole-laptop draw now in watts, and hours left on battery with the lid closed.
     pub fn phone_numbers(&self) -> Value {
         let Some(b) = self.battery.as_ref() else {
             return Value::Null;
         };
-        let hours = if self.has_lid {
-            self.hours_left(self.closed_watts())
-                .map(|h| (h * 12.0).round() / 12.0)
-                .filter(|h| *h > 0.0)
-        } else {
-            None
-        };
         json!({
             "pct": b.percent,
             "w": b.discharging().then(|| (b.watts * 10.0).round() / 10.0),
-            "h": hours,
+            "h": self.closed_hours(),
             "plugged": !b.on_battery(),
             "charging": b.charging,
             "guess": self.closed_draw_is_guess(),
@@ -146,7 +142,7 @@ impl<P: Platform> Engine<P> {
         self.battery_line_rounded(1.0)
     }
 
-    /// Battery line with the hours estimate rounded to `step` minutes (the menu uses 5 so it doesn't flicker).
+    /// Battery line with the hours estimate rounded to `step` minutes (the phone gets 5, so it doesn't flicker).
     pub fn battery_line_rounded(&self, step: f64) -> Option<String> {
         let b = self.battery.as_ref()?;
         let per_hour = 60.0 / step.max(1.0);

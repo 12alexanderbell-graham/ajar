@@ -193,7 +193,7 @@ private struct NowTab: View {
             return notice("At your \(engine.batteryFloor)% battery limit, so it sleeps with the lid shut.", "Keep Going") { engine.overrideFloor() }
         }
         if engine.floorOverride {
-            return notice("Going below \(engine.batteryFloor)% until you plug in.", "Undo") { engine.overrideFloor(false) }
+            return notice("Going below \(engine.batteryFloor)% until it charges.", "Undo") { engine.overrideFloor(false) }
         }
         if let w = engine.warning { return Notice(text: w, button: "OK", warning: true) { engine.warning = nil } }
         // The hotspot tip only after it actually cost something: the last lid-shut session lost the internet.
@@ -529,7 +529,7 @@ struct AppsView: View {
         }
         .buttonStyle(.plain).foregroundStyle(Color.accentColor).font(.subheadline)
         .disabled(engine.measuring || (engine.lidClosed && engine.holding))
-        .help("Applies these rules for about 5 seconds and reads each app's real power before and after")
+        .help("Applies these rules for about 4 seconds and reads each app's real power before and after")
     }
 
     // Building blocks

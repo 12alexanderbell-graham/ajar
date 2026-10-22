@@ -115,171 +115,118 @@ fn active_scheme() -> Option<GUID> {
     }
 }
 
-fn read_lid_action(scheme: &GUID) -> Option<(u32, u32)> {
-    unsafe {
-        let (mut ac, mut dc) = (0u32, 0u32);
-        let a = PowerReadACValueIndex(
-            std::ptr::null_mut(),
-            scheme,
-            &GUID_SYSTEM_BUTTON_SUBGROUP,
-            &GUID_LIDCLOSE_ACTION,
-            &mut ac,
-        );
-        let d = PowerReadDCValueIndex(
-            std::ptr::null_mut(),
-            scheme,
-            &GUID_SYSTEM_BUTTON_SUBGROUP,
-            &GUID_LIDCLOSE_ACTION,
-            &mut dc,
-        );
-        (a == 0 && d == 0).then_some((ac, dc))
+/// One power setting's plugged-in (`ac`) or battery value in a plan.
+fn read_index(scheme: &GUID, subgroup: &GUID, setting: &GUID, ac: bool) -> Option<u32> {
+    let mut v = 0u32;
+    let r = unsafe {
+        if ac {
+            PowerReadACValueIndex(std::ptr::null_mut(), scheme, subgroup, setting, &mut v)
+        } else {
+            PowerReadDCValueIndex(std::ptr::null_mut(), scheme, subgroup, setting, &mut v)
+        }
+    };
+    (r == 0).then_some(v)
+}
+
+fn write_index(scheme: &GUID, subgroup: &GUID, setting: &GUID, ac: bool, v: u32) -> bool {
+    let r = unsafe {
+        if ac {
+            PowerWriteACValueIndex(std::ptr::null_mut(), scheme, subgroup, setting, v)
+        } else {
+            PowerWriteDCValueIndex(std::ptr::null_mut(), scheme, subgroup, setting, v)
+        }
+    };
+    r == 0
+}
+
+/// Re-applying the active plan makes values just written to it take effect immediately.
+fn apply_if_active(scheme: &GUID) {
+    if active_scheme().is_some_and(|active| same(&active, scheme)) {
+        unsafe { PowerSetActiveScheme(std::ptr::null_mut(), scheme) };
     }
 }
 
-fn write_lid_action(scheme: &GUID, ac: u32, dc: u32) -> bool {
-    unsafe {
-        let a = PowerWriteACValueIndex(
-            std::ptr::null_mut(),
+fn read_lid_action(scheme: &GUID) -> Option<(u32, u32)> {
+    let read = |ac| {
+        read_index(
             scheme,
             &GUID_SYSTEM_BUTTON_SUBGROUP,
             &GUID_LIDCLOSE_ACTION,
             ac,
-        );
-        let d = PowerWriteDCValueIndex(
-            std::ptr::null_mut(),
+        )
+    };
+    Some((read(true)?, read(false)?))
+}
+
+fn write_lid_action(scheme: &GUID, ac: u32, dc: u32) -> bool {
+    let write = |on_ac, v| {
+        write_index(
             scheme,
             &GUID_SYSTEM_BUTTON_SUBGROUP,
             &GUID_LIDCLOSE_ACTION,
-            dc,
-        );
-        // Re-applying the active plan makes the new values take effect immediately.
-        if let Some(active) = active_scheme() {
-            if same(&active, scheme) {
-                PowerSetActiveScheme(std::ptr::null_mut(), scheme);
-            }
-        }
-        a == 0 && d == 0
-    }
+            on_ac,
+            v,
+        )
+    };
+    let (a, d) = (write(true, ac), write(false, dc));
+    apply_if_active(scheme);
+    a && d
 }
 
 // Sleep after (STANDBYIDLE) and the hidden "System unattended sleep timeout" (UNATTENDSLEEP), both in seconds.
 const SLEEP_SUBGROUP: GUID = GUID::from_u128(0x238c9fa8_0aad_41ed_83f4_97be242c8f20);
 const STANDBY_TIMEOUT: GUID = GUID::from_u128(0x29f6c1db_86da_48c5_9fdb_f2b67b1f44da);
 const UNATTEND_SLEEP_TIMEOUT: GUID = GUID::from_u128(0x7bc4a2f9_d8fc_4469_b07b_33eb785aaca0);
+/// The order of the four sleep timeouts in `Restore::sleep_idle`: sleep AC, sleep DC, unattended AC, unattended DC.
+const SLEEP_IDLE: [(&GUID, bool); 4] = [
+    (&STANDBY_TIMEOUT, true),
+    (&STANDBY_TIMEOUT, false),
+    (&UNATTEND_SLEEP_TIMEOUT, true),
+    (&UNATTEND_SLEEP_TIMEOUT, false),
+];
 
 // Processor performance boost mode (0 = disabled), under the processor power management subgroup.
 const PROCESSOR_SUBGROUP: GUID = GUID::from_u128(0x54533251_82be_4824_96c1_47b60b740d00);
 const PERF_BOOST_MODE: GUID = GUID::from_u128(0xbe337238_0d82_4146_a960_4f3749d470c7);
 
 fn read_boost_dc(scheme: &GUID) -> Option<u32> {
-    let mut v = 0u32;
-    (unsafe {
-        PowerReadDCValueIndex(
-            std::ptr::null_mut(),
-            scheme,
-            &PROCESSOR_SUBGROUP,
-            &PERF_BOOST_MODE,
-            &mut v,
-        )
-    } == 0)
-        .then_some(v)
+    read_index(scheme, &PROCESSOR_SUBGROUP, &PERF_BOOST_MODE, false)
 }
 
 fn write_boost_dc(scheme: &GUID, v: u32) -> bool {
-    unsafe {
-        let ok = PowerWriteDCValueIndex(
-            std::ptr::null_mut(),
-            scheme,
-            &PROCESSOR_SUBGROUP,
-            &PERF_BOOST_MODE,
-            v,
-        ) == 0;
-        if let Some(active) = active_scheme() {
-            if same(&active, scheme) {
-                PowerSetActiveScheme(std::ptr::null_mut(), scheme);
-            }
+    let ok = write_index(scheme, &PROCESSOR_SUBGROUP, &PERF_BOOST_MODE, false, v);
+    apply_if_active(scheme);
+    ok
+}
+
+/// Puts processor boost on battery back if it's still Nocturnal's 0 (someone may have changed it since).
+fn put_back_boost_dc(r: &mut Restore) {
+    if let Some((s, prev)) = r.boost_dc.clone() {
+        if parse_guid(&s).is_none_or(|g| {
+            read_boost_dc(&g).is_some_and(|cur| cur != 0) || write_boost_dc(&g, prev)
+        }) {
+            r.boost_dc = None;
         }
-        ok
     }
 }
 
-/// [sleep AC, sleep DC, unattended AC, unattended DC]
 fn read_sleep_idle(scheme: &GUID) -> Option<[u32; 4]> {
-    unsafe {
-        let mut v = [0u32; 4];
-        let r = [
-            PowerReadACValueIndex(
-                std::ptr::null_mut(),
-                scheme,
-                &SLEEP_SUBGROUP,
-                &STANDBY_TIMEOUT,
-                &mut v[0],
-            ),
-            PowerReadDCValueIndex(
-                std::ptr::null_mut(),
-                scheme,
-                &SLEEP_SUBGROUP,
-                &STANDBY_TIMEOUT,
-                &mut v[1],
-            ),
-            PowerReadACValueIndex(
-                std::ptr::null_mut(),
-                scheme,
-                &SLEEP_SUBGROUP,
-                &UNATTEND_SLEEP_TIMEOUT,
-                &mut v[2],
-            ),
-            PowerReadDCValueIndex(
-                std::ptr::null_mut(),
-                scheme,
-                &SLEEP_SUBGROUP,
-                &UNATTEND_SLEEP_TIMEOUT,
-                &mut v[3],
-            ),
-        ];
-        r.iter().all(|&e| e == 0).then_some(v)
+    let mut v = [0u32; 4];
+    for (slot, (setting, ac)) in v.iter_mut().zip(SLEEP_IDLE) {
+        *slot = read_index(scheme, &SLEEP_SUBGROUP, setting, ac)?;
     }
+    Some(v)
 }
 
 fn write_sleep_idle(scheme: &GUID, v: [u32; 4]) -> bool {
-    unsafe {
-        let r = [
-            PowerWriteACValueIndex(
-                std::ptr::null_mut(),
-                scheme,
-                &SLEEP_SUBGROUP,
-                &STANDBY_TIMEOUT,
-                v[0],
-            ),
-            PowerWriteDCValueIndex(
-                std::ptr::null_mut(),
-                scheme,
-                &SLEEP_SUBGROUP,
-                &STANDBY_TIMEOUT,
-                v[1],
-            ),
-            PowerWriteACValueIndex(
-                std::ptr::null_mut(),
-                scheme,
-                &SLEEP_SUBGROUP,
-                &UNATTEND_SLEEP_TIMEOUT,
-                v[2],
-            ),
-            PowerWriteDCValueIndex(
-                std::ptr::null_mut(),
-                scheme,
-                &SLEEP_SUBGROUP,
-                &UNATTEND_SLEEP_TIMEOUT,
-                v[3],
-            ),
-        ];
-        if let Some(active) = active_scheme() {
-            if same(&active, scheme) {
-                PowerSetActiveScheme(std::ptr::null_mut(), scheme);
-            }
-        }
-        r.iter().all(|&e| e == 0)
-    }
+    // Every value is written even if one fails, as the plan would otherwise be left half changed.
+    let written: Vec<bool> = SLEEP_IDLE
+        .iter()
+        .zip(v)
+        .map(|((setting, ac), value)| write_index(scheme, &SLEEP_SUBGROUP, setting, *ac, value))
+        .collect();
+    apply_if_active(scheme);
+    written.into_iter().all(|ok| ok)
 }
 
 /// Puts the sleep timeouts back if they're still Nocturnal's "never" (someone may have set them deliberately since).
@@ -401,13 +348,7 @@ pub fn restore_lid_from_journal() {
     };
     r.lid_more.retain(|(s, ac, dc)| !put_back(s, *ac, *dc));
     put_back_sleep_idle(&mut r);
-    if let Some((s, prev)) = r.boost_dc.clone() {
-        if parse_guid(&s).is_none_or(|g| {
-            read_boost_dc(&g).is_some_and(|cur| cur != 0) || write_boost_dc(&g, prev)
-        }) {
-            r.boost_dc = None;
-        }
-    }
+    put_back_boost_dc(&mut r);
     match (r.lid_action, r.lid_scheme.as_deref()) {
         (Some((ac, dc)), Some(s)) if !put_back(s, ac, dc) => {}
         _ => {
@@ -976,13 +917,8 @@ impl Platform for Win {
                     }
                 }
             }
-        } else if let Some((s, prev)) = restore.boost_dc.clone() {
-            let done = parse_guid(&s).is_none_or(|g| {
-                read_boost_dc(&g).is_some_and(|cur| cur != 0) || write_boost_dc(&g, prev)
-            });
-            if done {
-                restore.boost_dc = None;
-            }
+        } else {
+            put_back_boost_dc(restore);
         }
         let Some((get, set)) = overlay_fns() else {
             return false;
@@ -1267,9 +1203,10 @@ impl Platform for Win {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn throttle_limit_maps_to_heat() {
-        use super::{thermal_from_limits, Thermal};
         assert_eq!(thermal_from_limits(&[]), Thermal::Unknown);
         assert_eq!(
             thermal_from_limits(&[(3000, 3000), (3000, 3000)]),
@@ -1300,8 +1237,6 @@ mod tests {
             "no data is not normal"
         );
     }
-
-    use super::*;
 
     #[test]
     fn guid_round_trip() {

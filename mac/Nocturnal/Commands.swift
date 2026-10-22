@@ -170,7 +170,7 @@ final class CommandCenter {
             let raw = (str("rule") ?? "").lowercased()
             if raw == "default" || raw == "reset" {
                 engine.update { $0.appRules.removeValue(forKey: bid) }
-                return ok(["app": found.name, "rule": engine.rule(for: bid).rawValue + " (preset default)"])
+                return ok(["app": found.name, "rule": engine.rule(for: bid, name: found.name).rawValue + " (preset default)"])
             }
             guard let r = AppRule(rawValue: raw) else { return fail("rule must be leave, slow, pause or default") }
             engine.setRule(r, for: bid)
@@ -234,12 +234,7 @@ final class CommandCenter {
             ok(["path": Config.url.path, "config": (try? JSONSerialization.jsonObject(with: engine.config.encoded())) ?? [:]])
 
         case "open":
-            // "window" is still accepted from older scripts; Nocturnal's only window is the panel.
-            ui.showPopover()
-            ok()
-
-        case "settings":
-            ui.showSettings()
+            if str("where") == "settings" { ui.showSettings() } else { ui.showPopover() }
             ok()
 
         case "snapshot":
@@ -249,8 +244,8 @@ final class CommandCenter {
             guard name.lowercased().hasSuffix(".png"), !name.hasPrefix(".") else { return fail("snapshot name must end in .png") }
             let path = StateFiles.dir.appendingPathComponent(name).path
             let settings = str("where") == "settings"
-            // Give SwiftUI a beat to lay out and load data before capturing.
             if settings { ui.showSettings() } else { ui.showPopover() }
+            // Give SwiftUI a beat to lay out and load data before capturing.
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { [weak self] in
                 guard let self else { return }
                 let done = self.ui.snapshot(to: URL(fileURLWithPath: path), settings: settings)
@@ -328,7 +323,7 @@ final class CommandCenter {
         let w = engine.stats.week()
         d["estimated_savings_this_week"] = [
             "full_charges_equivalent": (engine.percent(ofWh: w.wh + w.whAvoided) / 100 * 100).rounded() / 100,
-            (PowerSensor.isMeasured ? "vs_lid_open_wh" : "by_slowing_apps_wh"): (w.wh * 100).rounded() / 100,
+            (PowerSensor.isMeasured ? "by_savings_wh" : "by_slowing_apps_wh"): (w.wh * 100).rounded() / 100,
             "by_sleeping_when_done_wh": (w.whAvoided * 100).rounded() / 100,
             "slept_minutes": Int(w.sleptMinutes),
             "sessions": w.count,
@@ -347,7 +342,7 @@ final class CommandCenter {
                 "name": a.name,
                 "bundle_id": a.bundleID ?? "",
                 "watts": (a.watts * 100).rounded() / 100,
-                "while_closed": engine.isProtected(a) ? "kept (Nocturnal is keeping it awake)" : engine.rule(for: a.bundleID).rawValue,
+                "while_closed": engine.isProtected(a) ? "kept (Nocturnal is keeping it awake)" : engine.rule(for: a.bundleID, name: a.name).rawValue,
             ]
         }
     }

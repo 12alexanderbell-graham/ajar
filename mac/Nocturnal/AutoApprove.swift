@@ -27,7 +27,8 @@ enum AutoApprove {
     nonisolated static var claudeURL: URL {
         (testRoot ?? FileManager.default.homeDirectoryForCurrentUser).appendingPathComponent(".claude/settings.json")
     }
-    static var codexURL: URL {
+    /// Codex's config file, where Codex itself looks for it (CODEX_HOME, else ~/.codex).
+    nonisolated static var codexURL: URL {
         if let t = testRoot { return t.appendingPathComponent(".codex/config.toml") }
         let home = ProcessInfo.processInfo.environment["CODEX_HOME"].map { URL(fileURLWithPath: $0) }
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex")
@@ -35,7 +36,7 @@ enum AutoApprove {
     }
 
     /// When it turns itself off.
-    enum Ends: String, Codable, CaseIterable {
+    enum Ends: String, Codable {
         case work, time, manual
     }
 
@@ -49,7 +50,6 @@ enum AutoApprove {
         var ends: Ends?                // nil (older journals) = when the person turns it off
         var endsAt: Double?            // Unix seconds: the set time, or the latest it can last while waiting for work
         var sawWork: Bool?             // Nocturnal has kept the Mac awake for work since it was turned on
-        var since: Double?
         /// Why the last attempt to put things back failed. While set, it's still (possibly) on.
         var problem: String?
     }
@@ -100,7 +100,6 @@ enum AutoApprove {
         j.codexApproval = TOMLTop.line(codexText, key: "approval_policy")
         j.codexSandbox = TOMLTop.line(codexText, key: "sandbox_mode")
         j.ends = ends
-        j.since = now
         switch ends {
         case .time: j.endsAt = now + (hours ?? 8) * 3600
         case .work: j.endsAt = now + workCap
@@ -138,8 +137,6 @@ enum AutoApprove {
         }
     }
 
-    /// Turns it off: puts back what was there, but only where the value is still Nocturnal's (a value the person has
-    /// changed since is left alone). Throws, and keeps the journal, if any file couldn't be put back and checked.
     /// Nocturnal is quitting or has died: nothing is left to watch for the work finishing or the time running out,
     /// so an Approve everything that was meant to end by itself ends now. Only "When I turn it off" stays on.
     @discardableResult
@@ -148,6 +145,8 @@ enum AutoApprove {
         return (try? turnOff()) != nil
     }
 
+    /// Turns it off: puts back what was there, but only where the value is still Nocturnal's (a value the person has
+    /// changed since is left alone). Throws, and keeps the journal, if any file couldn't be put back and checked.
     static func turnOff() throws {
         guard isOn else { return }
         // A damaged journal still means "on": undo Nocturnal's own values (they can only be Nocturnal's) without the
@@ -249,7 +248,6 @@ enum AutoApprove {
         let (c0, raw) = try readClaude(forRestore: true)
         let c = restored(claude: c0, j)
         if !NSDictionary(dictionary: c).isEqual(to: c0) { try writeClaude(c, expecting: raw) }
-        // Check what's on disk now.
         let (after, _) = try readClaude(forRestore: true)
         let mode = (after["permissions"] as? [String: Any])?["defaultMode"] as? String
         if mode == "bypassPermissions" && j.claudeMode != "bypassPermissions" {

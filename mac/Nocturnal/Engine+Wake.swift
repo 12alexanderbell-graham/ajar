@@ -23,13 +23,11 @@ extension Engine {
     /// Just before sleep: ask macOS to wake the Mac for the next check-in or the scheduled wake. Check-ins only
     /// when the lid is shut: with it open, a wake turns the screen on.
     func scheduleWake() {
-        nextWakeAt = nil
         guard !previewOnly, wakeReady else { return }
         let untilWake = config.wakeAt.map { $0 - Date().timeIntervalSince1970 }
         let checkIn = Registry.lidClosed ? config.checkInMinutes : 0
         guard let secs = WakePlan.nextStep(untilWake: untilWake, checkInMinutes: checkIn) else { return }
-        if Shell.pmsetRoot(WakePlan.pmsetArgs(seconds: secs)) { nextWakeAt = Date().addingTimeInterval(TimeInterval(secs)) }
-        else { wakeReady = Setup.wakeReady }
+        if !Shell.pmsetRoot(WakePlan.pmsetArgs(seconds: secs)) { wakeReady = Setup.wakeReady }
     }
 
     /// Any wake, dark or full. With the lid open the person is here: nothing to do. With it shut and nothing
@@ -120,7 +118,7 @@ extension Engine {
         }
         d["apps"] = userApps.filter { $0.watts >= 0.05 && !isProtected($0) }.prefix(8).compactMap { a -> [String: Any]? in
             guard let bid = a.bundleID else { return nil }
-            return ["id": bid, "name": a.name, "w": (a.watts * 10).rounded() / 10, "rule": rule(for: bid).rawValue,
+            return ["id": bid, "name": a.name, "w": (a.watts * 10).rounded() / 10, "rule": rule(for: bid, name: a.name).rawValue,
                     "custom": config.appRules[bid] != nil]
         }
         d["sessions"] = stats.sessions.suffix(5).reversed().map { s -> [String: Any] in

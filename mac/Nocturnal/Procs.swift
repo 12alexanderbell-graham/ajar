@@ -63,12 +63,6 @@ enum Procs {
         return args
     }
 
-    static let ticksToNs: Double = {
-        var tb = mach_timebase_info_data_t()
-        mach_timebase_info(&tb)
-        return Double(tb.numer) / Double(tb.denom)
-    }()
-
     /// "/Applications/Google Chrome.app/Contents/Frameworks/…/Helper" → "/Applications/Google Chrome.app".
     /// The outermost bundle wins so every helper rolls up into the app people recognise.
     nonisolated static func bundlePath(of path: String) -> String? {
@@ -78,7 +72,7 @@ enum Procs {
 }
 
 /// Darwin background priority: the process keeps running but only on efficiency cores with low I/O priority.
-/// Measured on this Mac: a busy process went from 2.15 W to 0.49 W while still doing ~60% of the work.
+/// Measured on an M5 Max MacBook Pro: a busy process went from 2.15 W to 0.49 W while still doing ~60% of the work.
 /// Both act only if `pid` is still the process that started at `start`, and report whether the OS agreed.
 enum Throttle {
     @discardableResult
@@ -98,8 +92,6 @@ struct AppUsage: Identifiable, Equatable {
     var name: String
     var bundleID: String?
     var watts: Double
-    var cores: Double
-    var pids: [pid_t]
     /// Part of macOS (WindowServer, daemons). Their lid-closed draw is in the fixed base estimate, and most of it
     /// is display and UI work that stops when the lid shuts.
     var system = false
@@ -113,7 +105,7 @@ struct AppUsage: Identifiable, Equatable {
 /// Turns macOS's per-process energy counters into watts per app.
 /// The counters are the kernel's own energy model (what Activity Monitor's Energy tab uses), not a CPU% guess.
 final class EnergySampler {
-    private var last: [pid_t: (energy: UInt64, cpu: UInt64)] = [:]
+    private var last: [pid_t: UInt64] = [:]
     private var lastTime: Date?
     private var pathCache: [pid_t: String] = [:]
     private var meta: [String: (name: String, bundleID: String?)] = [:]
@@ -121,7 +113,7 @@ final class EnergySampler {
     /// Watts per app since the previous call. The first call only primes the counters and returns [].
     func sample() -> [AppUsage] {
         let now = Date()
-        var current: [pid_t: (UInt64, UInt64)] = [:]
+        var current: [pid_t: UInt64] = [:]
         var groups: [String: AppUsage] = [:]
         let dt = lastTime.map { now.timeIntervalSince($0) } ?? 0
         let pids = Procs.allPids()
@@ -130,22 +122,17 @@ final class EnergySampler {
 
         for pid in pids {
             guard let u = Procs.usage(pid) else { continue }
-            let cpu = u.ri_user_time &+ u.ri_system_time
-            current[pid] = (u.ri_energy_nj, cpu)
-            guard dt > 0.2, let prev = last[pid], u.ri_energy_nj >= prev.energy, cpu >= prev.cpu else { continue }
-            let w = Double(u.ri_energy_nj - prev.energy) / 1e9 / dt
-            let c = Double(cpu - prev.cpu) * Procs.ticksToNs / 1e9 / dt
+            current[pid] = u.ri_energy_nj
+            guard dt > 0.2, let prev = last[pid], u.ri_energy_nj >= prev else { continue }
+            let w = Double(u.ri_energy_nj - prev) / 1e9 / dt
             guard w < 500 else { continue }   // counter reset on exec; skip the garbage delta
 
             let path: String
             if let p = pathCache[pid] { path = p } else if let p = Procs.path(pid) { path = p; pathCache[pid] = p } else { continue }
             let key = Procs.bundlePath(of: path) ?? (path as NSString).lastPathComponent
             let info = describe(key)
-            var g = groups[key] ?? AppUsage(id: key, name: info.name, bundleID: info.bundleID, watts: 0, cores: 0, pids: [],
-                                            system: AppUsage.isSystemPath(path))
+            var g = groups[key] ?? AppUsage(id: key, name: info.name, bundleID: info.bundleID, watts: 0, system: AppUsage.isSystemPath(path))
             g.watts += w
-            g.cores += c
-            g.pids.append(pid)
             groups[key] = g
         }
         last = current

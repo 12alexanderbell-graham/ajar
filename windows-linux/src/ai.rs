@@ -21,7 +21,7 @@ pub const SETTINGS: &[Spec] = &[
         description: "auto (When Busy): awake only while an agent or watched app is working. always: until turned off. off: normal sleep (explicit holds still work).",
         note: None, get: |c| json!(match c.mode { crate::config::Mode::On => "always", crate::config::Mode::Auto => "auto", crate::config::Mode::Off => "off" }) },
     Spec { key: "preset", kind: "enum", allowed: &["max_battery", "balanced", "full_speed"], category: "While the lid is closed",
-        description: "What happens to other apps with the lid shut. max_battery: pause chat, document, launcher and sync apps and slow browsers (music and calls keep going). balanced: slow them. full_speed: leave them.",
+        description: "What happens to other apps with the lid shut. max_battery: pause chat, document, launcher and sync apps and slow browsers, terminals and code editors, which are never paused (music and calls keep going). balanced: slow them. full_speed: leave them.",
         note: None, get: |c| json!(match c.preset { crate::config::Preset::Longest => "max_battery", crate::config::Preset::Balanced => "balanced", crate::config::Preset::Speed => "full_speed" }) },
     Spec { key: "low_power", kind: "bool", allowed: &["on", "off"], category: "While the lid is closed",
         description: "Power-saver mode while the lid is closed; your setting comes back when it opens.",
@@ -94,36 +94,24 @@ pub const SETUP_PROMPT: &str = "Nocturnal is installed on this laptop. It keeps 
 
 Never turn off the heat guard or lower the battery limit; Nocturnal won't let you, and that's on purpose.";
 
-fn home() -> PathBuf {
-    std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
-        .map(PathBuf::from)
-        .unwrap_or_default()
-}
-
+/// The MCP server: the `nocturnal` command next to the tray app.
 fn server() -> (String, Vec<String>) {
-    let exe = std::env::current_exe().ok();
-    // The MCP server lives in the `nocturnal` command next to the tray app.
-    let cli = exe.as_ref().and_then(|p| p.parent()).map(|d| {
-        d.join(if cfg!(windows) {
-            "nocturnal.exe"
-        } else {
-            "nocturnal"
+    let path = cli_exe()
+        .or_else(|| {
+            std::env::current_exe()
+                .ok()
+                .map(|p| p.display().to_string())
         })
-    });
-    let path = cli
-        .filter(|p| p.exists())
-        .or(exe)
-        .map(|p| p.display().to_string())
         .unwrap_or_else(|| "nocturnal".into());
     (path, vec!["mcp".into()])
 }
 
 pub fn claude_code_config() -> PathBuf {
-    home().join(".claude.json")
+    crate::state::home().join(".claude.json")
 }
 
 pub fn codex_config() -> PathBuf {
-    home().join(".codex").join("config.toml")
+    crate::state::home().join(".codex").join("config.toml")
 }
 
 /// The `nocturnal` command (never the tray app: run with a hook's arguments, that would start a second tray).
@@ -155,27 +143,23 @@ pub fn connect_claude_code() -> Result<String, String> {
 
 /// Claude Code's user settings, where its hooks live.
 pub fn claude_settings() -> PathBuf {
-    home().join(".claude").join("settings.json")
+    crate::state::home().join(".claude").join("settings.json")
 }
 
-/// Both halves of the Claude Code connection are in place: the MCP server and the lifecycle hooks.
-pub fn claude_code_hooks_installed() -> bool {
+/// Reads Claude Code's settings at `path` the careful way Approve everything does (see `approve::read_claude`).
+fn read_claude_settings(
+    path: &Path,
+) -> Result<(serde_json::Map<String, Value>, Option<String>), String> {
     crate::approve::read_claude(&crate::approve::Paths {
         journal: PathBuf::new(),
-        claude: claude_settings(),
+        claude: path.to_path_buf(),
         codex: PathBuf::new(),
     })
-    .is_ok_and(|(c, _)| cli_exe().is_some_and(|exe| crate::events::hooks_installed(&c, &exe)))
 }
 
 /// Adds Nocturnal's lifecycle hooks to Claude Code's settings (a copy of the file is kept next to it first).
 fn install_hooks(path: &Path, exe: &str) -> Result<(), String> {
-    let p = crate::approve::Paths {
-        journal: PathBuf::new(),
-        claude: path.to_path_buf(),
-        codex: PathBuf::new(),
-    };
-    let (c, raw) = crate::approve::read_claude(&p)?;
+    let (c, raw) = read_claude_settings(path)?;
     if let Some(r) = &raw {
         std::fs::write(path.with_extension("json.nocturnal-backup"), r)
             .map_err(|e| e.to_string())?;
@@ -188,12 +172,7 @@ fn install_hooks(path: &Path, exe: &str) -> Result<(), String> {
 }
 
 fn remove_hooks(path: &Path) {
-    let p = crate::approve::Paths {
-        journal: PathBuf::new(),
-        claude: path.to_path_buf(),
-        codex: PathBuf::new(),
-    };
-    if let Ok((c, Some(_))) = crate::approve::read_claude(&p) {
+    if let Ok((c, Some(_))) = read_claude_settings(path) {
         let (out, changed) = crate::events::without_hooks(&c);
         if changed {
             let _ = crate::approve::write(
@@ -234,9 +213,7 @@ fn connect_claude_code_at(path: &Path) -> Result<String, String> {
         json!({ "type": "stdio", "command": cmd, "args": args, "env": {} });
     write_atomic(
         &path,
-        serde_json::to_string_pretty(&root)
-            .unwrap_or_default()
-            .as_bytes(),
+        &serde_json::to_string_pretty(&root).unwrap_or_default(),
     )?;
     Ok("Added to Claude Code for all projects. New sessions can use Nocturnal.".into())
 }
@@ -270,14 +247,12 @@ fn connect_codex_at(path: &Path) -> Result<String, String> {
         std::fs::write(path.with_extension("toml.nocturnal-backup"), &existing)
             .map_err(|e| e.to_string())?;
     }
-    write_atomic(path, format!("{existing}{block}").as_bytes())?;
+    write_atomic(path, &format!("{existing}{block}"))?;
     Ok("Added to Codex. New sessions can use Nocturnal.".into())
 }
 
-fn write_atomic(path: &Path, data: &[u8]) -> Result<(), String> {
-    let tmp = path.with_extension("nocturnal-tmp");
-    std::fs::write(&tmp, data).map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, path).map_err(|e| e.to_string())
+fn write_atomic(path: &Path, text: &str) -> Result<(), String> {
+    crate::state::write_atomic(path, text).map_err(|e| e.to_string())
 }
 
 /// Removes Nocturnal's MCP entry from Claude Code and Codex (uninstall), so they don't keep starting a program that's
@@ -294,9 +269,7 @@ pub fn disconnect_all() {
                 let _ = std::fs::copy(&cc, cc.with_extension("json.nocturnal-backup"));
                 let _ = write_atomic(
                     &cc,
-                    serde_json::to_string_pretty(&root)
-                        .unwrap_or_default()
-                        .as_bytes(),
+                    &serde_json::to_string_pretty(&root).unwrap_or_default(),
                 );
             }
         }
@@ -318,7 +291,7 @@ pub fn disconnect_all() {
                 .copied()
                 .collect();
             let _ = std::fs::write(cx.with_extension("toml.nocturnal-backup"), &text);
-            let _ = write_atomic(&cx, kept.join("\n").as_bytes());
+            let _ = write_atomic(&cx, &kept.join("\n"));
         }
     }
 }

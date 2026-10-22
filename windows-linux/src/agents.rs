@@ -4,7 +4,7 @@
 //! the agent just wrote to its transcript folder. Same idea as the macOS app, which uses the kernel's energy
 //! counters; Windows and Linux have no per-process energy counter, so CPU time is the signal here.
 
-use crate::config::{exe_key, Config};
+use crate::config::Config;
 use crate::procs::Proc;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -40,9 +40,6 @@ impl Kind {
             transcripts: transcripts.iter().map(|s| s.to_string()).collect(),
             idle_cpu,
         }
-    }
-    pub fn is_watched_app(&self) -> bool {
-        self.id.starts_with("app:")
     }
     pub fn is_claude_app(&self) -> bool {
         self.id == "claude-app"
@@ -133,23 +130,27 @@ fn is_claude_desktop(p: &Proc) -> bool {
 
 const INTERPRETERS: &[&str] = &["node", "bun", "deno", "python", "python3", "pythonw"];
 
+/// Which of `kinds` this process is: by executable name, or by its command line when it runs under an
+/// interpreter.
+fn match_kind<'a>(p: &Proc, kinds: &'a [Kind]) -> Option<&'a Kind> {
+    if let Some(k) = kinds.iter().find(|k| k.executables.contains(&p.name)) {
+        return Some(k);
+    }
+    if !is_interpreter(&p.name) {
+        return None;
+    }
+    let args = p.cmd.iter().take(4).cloned().collect::<Vec<_>>().join(" ");
+    kinds
+        .iter()
+        .find(|k| k.hints.iter().any(|h| args.contains(h.as_str())))
+}
+
 /// Which known agent this process is, if any (for finding the agent above a hook).
 pub fn kind_id(p: &Proc) -> Option<String> {
     if is_claude_desktop(p) {
         return None;
     }
-    let kinds = known();
-    if let Some(k) = kinds.iter().find(|k| k.executables.contains(&p.name)) {
-        return Some(k.id.clone());
-    }
-    if INTERPRETERS.contains(&p.name.as_str()) {
-        let args = p.cmd.iter().take(4).cloned().collect::<Vec<_>>().join(" ");
-        return kinds
-            .iter()
-            .find(|k| k.hints.iter().any(|h| args.contains(h.as_str())))
-            .map(|k| k.id.clone());
-    }
-    None
+    match_kind(p, &known()).map(|k| k.id.clone())
 }
 
 pub fn is_interpreter(name: &str) -> bool {
@@ -250,7 +251,6 @@ impl Watcher {
             out
         };
 
-        // Which kind each process is.
         let mut kinds = known();
         for c in &cfg.custom_agents {
             kinds.push(Kind {
@@ -275,21 +275,9 @@ impl Watcher {
         let mut found: Vec<(u32, Kind)> = vec![];
         for p in procs.iter().filter(|p| p.mine) {
             let k = if is_claude_desktop(p) {
-                if cfg.count_claude_app {
-                    Some(claude_app())
-                } else {
-                    None
-                }
-            } else if let Some(k) = kinds.iter().find(|k| k.executables.contains(&p.name)) {
-                Some(k.clone())
-            } else if INTERPRETERS.contains(&p.name.as_str()) {
-                let args = p.cmd.iter().take(4).cloned().collect::<Vec<_>>().join(" ");
-                kinds
-                    .iter()
-                    .find(|k| k.hints.iter().any(|h| args.contains(h.as_str())))
-                    .cloned()
+                cfg.count_claude_app.then(claude_app)
             } else {
-                None
+                match_kind(p, &kinds).cloned()
             };
             if let Some(k) = k {
                 found.push((p.pid, k));
@@ -452,11 +440,6 @@ fn walk_newest(path: &Path, depth: u32, budget: &mut usize) -> Option<SystemTime
         }
     }
     newest
-}
-
-/// Executable key helper re-exported for callers matching apps by name.
-pub fn key(name: &str) -> String {
-    exe_key(name)
 }
 
 #[cfg(test)]

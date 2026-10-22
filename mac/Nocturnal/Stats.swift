@@ -3,9 +3,9 @@ import Foundation
 /// What Nocturnal has actually saved, kept in stats.json next to the config.
 ///
 /// Two kinds of saving, counted separately and never mixed with guesses:
-///  • measured: apps Nocturnal slowed or paused while the lid was closed. Each app's power is measured by
-///    macOS's energy counters before (lid open, running normally) and while slowed, and the difference
-///    is integrated over time.
+///  • measured: what Nocturnal's savings were worth while the lid was closed, integrated over time: the power
+///    test's whole-Mac figure when there is one, otherwise each slowed or paused app's power from macOS's energy
+///    counters, before (running normally) and while slowed.
 ///  • slept: after the work finished Nocturnal put the Mac to sleep instead of letting it idle with the lid
 ///    shut. Valued at the power the Mac was drawing just before it slept.
 struct SavingsStats: Codable, Equatable {
@@ -21,8 +21,6 @@ struct SavingsStats: Codable, Equatable {
     }
 
     var sessions: [Session] = []
-    var allTimeWhSaved = 0.0
-    var allTimeWhAvoided = 0.0
 
     static var url: URL { StateFiles.dir.appendingPathComponent("stats.json") }
 
@@ -40,8 +38,6 @@ struct SavingsStats: Codable, Equatable {
     mutating func add(_ s: Session) {
         sessions.append(s)
         if sessions.count > 400 { sessions.removeFirst(sessions.count - 400) }
-        allTimeWhSaved += s.whSaved
-        allTimeWhAvoided += s.whAvoided
         save()
     }
 

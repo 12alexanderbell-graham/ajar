@@ -8,7 +8,6 @@ import SwiftUI
 struct HomeView: View {
     @Environment(Computer.self) private var computer
     @Environment(\.scenePhase) private var phase
-    @State private var hovering: Stop?
     @State private var sheet = SheetState()
     @State private var gearFrame = CGRect.zero
 
@@ -75,7 +74,7 @@ struct HomeView: View {
 
     private var head: some View {
         HStack {
-            if computer.isDemo {
+            if computer.isDemo, !computer.isMarketing {
                 Button { withAnimation(Theme.smooth) { computer.forget() } } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "xmark").font(.system(size: 13, weight: .bold))
@@ -183,12 +182,14 @@ struct HomeView: View {
 
     private var bottom: some View {
         VStack(spacing: 10) {
-            ReadoutSlot(words: (hovering?.word) ?? computer.stopWords)
+            ReadoutSlot(words: computer.hovering?.word ?? computer.stopWords)
                 .frame(height: 30)
             HStack(alignment: .center, spacing: 14) {
-                KeepAwakeBand(stop: computer.held == .off ? .off : computer.stop, hovering: $hovering) { s in
-                    if s == .off, computer.panel?.lidClosed == true, computer.panel?.mode != "off" {
-                        computer.hold(.off)     // with the lid shut, Off sleeps it: Undo for a few seconds
+                KeepAwakeBand(stop: computer.shownStop, enabled: computer.reachable,
+                              hovering: Binding(get: { computer.hovering }, set: { computer.hovering = $0 })) { s in
+                    // With the lid shut and nothing else holding it, Off sleeps it: Undo for a few seconds.
+                    if s == .off, let p = computer.panel, p.lidClosed, p.mode != "off", p.holdList.isEmpty {
+                        computer.hold(.off)
                     } else {
                         if computer.held == .off { computer.undoHeld() }
                         Task { await computer.choose(s) }
@@ -200,16 +201,20 @@ struct HomeView: View {
         .rise(5)
     }
 
-    /// One circle, one place, three jobs: Sleep Now while it's awake, Undo while a sleep is counting down, Wake It
-    /// while it's asleep. The symbol morphs; the circle never moves.
+    /// One circle, one place: Sleep Now while it's awake, Undo while a sleep counts down, Wake It while it's asleep
+    /// (and an hourglass once the wake is on its way). With check-ins off a sleeping computer can't be woken from
+    /// here, so the circle stays a moon and does nothing. The symbol morphs; the circle never moves.
     private var mainCircle: some View {
-        let asleep = computer.noAnswer
         let held = computer.held != nil
-        let symbol = held ? "arrow.uturn.backward" : asleep ? "sun.max.fill" : "moon.zzz.fill"
+        let reachable = computer.reachable
+        let waking = !reachable && computer.wakeSentAt != nil
+        let canWake = computer.checkIn > 0
+        let symbol = held ? "arrow.uturn.backward" : reachable ? "moon.zzz.fill" : waking ? "hourglass" : canWake ? "sun.max.fill" : "moon.zzz.fill"
+        let label = held ? "Undo" : reachable ? "Sleep now" : waking ? "Wake sent" : canWake ? "Wake it" : "Can't be woken from here"
         return Button {
             if held { withAnimation(Theme.chrome) { computer.undoHeld() } }
-            else if asleep { Task { await computer.wake() } }
-            else { computer.hold(.sleep) }
+            else if reachable { computer.hold(.sleep) }
+            else { Task { await computer.wake() } }
         } label: {
             Image(systemName: symbol)
                 .font(.system(size: 20, weight: .semibold))
@@ -218,9 +223,10 @@ struct HomeView: View {
                 .contentShape(.circle)
         }
         .buttonStyle(Press())
+        .disabled(!held && !reachable && (waking || !canWake))
         .glassEffect(.clear.interactive(), in: .circle)
         .animation(Theme.chrome, value: symbol)
-        .accessibilityLabel(held ? "Undo" : asleep ? "Wake it for an hour" : "Sleep now")
+        .accessibilityLabel(label)
         .accessibilityIdentifier(held ? "undo" : "main")
     }
 
@@ -305,11 +311,14 @@ private struct ReadoutSlot: View {
             let text: String = {
                 guard let held = computer.held, let until = computer.heldUntil else { return words }
                 let left = max(1, Int(until.timeIntervalSince(context.date).rounded(.up)))
-                return held == .sleep ? "Sleeps in \(left) s" : "Off · sleeps in \(left) s"
+                let countdown = held == .sleep ? "Sleeps in \(left) s" : "Off · sleeps in \(left) s"
+                return computer.checkIn == 0 ? countdown + " · can't wake it from here" : countdown
             }()
             Text(text)
                 .font(.headline)
                 .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
                 .contentTransition(.numericText(countsDown: true))
                 .animation(Theme.smooth, value: text)
                 .frame(maxWidth: .infinity)

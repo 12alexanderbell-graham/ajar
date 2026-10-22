@@ -25,7 +25,6 @@ extension Engine {
         for i in out.indices where !out[i].kind.isRequest {
             guard let (st, at) = AgentEvents.state(of: out[i].kind.id, in: agentEvents, lastActive: out[i].lastActive, now: now) else { continue }
             out[i].state = st
-            out[i].stateSince = at
             switch st {
             case .working:
                 out[i].lastActive = now

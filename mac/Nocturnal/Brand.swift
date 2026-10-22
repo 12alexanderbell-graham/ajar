@@ -9,12 +9,11 @@ enum Brand {
     static let gradient = LinearGradient(colors: [mid, Color(red: 0.12, green: 0.6, blue: 0.38)], startPoint: .bottomLeading, endPoint: .topTrailing)
 }
 
-/// The app icon's mark: one thin bar (the laptop, shut) and a translucent fan (the lid's swing), same geometry as
-/// AppIconArt. `open` is 0…1 (closed…35°); `glow` tints the fan mint.
+/// The app icon's mark: one thin bar (the laptop, shut) and a translucent fan, a 35° sector pivoting on the bar's
+/// left end (the lid's swing). `open` is 0…1 (closed…35°); `glow` tints the fan mint.
 struct NocturnalMark: View {
     var open: Double = 1
     var glow: Bool = false
-    var color: Color = .white
 
     var body: some View {
         Canvas { ctx, size in
@@ -27,9 +26,9 @@ struct NocturnalMark: View {
                 fan.move(to: hinge)
                 fan.addArc(center: hinge, radius: w, startAngle: .degrees(-deg), endAngle: .zero, clockwise: false)
                 fan.closeSubpath()
-                ctx.fill(fan, with: .color(glow ? Brand.mint.opacity(0.85) : color.opacity(0.38)))
+                ctx.fill(fan, with: .color(glow ? Brand.mint.opacity(0.85) : Color.white.opacity(0.38)))
             }
-            ctx.fill(Path(CGRect(x: 0, y: size.height - barH, width: w, height: barH)), with: .color(color))
+            ctx.fill(Path(CGRect(x: 0, y: size.height - barH, width: w, height: barH)), with: .color(.white))
         }
         .aspectRatio(1 / (1 / 14 + sin(35 * .pi / 180)), contentMode: .fit)
         .animation(.spring(duration: 0.5, bounce: 0.3), value: glow)

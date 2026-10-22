@@ -286,7 +286,6 @@ fn fail(msg: &str) -> ExitCode {
     ExitCode::from(2)
 }
 
-/// `on`, `on 90`, `on until 7`, `on until 07:00`.
 /// "90m", "2h", "1h30m" or plain minutes ("45") → minutes.
 fn parse_duration(s: &str) -> Option<f64> {
     let s = s.trim().to_ascii_lowercase();
@@ -308,6 +307,7 @@ fn parse_duration(s: &str) -> Option<f64> {
     (num.is_empty() && total > 0.0 && total.is_finite()).then_some(total)
 }
 
+/// `on`, `on 90`, `on --for 2h`, `on until 7`, `on until 07:00` → minutes awake (None = until turned off).
 fn parse_on(rest: &[String]) -> Result<Option<f64>, String> {
     match rest {
         [] => Ok(None),
