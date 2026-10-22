@@ -266,6 +266,8 @@ final class UIState {
     static let shared = UIState()
     var panelSettings = false
     var windowSettings = false
+    /// Which Settings tab is showing. Phone first; the panel's phone button opens it directly.
+    var settingsTab: SettingsTopic = .phone
     /// Height the main page needs, reported by the live view.
     var panelHeight: CGFloat = 420
     /// Keep the popover open (a password prompt is up for something started from it).

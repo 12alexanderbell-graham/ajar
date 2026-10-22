@@ -286,6 +286,12 @@ pub fn build(s: &UiState) -> Vec<Node> {
         m.push(text("retry", "Try again"));
     }
     m.push(Node::Sep);
+    // Phone pairing up front, not buried in Settings (the Mac panel has its own phone button).
+    if s.phone_on {
+        m.push(text("phone:show", "Phone (show QR code)"));
+    } else {
+        m.push(text("phone:on", "Pair a Phone…"));
+    }
     m.push(sub("apps", "Apps and Agents", apps_menu(s)));
     m.push(sub("settings", "Settings", settings_menu(s)));
     m.push(Node::Sep);

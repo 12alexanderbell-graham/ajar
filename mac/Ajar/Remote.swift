@@ -288,31 +288,42 @@ struct PhoneControlSection: View {
     @State private var showPairing = false
 
     var body: some View {
-        if let remote = AjarShared.remote {
+        let remote = AjarShared.remote
+        if let remote, remote.enabled {
             Section {
-                Toggle("Control Ajar from your phone", isOn: Binding(get: { remote.enabled }, set: { on in
-                    if on { remote.enable(); showPairing = true } else { remote.disable() }
-                }))
-                if remote.enabled {
-                    LabeledContent("Status") { Text(remote.status ?? "Starting…").foregroundStyle(.secondary) }
-                    if showPairing {
-                        // Inline rather than a sheet: Settings live in the menu bar panel, which can't host sheets.
-                        PairingView(settings: remote.settings) { showPairing = false }
-                            .frame(maxWidth: .infinity)
-                    } else {
-                        HStack {
-                            Button("Show QR Code") { showPairing = true }
-                            Spacer()
-                            Button("Unpair All") { remote.enable(newKey: true) }
-                                .help("Makes a new key; phones paired before stop working")
-                        }
-                    }
+                LabeledContent("Status") { Text(remote.status ?? "Starting…").foregroundStyle(.secondary) }
+                if showPairing {
+                    // Inline rather than a sheet: Settings live in the menu bar panel, which can't host sheets.
+                    PairingView(settings: remote.settings) { showPairing = false }
+                        .frame(maxWidth: .infinity)
+                } else {
+                    Button("Show QR Code") { showPairing = true }
                 }
+                Toggle("Phone control", isOn: Binding(get: { remote.enabled }, set: { on in
+                    if on { remote.enable() } else { remote.disable(); showPairing = false }
+                }))
+                Button("Unpair All Phones", role: .destructive) { remote.enable(newKey: true); showPairing = true }
+                    .help("Makes a new key; phones paired before stop working")
             } header: {
-                Text("Phone Control")
+                Text("Your Phone")
             } footer: {
-                Text("A small page on your phone with the same controls, from anywhere. Messages go through ntfy.sh end to end encrypted; the key is only in the QR code. The phone can't loosen the battery limit or the heat guard.")
+                Text("End-to-end encrypted. The phone can't loosen the battery limit or the heat guard.")
                     .font(.caption).foregroundStyle(.secondary)
+            }
+        } else {
+            // Not paired yet: the first thing on the Phone tab, one button.
+            Section {
+                VStack(spacing: 10) {
+                    Image(systemName: "iphone.gen3").font(.system(size: 34, weight: .light)).foregroundStyle(Color.accentColor)
+                    Text("Use Ajar from your phone").font(.headline)
+                    Text("See it working, wake it or let it sleep, from anywhere.")
+                        .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    Button { remote?.enable(); showPairing = true } label: { Text("Pair a Phone").frame(maxWidth: .infinity) }
+                        .buttonStyle(.borderedProminent).controlSize(.large)
+                        .disabled(remote == nil)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
             }
         }
     }
@@ -328,7 +339,7 @@ struct PairingView: View {
             if let link = settings.pairingLink, let qr = Self.qr(link) {
                 Image(nsImage: qr).interpolation(.none).resizable().frame(width: 180, height: 180)
                     .padding(10).background(.white, in: RoundedRectangle(cornerRadius: 12))
-                Text("Scan with your phone's camera, then add the page to your Home Screen (Share › Add to Home Screen on iPhone, ⋮ › Add to Home screen on Android). It opens like an app.")
+                Text("Scan with your phone's camera, then Share › Add to Home Screen.")
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
             } else {
                 Text("The phone page isn't online yet. When it is, paste this pairing code into it:")
@@ -341,7 +352,7 @@ struct PairingView: View {
                     NSPasteboard.general.setString(settings.pairingLink ?? settings.key, forType: .string)
                 }
             }
-            Text("Anyone with this code can control this Mac. Unpair in Settings to cancel it.")
+            Text("Anyone with this code can control this Mac.")
                 .font(.caption).foregroundStyle(.secondary)
             Button("Done", action: done).keyboardShortcut(.defaultAction)
         }

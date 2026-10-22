@@ -1,21 +1,25 @@
 import AppKit
 import SwiftUI
 
-/// Settings as pages inside Ajar's panel or window, organised like iOS Settings: a short list of topics,
-/// each opening its own page. Short pages fit the narrow panel without a wall of options.
+/// Settings inside Ajar's panel or window: five tabs across the top, each a short page. Phone comes first, so
+/// pairing a phone is one click from the panel (its phone button opens this tab).
 struct SettingsPage: View {
     @Bindable var engine: Engine
     var back: () -> Void
     var quit: () -> Void
-    @State private var page: SettingsTopic?
+    @Bindable private var ui = UIState.shared
+
+    init(engine: Engine, back: @escaping () -> Void, quit: @escaping () -> Void) {
+        self.engine = engine; self.back = back; self.quit = quit
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Button { if page != nil { page = nil } else { back() } } label: {
+                Button { back() } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "chevron.left").font(.system(size: 13, weight: .semibold))
-                        Text(page?.title ?? "Settings").font(.headline)
+                        Text("Settings").font(.headline)
                     }
                     .contentShape(Rectangle())
                 }
@@ -23,44 +27,59 @@ struct SettingsPage: View {
                 .keyboardShortcut(.cancelAction)
                 .help("Back (Esc)")
                 Spacer()
-                if page == nil {
-                    Button("Quit Ajar", action: quit).buttonStyle(.plain).font(.subheadline).foregroundStyle(.secondary)
-                }
+                Button { quit() } label: { Text("Quit Ajar").font(.subheadline).foregroundStyle(.secondary) }
+                    .buttonStyle(.plain)
             }
             .padding(.horizontal, 16)
             .padding(.top, 14)
-            .padding(.bottom, 2)
-            SettingsView(engine: engine, page: $page)
+            SettingsTabs(selection: $ui.settingsTab)
+                .padding(.horizontal, 10)
+                .padding(.top, 10)
+            Divider().padding(.top, 8)
+            SettingsView(engine: engine, page: ui.settingsTab)
         }
     }
 }
 
 enum SettingsTopic: String, CaseIterable, Identifiable {
-    case lid, sleep, awake, alerts, phone, ai, general, about
+    case phone, lid, sleep, ai, general
     var id: String { rawValue }
     var title: String {
-        switch self {
-        case .lid: "Lid Closed"; case .sleep: "Sleep & Safety"; case .awake: "Apps"; case .alerts: "Notifications"
-        case .phone: "Phone"; case .ai: "AI Agents"; case .general: "General"; case .about: "About"
-        }
+        switch self { case .phone: "Phone"; case .lid: "Lid"; case .sleep: "Sleep"; case .ai: "Agents"; case .general: "General" }
     }
     var symbol: String {
-        switch self {
-        case .lid: "laptopcomputer"; case .sleep: "moon.zzz.fill"; case .awake: "square.grid.2x2.fill"; case .alerts: "bell.badge.fill"
-        case .phone: "iphone"; case .ai: "terminal.fill"; case .general: "gearshape.fill"; case .about: "info"
-        }
+        switch self { case .phone: "iphone"; case .lid: "laptopcomputer"; case .sleep: "moon.zzz"; case .ai: "terminal"; case .general: "gearshape" }
     }
-    var color: Color {
-        switch self {
-        case .lid: .blue; case .sleep: .indigo; case .awake: Brand.mid; case .alerts: .red
-        case .phone: .green; case .ai: .teal; case .general: .gray; case .about: .gray
+}
+
+/// The tab row: plain symbols with a label underneath, like a Mac app's Settings toolbar.
+struct SettingsTabs: View {
+    @Binding var selection: SettingsTopic
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(SettingsTopic.allCases) { t in
+                let on = selection == t
+                Button { selection = t } label: {
+                    VStack(spacing: 3) {
+                        Image(systemName: t.symbol).font(.system(size: 15, weight: on ? .semibold : .regular)).frame(height: 18)
+                        Text(t.title).font(.system(size: 10.5, weight: on ? .semibold : .regular)).lineLimit(1)
+                    }
+                    .foregroundStyle(on ? Color.accentColor : Color.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(on ? Color.accentColor.opacity(0.12) : Color.clear))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(on ? .isSelected : [])
+            }
         }
     }
 }
 
 struct SettingsView: View {
     @Bindable var engine: Engine
-    @Binding var page: SettingsTopic?
+    var page: SettingsTopic
     @State private var login = false
     @State private var cliInstalled = Setup.cliInstalled
     @State private var note: String?
@@ -88,38 +107,16 @@ struct SettingsView: View {
         }
     }
 
-    var body: some View {
-        if page == .awake {
-            // What keeps the Mac awake and what happens to each app: lists with live numbers, not a form.
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    Toggle("Claude app (Cowork, computer use) keeps it awake", isOn: $engine.countClaudeApp)
-                    Toggle("Downloads, exports and builds keep it awake", isOn: $engine.countRequests)
-                        .help("Any app that asks macOS to stay awake")
-                    Divider()
-                    AppsView(engine: engine)
-                }
-                .font(.subheadline)
-                .padding(16)
-            }
-            .scrollIndicators(.never)
-        } else {
-            form
-        }
-    }
+    var body: some View { form }
 
     private var form: some View {
         Form {
             switch page {
-            case nil: home
+            case .phone: PhoneControlSection(engine: engine); alertsPage
             case .lid: lidPage
             case .sleep: sleepPage
-            case .awake: EmptyView()   // shown as a list above, not in the form
-            case .alerts: alertsPage
-            case .phone: PhoneControlSection(engine: engine)
             case .ai: aiPage
-            case .general: generalPage
-            case .about: aboutPage
+            case .general: generalPage; aboutPage
             }
         }
         .formStyle(.grouped)
@@ -130,65 +127,13 @@ struct SettingsView: View {
         .onDisappear { saveTopic() }
         .onChange(of: page) { old, _ in
             note = nil
-            if old == .alerts { saveTopic() }
+            if old == .phone { saveTopic() }
             if !topicDirty { topic = engine.config.ntfyTopic }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             lockGrace = LockSetting.gracePeriod()
             reloadConnected()
         }
-    }
-
-    // MARK: Home
-
-    @ViewBuilder private var home: some View {
-        Section {
-            if Registry.hasLid { topicRow(.lid, screenName + " · " + engine.preset.label) }
-            topicRow(.sleep, sleepSummary)
-            topicRow(.awake, "What keeps it awake, what pauses")
-        }
-        Section {
-            topicRow(.alerts, alertsSummary)
-            topicRow(.phone, AjarShared.remote?.enabled == true ? "On" : "Off")
-            topicRow(.ai, aiSummary)
-        }
-        Section {
-            topicRow(.general, "Menu bar, login, look")
-            topicRow(.about, "Setup, shortcuts, history, remove")
-        }
-    }
-
-    private func topicRow(_ t: SettingsTopic, _ summary: String) -> some View {
-        Button { page = t } label: {
-            HStack(spacing: 10) {
-                IconTile(symbol: t.symbol, color: t.color)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(t.title).foregroundStyle(.primary)
-                    Text(summary).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-                Spacer(minLength: 4)
-                Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(.tertiary)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var screenName: String {
-        engine.config.lockOnClose ? "Screen off, locks" : (engine.config.screenOffNoLock ? "Screen off" : "Screen dark")
-    }
-    private var sleepSummary: String {
-        var p = [engine.sleepWhenDone ? "After \(engine.quietMinutes) min idle" : "Not when idle"]
-        p.append(engine.batteryFloor == 0 ? "no battery limit" : "at \(engine.batteryFloor)%")
-        return p.joined(separator: ", ")
-    }
-    private var aiSummary: String {
-        let n = connected.filter { $0 }.count
-        return n == 0 ? "Not connected" : "\(n) connected"
-    }
-    private var alertsSummary: String {
-        let parts = (engine.config.notifyDone ? ["On this Mac"] : []) + (engine.config.ntfyTopic.isEmpty ? [] : ["on your phone"])
-        return parts.isEmpty ? "Off" : parts.joined(separator: ", ")
     }
 
     // MARK: Lid Closed
@@ -263,6 +208,13 @@ struct SettingsView: View {
     // MARK: Sleep & Safety
 
     @ViewBuilder private var sleepPage: some View {
+        Section {
+            Toggle("Claude app keeps it awake", isOn: $engine.countClaudeApp)
+            Toggle("Downloads and exports keep it awake", isOn: $engine.countRequests)
+                .help("Any app that asks macOS to stay awake")
+        } header: {
+            Text("Also keeps it awake")
+        }
         Section {
             Toggle("Sleep when the work is done", isOn: $engine.sleepWhenDone)
             if engine.sleepWhenDone {
@@ -590,9 +542,9 @@ enum LockSetting {
     return ScrollView(.horizontal) {
         HStack(alignment: .top, spacing: 12) {
             ForEach(SettingsTopic.allCases) { t in
-                SettingsView(engine: e, page: .constant(t)).frame(width: 320, height: 760).background(.regularMaterial)
+                SettingsView(engine: e, page: t).frame(width: 320, height: 760).background(.regularMaterial)
             }
         }
     }
-    .frame(width: 8 * 332, height: 760)
+    .frame(width: 5 * 332, height: 760)
 }

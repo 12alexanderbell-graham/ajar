@@ -42,6 +42,12 @@ struct PanelView: View {
                 .buttonStyle(.plain)
             }
             Spacer()
+            Button { UIState.shared.settingsTab = .phone; actions.openSettings() } label: {
+                Image(systemName: "iphone").font(.system(size: 14)).foregroundStyle(.secondary)
+                    .frame(width: 24, height: 24).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Phone: pair your phone, see it here")
             Button { actions.openSettings() } label: {
                 Image(systemName: "gearshape").font(.system(size: 14)).foregroundStyle(.secondary)
                     .frame(width: 24, height: 24).contentShape(Rectangle())
