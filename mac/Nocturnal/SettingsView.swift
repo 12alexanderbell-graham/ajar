@@ -84,7 +84,6 @@ struct SettingsView: View {
     @State private var cliInstalled = Setup.cliInstalled
     @State private var note: String?
     @State private var approveConfirm = false
-    @State private var approveEnds: AutoApprove.Ends = .work
     @State private var lockGrace: Int?
     @State private var topic = ""
     /// The topic field was edited here: only then is it saved (never overwrite a change made by the phone or an agent).
@@ -339,36 +338,15 @@ struct SettingsView: View {
         let on = engine.approve.on
         Section {
             if approveConfirm {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Approve everything?").font(.headline)
-                    Text("Claude Code and Codex will run any command, edit or delete any file, and use the network without asking you first, in every project. If an agent misunderstands a task, nothing stops it, and with the lid closed you won't see it happen. macOS's own permission prompts still appear.")
-                        .font(.callout).foregroundStyle(.secondary)
-                    Picker("Turns off", selection: $approveEnds) {
-                        Text("When the work finishes").tag(AutoApprove.Ends.work)
-                        Text("In 8 hours").tag(AutoApprove.Ends.time)
-                        Text("When I turn it off").tag(AutoApprove.Ends.manual)
-                    }
-                    HStack {
-                        Button("Cancel") { approveConfirm = false }
-                        Spacer()
-                        Button("Turn On") {
-                            do {
-                                try AutoApprove.turnOn(ends: approveEnds, hours: approveEnds == .time ? 8 : nil)
-                                note = "On. New Claude Code and Codex sessions won't ask; running ones keep their mode."
-                            } catch { note = error.localizedDescription }
-                            engine.approveChanged()
-                            approveConfirm = false
-                        }
-                        .tint(.red).buttonStyle(.borderedProminent)
-                    }
+                ApproveConfirm(engine: engine) { message in
+                    if let message { note = message }
+                    approveConfirm = false
                 }
                 .padding(.vertical, 4)
             } else {
                 Toggle(isOn: Binding(get: { on }, set: { want in
-                    if want { approveEnds = .work; approveConfirm = true; return }
-                    do { try AutoApprove.turnOff(); note = "Off. Your previous Claude Code and Codex settings are back." }
-                    catch { note = error.localizedDescription }
-                    engine.approveChanged()
+                    if want { approveConfirm = true; return }
+                    note = ApproveConfirm.turnOff(engine)
                 })) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Approve everything automatically")
@@ -380,11 +358,7 @@ struct SettingsView: View {
                     HStack(alignment: .firstTextBaseline) {
                         Text(p).font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
                         Spacer()
-                        Button("Try Again") {
-                            do { try AutoApprove.turnOff(); note = "Off. Your previous Claude Code and Codex settings are back." }
-                            catch { note = error.localizedDescription }
-                            engine.approveChanged()
-                        }
+                        Button("Try Again") { note = ApproveConfirm.turnOff(engine) }
                     }
                 }
             }

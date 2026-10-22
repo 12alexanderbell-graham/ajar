@@ -2,8 +2,9 @@ import AppKit
 import SwiftUI
 
 /// The menu bar panel, two tabs:
-///  • Now: the mode (Off / When Busy / Always) with one sentence, what closing the lid does right now, the battery.
-///  • Apps: what keeps the Mac awake, what closing the lid slows or pauses, the battery limit, per-app rules.
+///  • Now: what the Mac is doing and what it saves (battery, watts, hours), the mode, and tiles for Approve
+///    everything, the phone and the lid-shut preset.
+///  • Apps: what keeps the Mac awake, what closing the lid slows or pauses, per-app rules.
 /// Everything else is in Settings. Before setup is done it shows the first-run steps instead.
 struct PanelView: View {
     enum Tab: String { case now, apps }
@@ -20,7 +21,7 @@ struct PanelView: View {
             if engine.setupReady && (onboardingDone || showTab != nil) {
                 header
                 switch showTab ?? tab {
-                case .now: NowTab(engine: engine)
+                case .now: NowTab(engine: engine, openPhone: { UIState.shared.settingsTab = .phone; actions.openSettings() })
                 case .apps: AppsView(engine: engine, openAgentSettings: { UIState.shared.settingsTab = .ai; actions.openSettings() })
                 }
             } else {
@@ -45,12 +46,6 @@ struct PanelView: View {
                 .buttonStyle(.plain)
             }
             Spacer()
-            Button { UIState.shared.settingsTab = .phone; actions.openSettings() } label: {
-                Image(systemName: "iphone").font(.system(size: 14)).foregroundStyle(.secondary)
-                    .frame(width: 24, height: 24).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help("Phone: pair your phone, see it here")
             Button { actions.openSettings() } label: {
                 Image(systemName: "gearshape").font(.system(size: 14)).foregroundStyle(.secondary)
                     .frame(width: 24, height: 24).contentShape(Rectangle())
@@ -64,125 +59,169 @@ struct PanelView: View {
 
 // MARK: - Now
 
+/// What the Mac is doing and what it saves, the mode, and the three features people look for. Same shape as the
+/// phone: a card (green while it keeps working) with three numbers, the slider, then tiles.
 private struct NowTab: View {
     @Bindable var engine: Engine
+    var openPhone: () -> Void
+    @State private var confirmingApprove = false
+    @State private var approveNote: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
+            card
             EqualSegments(items: Mode.allCases.map { ($0, $0.label) },
                           selection: Binding(get: { engine.mode }, set: { m in
                               if m == .on { engine.stayAwake(for: nil) } else { engine.mode = m }
                           }))
                 .help(engine.modeLine)
-
-            Divider()
-            outcome
-
-            if let w = engine.warning {
-                Text(w).font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
-            }
-            if !engine.wakeReady {
-                notice("Nocturnal needs your password once more to finish updating its helper.", button: "Set Up") { UIState.shared.whilePinned { engine.runSetup() } }
-            }
-            if engine.sleepOffOutside {
-                notice("Sleep was already switched off outside Nocturnal (pmset disablesleep 1), so this Mac won't sleep with the lid closed.", button: "Turn Sleep On") { engine.switchSleepBackOn() }
-            }
-            if !engine.unrestored.isEmpty {
-                notice("Couldn't put back \(engine.unrestored.joined(separator: ", ")) yet. Nocturnal keeps trying.", button: "Try Again") { engine.retryRestore() }
-            }
-            if engine.blockedByFloor {
-                notice("Battery is at \(engine.battery?.percent ?? engine.batteryFloor)%, at your \(engine.batteryFloor)% limit, so it sleeps with the lid closed.", button: "Keep Awake Anyway") { engine.overrideFloor() }
-            } else if engine.floorOverride {
-                notice("Going below \(engine.batteryFloor)% until you plug in.", button: "Undo") { engine.overrideFloor(false) }
-            }
-            if engine.onHotspot && !engine.config.hotspotAutomatic && Registry.hasLid { hotspotNotice }
-            if let r = engine.recentReceipt, dismissedReceipt != r.closedAt { receipt(r) }
-
-            if Registry.hasLid, let b = engine.battery {
-                Divider()
-                battery(b)
-            }
-        }
-    }
-
-    /// One figure: how long it lasts with the lid closed, and what that gains over leaving it open.
-    private func battery(_ b: BatteryReading) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 16) {
-            if let closed = engine.closedHours {
-                Figure(value: "≈" + PanelFormat.hm(closed), caption: "\(b.percent)% · " + (engine.onBattery ? "lid closed, estimated" : "unplugged, lid closed"))
-                if engine.onBattery, let open = engine.openHours, closed > open {
-                    Figure(value: "+" + PanelFormat.hm(closed - open), caption: "vs. lid open", tint: .accentColor)
+            if confirmingApprove {
+                ApproveConfirm(engine: engine) { message in
+                    approveNote = message
+                    confirmingApprove = false
                 }
+                .padding(12)
+                .background(.quaternary.opacity(0.6), in: .rect(cornerRadius: 12))
             } else {
-                Label(b.charging ? "\(b.percent)% · charging" : "\(b.percent)%", systemImage: batteryIcon)
-                    .font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
+                tiles
+            }
+            if let n = approveNote {
+                Text(n).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    .task(id: n) { try? await Task.sleep(for: .seconds(6)); approveNote = nil }
+            }
+            if let n = topNotice { NoticeRow(notice: n) }
+            actions
+        }
+    }
+
+    // MARK: Card
+
+    private var card: some View {
+        let o = engine.lidOutcome
+        let keeps = o.keeps
+        return VStack(alignment: .leading, spacing: 4) {
+            Text(o.headline).font(.title2.weight(.bold))
+            Text(o.detail).font(.body).foregroundStyle(keeps ? Color.white.opacity(0.85) : .secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if Registry.hasLid, let b = engine.battery {
+                HStack(alignment: .top, spacing: 6) {
+                    Number(value: Double(b.percent), digits: 0, unit: "%", caption: b.charging ? "charging" : engine.onBattery ? "battery" : "plugged in", keeps: keeps)
+                    if let w = engine.systemWatts {
+                        Number(value: w, digits: w < 10 ? 1 : 0, unit: "W", caption: "using now", keeps: keeps)
+                    }
+                    if let h = engine.closedHours {
+                        Number(value: h, digits: h < 10 ? 1 : 0, unit: "h", caption: engine.onBattery ? "left, lid shut" : "if unplugged", keeps: keeps)
+                    }
+                }
+                .padding(.top, 12)
+                if let line = savingsLine {
+                    Text(line).font(.callout.weight(.semibold)).monospacedDigit()
+                        .foregroundStyle(keeps ? Color.white : Color.accentColor)
+                        .padding(.top, 4)
+                        .help("Down to \(engine.batteryFloor == 0 ? "0%" : "your \(engine.batteryFloor)% limit"), estimated from what's running now and measured while the lid is shut.")
+                }
             }
         }
-        .help("Down to \(engine.batteryFloor == 0 ? "0%" : "your \(engine.batteryFloor)% limit"), estimated from what's running now and measured while the lid is shut. Uses ≈\(PanelFormat.w(engine.closedEstimate)) closed\(engine.openWatts.map { ", \(PanelFormat.w($0)) open" } ?? "").")
+        .foregroundStyle(keeps ? Color.white : Color.primary)
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background { if keeps { KeepsBackground() } else { Color.primary.opacity(0.05) } }
+        .clipShape(.rect(cornerRadius: 14, style: .continuous))
+        .animation(.smooth(duration: 0.3), value: keeps)
     }
 
-    private var batteryIcon: String {
-        guard let b = engine.battery else { return "battery.100" }
-        if b.charging { return "battery.100.bolt" }
-        switch b.percent { case ..<13: return "battery.0"; case ..<38: return "battery.25"; case ..<63: return "battery.50"; case ..<88: return "battery.75"; default: return "battery.100" }
+    /// What closing the lid is worth on this Mac: lid shut vs open (measured or learned), else this week's total.
+    private var savingsLine: String? {
+        let closed = engine.closedEstimate
+        if let open = engine.openWatts, open > closed + 0.5 {
+            return "Lid shut: ≈\(PanelFormat.w(closed)) instead of \(PanelFormat.w(open))"
+        }
+        if let w = engine.weekSummary, w.whSaved >= 10 {
+            return "This week: \(PanelFormat.hm(w.closedHours)) lid shut, ≈\(String(format: "%.0f", w.whSaved)) Wh saved"
+        }
+        return nil
     }
 
-    /// Which receipt was dismissed (by its session), so the next session's receipt still shows.
+    // MARK: Tiles
+
+    private var tiles: some View {
+        HStack(spacing: 8) {
+            let a = engine.approve
+            Tile(symbol: a.on ? "checkmark.shield.fill" : "checkmark.shield", title: "Approve all",
+                 state: a.on ? (a.problem != nil ? "Needs you" : "On") : "Off", tint: a.on ? .orange : nil) {
+                if a.on || a.problem != nil { approveNote = ApproveConfirm.turnOff(engine) } else { confirmingApprove = true }
+            }
+            .help(a.on ? (a.endsLine ?? "Claude Code and Codex run without asking. Click to turn off.")
+                       : "Let Claude Code and Codex run without asking, until the work finishes")
+            let phones = NocturnalShared.remote.map { $0.enabled ? $0.settings.phones.count : 0 } ?? 0
+            Tile(symbol: "iphone", title: "Phone", state: phones == 0 ? "Pair" : phones == 1 ? "Paired" : "\(phones) paired", tint: nil, action: openPhone)
+                .help("Check on it, wake it or let it sleep from your phone")
+            Menu {
+                ForEach(Preset.allCases, id: \.self) { p in
+                    Button { engine.preset = p } label: {
+                        if engine.preset == p { Label(p.label, systemImage: "checkmark") } else { Text(p.label) }
+                    }
+                }
+            } label: {
+                TileFace(symbol: "laptopcomputer", title: "Lid shut", state: engine.preset.label, tint: nil)
+            }
+            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
+            .help(engine.preset.detail)
+        }
+    }
+
+    // MARK: Notices: one at a time, most important first
+
+    private var topNotice: Notice? {
+        if !engine.wakeReady {
+            return notice("Needs your password once more to finish updating.", "Set Up") { UIState.shared.whilePinned { engine.runSetup() } }
+        }
+        if engine.sleepOffOutside {
+            return notice("Sleep was switched off outside Nocturnal, so this Mac won't sleep with the lid shut.", "Turn On") { engine.switchSleepBackOn() }
+        }
+        if !engine.unrestored.isEmpty {
+            return notice("Couldn't put back \(engine.unrestored.joined(separator: ", ")) yet.", "Try Again") { engine.retryRestore() }
+        }
+        if engine.blockedByFloor {
+            return notice("At your \(engine.batteryFloor)% battery limit, so it sleeps with the lid shut.", "Keep Going") { engine.overrideFloor() }
+        }
+        if engine.floorOverride {
+            return notice("Going below \(engine.batteryFloor)% until you plug in.", "Undo") { engine.overrideFloor(false) }
+        }
+        if let w = engine.warning { return Notice(text: w, warning: true) }
+        // The hotspot tip only after it actually cost something: the last lid-shut session lost the internet.
+        if engine.onHotspot, !engine.config.hotspotAutomatic, let r = engine.recentReceipt, r.offlineSeconds > 60 {
+            return notice("Lost the internet with the lid shut: set Wi‑Fi › Ask to join hotspots to Automatic.", "Open") {
+                NSWorkspace.shared.open(NetWatch.wifiSettingsURL)
+                engine.update { $0.hotspotAutomatic = true }
+            }
+        }
+        if let r = engine.recentReceipt, dismissedReceipt != r.closedAt {
+            return notice("While the lid was shut: " + ([r.agentName].compactMap { $0 } + [Engine.receiptLine(r)]).joined(separator: " · "), "OK") {
+                dismissedReceiptAt = r.closedAt.timeIntervalSince1970
+            }
+        }
+        return nil
+    }
+
     @AppStorage("dismissedReceipt") private var dismissedReceiptAt: Double = 0
     private var dismissedReceipt: Date? { dismissedReceiptAt > 0 ? Date(timeIntervalSince1970: dismissedReceiptAt) : nil }
 
-    /// "Keeps working" or "Sleeps normally", and why, big enough to be the first thing anyone reads.
-    private var outcome: some View {
-        let o = engine.lidOutcome
-        return HStack(alignment: .top, spacing: 10) {
-            Image(systemName: o.keeps ? "laptopcomputer" : "moon.zzz.fill")
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(o.keeps ? Color.accentColor : Color.secondary)
-                .frame(width: 26, height: 22)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(o.headline).font(.headline)
-                Text(o.detail).font(.subheadline).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if engine.mode == .on { durationMenu.padding(.top, 2).padding(.leading, -3) }   // the menu's own inset, so it lines up with the text
-                else if engine.holding {
-                    Button("Sleep Now") { engine.sleepNow() }
-                        .buttonStyle(.plain).foregroundStyle(Color.accentColor).font(.subheadline).padding(.top, 2)
-                        .help("Let it sleep now. Agents can't keep it awake again until you open the lid.")
-                }
-            }
-            Spacer(minLength: 0)
-        }
+    private func notice(_ text: String, _ button: String, action: @escaping () -> Void) -> Notice {
+        Notice(text: text, button: button, action: action)
     }
 
-    /// On an iPhone hotspot: macOS only reconnects to it by itself with the lid shut if "Ask to join hotspots" is
-    /// on Automatic. Nocturnal can't read or change that setting, so it asks once and remembers the answer.
-    private var hotspotNotice: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "personalhotspot").font(.system(size: 13)).foregroundStyle(.orange).frame(width: 18, height: 18)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("You're on your iPhone's hotspot").font(.subheadline.weight(.semibold))
-                Text("Set Wi‑Fi › Ask to join hotspots to Automatic, or it won't reconnect with the lid shut.")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 14) {
-                    Button("Open Wi-Fi Settings") { NSWorkspace.shared.open(NetWatch.wifiSettingsURL) }
-                    Button("It's on Automatic") { engine.update { $0.hotspotAutomatic = true } }
-                }
-                .buttonStyle(.plain).foregroundStyle(Color.accentColor).font(.caption.weight(.medium))
-            }
-        }
-    }
+    // MARK: Sleep Now and the timer
 
-    private func receipt(_ r: Receipt) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "checkmark.circle.fill").font(.system(size: 13)).foregroundStyle(Color.accentColor).frame(width: 18, height: 18)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("While the lid was closed").font(.subheadline.weight(.semibold))
-                Text(([r.agentName].compactMap { $0 } + [Engine.receiptLine(r)]).joined(separator: " · "))
-                    .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+    @ViewBuilder private var actions: some View {
+        if engine.mode == .on || engine.holding {
+            HStack(spacing: 10) {
+                Button { engine.sleepNow() } label: { Label("Sleep Now", systemImage: "moon.fill") }
+                    .help("Let it sleep now. Agents can't keep it awake again until you open the lid.")
+                if engine.mode == .on { durationMenu }
+                Spacer()
             }
-            Spacer(minLength: 4)
-            Button { dismissedReceiptAt = r.closedAt.timeIntervalSince1970 } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }
-                .buttonStyle(.plain).foregroundStyle(.tertiary).help("Dismiss")
+            .controlSize(.regular)
         }
     }
 
@@ -199,36 +238,100 @@ private struct NowTab: View {
             Divider()
             Button("Until I Turn It Off") { engine.stayAwake(for: nil) }
         } label: {
-            Text(engine.alwaysLeft == nil ? "Set a timer" : "Change timer").font(.subheadline).foregroundStyle(Color.accentColor)
+            Text(engine.alwaysLeft == nil ? "Set a Timer" : "Change Timer")
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
         .fixedSize()
         .help("How long to stay awake")
     }
-
-
-    private func notice(_ text: String, button: String, action: @escaping () -> Void) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(text).font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 8)
-            Button { action() } label: { Text(button) }.controlSize(.small)
-        }
-    }
-
 }
 
-/// A big number with a plain caption underneath.
-private struct Figure: View {
-    let value: String
-    let caption: String
-    var tint: Color = .primary
+/// The card's green: deep green opening to a mint glow, the same as the icon, the phone and the website.
+private struct KeepsBackground: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(value).font(.title2.weight(.semibold)).monospacedDigit().foregroundStyle(tint)
-                .contentTransition(.numericText()).animation(.snappy, value: value)
-            Text(caption).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        ZStack {
+            LinearGradient(colors: [Color(red: 0.03, green: 0.20, blue: 0.10), Color(red: 0.08, green: 0.42, blue: 0.25)],
+                           startPoint: .bottomLeading, endPoint: .topTrailing)
+            RadialGradient(colors: [Color(red: 0.25, green: 0.84, blue: 0.61).opacity(0.85), .clear],
+                           center: UnitPoint(x: 0.95, y: 0), startRadius: 0, endRadius: 220)
         }
+    }
+}
+
+/// One line the panel needs to say, at most one at a time.
+private struct Notice {
+    var text: String
+    var button: String? = nil
+    var warning = false
+    var action: () -> Void = {}
+}
+
+private struct NoticeRow: View {
+    let notice: Notice
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(notice.text).font(.callout).foregroundStyle(notice.warning ? Color.orange : Color.primary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 6)
+            if let b = notice.button { Button(b, action: notice.action).controlSize(.small) }
+        }
+    }
+}
+
+/// One of the card's numbers: tabular digits that roll to the new value, the unit, a word under it.
+private struct Number: View {
+    let value: Double
+    let digits: Int
+    let unit: String
+    let caption: String
+    let keeps: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 1) {
+                Text(value, format: .number.precision(.fractionLength(digits)))
+                    .font(.system(size: 26, weight: .semibold)).monospacedDigit()
+                    .contentTransition(.numericText(value: value)).animation(.snappy(duration: 0.6), value: value)
+                Text(unit).font(.system(size: 15, weight: .medium))
+            }
+            .lineLimit(1).minimumScaleFactor(0.7)
+            Text(caption).font(.callout).foregroundStyle(keeps ? Color.white.opacity(0.8) : .secondary).lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// A feature tile: icon, name, state. Always visible, so nothing important hides in Settings.
+private struct Tile: View {
+    let symbol: String
+    let title: String
+    let state: String
+    let tint: Color?
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) { TileFace(symbol: symbol, title: title, state: state, tint: tint) }
+            .buttonStyle(.plain)
+    }
+}
+
+private struct TileFace: View {
+    let symbol: String
+    let title: String
+    let state: String
+    let tint: Color?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Image(systemName: symbol).font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(tint ?? Color.accentColor)
+                .frame(height: 18)
+            Text(title).font(.callout.weight(.semibold)).lineLimit(1)
+            Text(state).font(.callout).foregroundStyle(tint ?? .secondary).lineLimit(1)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+        .background((tint ?? Color.primary).opacity(tint == nil ? 0.05 : 0.14), in: .rect(cornerRadius: 12, style: .continuous))
+        .contentShape(.rect(cornerRadius: 12))
     }
 }
 
@@ -370,8 +473,6 @@ struct AppsView: View {
             Text(planLine).font(.caption).foregroundStyle(.secondary).monospacedDigit()
                 .fixedSize(horizontal: false, vertical: true)
                 .help(planNames)
-            settingRow("Stop at battery") { floorMenu }
-                .padding(.top, 4)
         }
     }
 
@@ -393,20 +494,6 @@ struct AppsView: View {
         if !p.pausedNames.isEmpty { parts.append("Pauses: " + p.pausedNames.joined(separator: ", ")) }
         if !p.slowedNames.isEmpty { parts.append("Slows: " + p.slowedNames.joined(separator: ", ")) }
         return parts.isEmpty ? "Nothing would be slowed or paused right now" : parts.joined(separator: "\n") + "\nAgents, what they use, music and calls are never touched."
-    }
-
-    private var floorMenu: some View {
-        Menu {
-            Button { engine.batteryFloor = 0 } label: { check(engine.batteryFloor == 0, "Never (run to 0%)") }
-            Divider()
-            ForEach([5, 10, 15, 20, 30, 50], id: \.self) { f in
-                Button { engine.batteryFloor = f } label: { check(engine.batteryFloor == f, "\(f)%") }
-            }
-        } label: {
-            Text(engine.batteryFloor == 0 ? "Never" : "\(engine.batteryFloor)%")
-        }
-        .menuStyle(.borderlessButton).fixedSize()
-        .help("Below this, Nocturnal lets the Mac sleep when the lid is closed. With Never it keeps going to empty, and the Mac switches off at 0%.")
     }
 
     // Per-app rules

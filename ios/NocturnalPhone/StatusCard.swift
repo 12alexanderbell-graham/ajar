@@ -39,7 +39,7 @@ struct StatusCard: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .foregroundStyle(keeps ? .white : .primary)
         .background {
-            if keeps { Theme.keepsGradient } else { Color(.secondarySystemGroupedBackground) }
+            if keeps { KeepsGradient() } else { Color(.secondarySystemGroupedBackground) }
         }
         .clipShape(.rect(cornerRadius: Theme.cardRadius, style: .continuous))
         .animation(.smooth(duration: 0.35), value: keeps)
