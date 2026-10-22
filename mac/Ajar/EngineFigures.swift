@@ -20,6 +20,8 @@ extension Engine {
     struct ClosedPlan {
         var slowed = 0
         var paused = 0
+        var slowedNames: [String] = []
+        var pausedNames: [String] = []
         var lowPower: Bool
         var watts: Double
     }
@@ -28,8 +30,8 @@ extension Engine {
         var p = ClosedPlan(lowPower: config.lowPowerWhileClosed && config.preset != .speed, watts: closedEstimate)
         for a in userApps where !isProtected(a) {
             switch rule(for: a.bundleID) {
-            case .slow: p.slowed += 1
-            case .pause: p.paused += 1
+            case .slow: p.slowed += 1; p.slowedNames.append(a.name)
+            case .pause: p.paused += 1; p.pausedNames.append(a.name)
             case .leave: break
             }
         }

@@ -358,13 +358,17 @@ fn engine_thread(
                 }
                 changed = true;
             }
-            Ok(Cmd::Action(Action::ApproveConfirm)) => {
+            Ok(Cmd::Action(Action::ApproveConfirm(ends))) => {
                 if approve_armed
                     .take()
                     .is_some_and(|t| t.elapsed() < Duration::from_secs(30))
                 {
-                    let msg = match nocturnal::approve::turn_on(&approve_paths) {
-                        Ok(()) => "On. New Claude Code and Codex sessions won't ask before acting; running ones keep their mode.".to_string(),
+                    let hours = (ends == nocturnal::approve::Ends::Time).then_some(8.0);
+                    let msg = match nocturnal::approve::turn_on(&approve_paths, ends, hours, nocturnal::now()) {
+                        Ok(()) => format!(
+                            "On. New Claude Code and Codex sessions won't ask before acting; running ones keep their mode. {}.",
+                            nocturnal::approve::ends_line(&approve_paths).unwrap_or_default()
+                        ),
                         Err(err) => err,
                     };
                     e.outbox.push(nocturnal::engine::Announcement {
@@ -419,6 +423,9 @@ fn engine_thread(
                     remote = start_remote(&root, tx.clone());
                 }
             }
+            if e.ticks().is_multiple_of(5) {
+                check_approve(&mut e, &approve_paths);
+            }
             deliver(&mut e);
             if e.ticks().is_multiple_of(30) {
                 ipc::sweep_replies(&root);
@@ -429,6 +436,7 @@ fn engine_thread(
             let mut ui = UiState::from_engine(&e, nocturnal::now());
             ui.phone_on = remote.is_some();
             ui.auto_approve = nocturnal::approve::is_on(&approve_paths);
+            ui.approve_line = nocturnal::approve::ends_line(&approve_paths);
             if approve_armed.is_some_and(|t| t.elapsed() >= Duration::from_secs(30)) {
                 approve_armed = None;
             }
@@ -441,6 +449,32 @@ fn engine_thread(
                 let _ = proxy.send_event(UserEvent::Refresh);
             }
         }
+    }
+}
+
+/// "Approve everything" turns itself off when the work finishes or its time is up, and keeps retrying if
+/// something couldn't be put back.
+fn check_approve<P: Platform>(e: &mut Engine<P>, p: &nocturnal::approve::Paths) {
+    if !nocturnal::approve::is_on(p) {
+        return;
+    }
+    let working = e.holding && e.hold_reason.is_some();
+    if working {
+        nocturnal::approve::mark_work(p);
+    }
+    let Some(why) = nocturnal::approve::expiry(p, working, nocturnal::now()) else {
+        return;
+    };
+    let ok = nocturnal::approve::turn_off(p).is_ok();
+    if why != "retry" || ok {
+        e.outbox.push(nocturnal::engine::Announcement {
+            title: "Approve everything is off".into(),
+            body: if ok {
+                format!("{why}, so Claude Code and Codex ask before acting again.")
+            } else {
+                "Couldn't put your Claude Code and Codex settings back yet; Nocturnal keeps trying.".into()
+            },
+        });
     }
 }
 
@@ -540,7 +574,7 @@ fn apply<P: Platform>(
         | Action::OpenFolder
         | Action::Quit
         | Action::ApproveToggle
-        | Action::ApproveConfirm => {}
+        | Action::ApproveConfirm(_) => {}
     }
 }
 

@@ -136,6 +136,8 @@ struct AgentRow: View {
         var parts: [String] = []
         if session.kind.isRequest {
             parts.append(session.detail.map(Self.tidy) ?? "Asked to stay awake")
+        } else if session.state == .waiting && working {
+            parts.append("Waiting for you")
         } else if working {
             parts.append(session.kind.isAI ? "Working" : "Busy")
             if session.watts >= 0.05 { parts.append(String(format: "%.1f W", session.watts)) }
@@ -143,7 +145,8 @@ struct AgentRow: View {
             parts.append("Idle")
         } else {
             let m = Int(Date().timeIntervalSince(session.lastActive) / 60)
-            parts.append(m < 1 ? "Idle just now" : "Idle \(m) min")
+            if session.state == .finished { parts.append(m < 1 ? "Finished just now" : "Finished \(m) min ago") }
+            else { parts.append(m < 1 ? "Idle just now" : "Idle \(m) min") }
             if let s = sleepsIn { parts.append("sleep in \(PanelFormat.minutes(s))") }
         }
         if let p = session.project { parts.append(p) }

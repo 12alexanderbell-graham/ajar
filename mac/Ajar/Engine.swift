@@ -212,6 +212,10 @@ final class Engine {
             powerEvents = PowerEvents { [weak self] in
                 MainActor.assumeIsolated { self?.poweredOn() }
             }
+            // A hook just reported something: look again now rather than at the next sample.
+            DistributedNotificationCenter.default().addObserver(forName: AgentEvents.changed, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.sampleWatchers(); self?.evaluate() }
+            }
             configWatcher = ConfigWatcher { [weak self] in
                 MainActor.assumeIsolated { self?.reloadConfigFromDisk() }
             }
@@ -312,14 +316,20 @@ final class Engine {
             if StateFiles.exists(Brightness.restoreFile) { Brightness.restore() }
         }
         if holding { StateFiles.touch(StateFiles.hold) }
+        // Holding, but sleep is back on: the watchdog took over during a stall, or another program switched it.
+        // Switch it off again (the hold is still wanted: evaluate decided so, within the limits).
+        if holding, ticks % 5 == 0, !previewOnly, !Registry.sleepDisabled {
+            StateFiles.remove(SleepSwitch.marker)   // no longer switched off by someone else: Nocturnal's from here
+            if Shell.pmsetRoot(["-a", "disablesleep", "1"]) { StateFiles.touch(StateFiles.hold) }
+            else { warning = "Sleep was switched back on by something else and Nocturnal couldn't switch it off again." }
+        }
         if ticks % 150 == 3 { checkWatchdog() }
-        if pendingRelease, Shell.pmsetRoot(["-a", "disablesleep", "0"]) {
+        if pendingRelease, SleepSwitch.release() {
             pendingRelease = false
             if warning == "Couldn't switch sleep back on yet; Nocturnal keeps trying." { warning = nil }
-            StateFiles.remove(StateFiles.hold)
         }
         if ticks % 5 == 0 { reloadConfigIfEdited() }
-        if ticks % 5 == 0 { checkScheduledWake(); reassertSleep() }
+        if ticks % 5 == 0 { checkScheduledWake(); reassertSleep(); checkApprove() }
         evaluate()
         settleAdoptedHold()
     }
@@ -333,16 +343,46 @@ final class Engine {
         if lidClosed && setupReady { addHold(reason: "Scheduled wake", minutes: Double(minutes), pid: nil) }
     }
 
+    /// "Approve everything" turns itself off when the work finishes or its time is up, and keeps retrying if
+    /// something couldn't be put back.
+    private func checkApprove() {
+        guard !previewOnly, AutoApprove.isOn else { return }
+        let working = holding && holdReason != nil
+        if working, AutoApprove.load()?.sawWork != true { AutoApprove.markWork(); approveChanged() }
+        guard let why = AutoApprove.expiry(holdingForWork: working) else { return }
+        let ok = (try? AutoApprove.turnOff()) != nil
+        approveChanged()
+        guard why != "retry" || ok else { return }
+        onNote?("Approve everything is off", ok
+            ? "\(why), so Claude Code and Codex ask before acting again."
+            : "Couldn't put your Claude Code and Codex settings back yet; Nocturnal keeps trying.")
+    }
+
+    /// Bumped whenever Approve everything changes, so views reading its file draw again.
+    private(set) var approveVersion = 0
+    func approveChanged() { approveVersion += 1 }
+
     /// Sleep is Nocturnal's switch: Nocturnal's sudoers entry lets any program of this user run `pmset -a disablesleep 1`,
     /// so an agent could keep the Mac up past the battery limit or the heat guard. Whenever Nocturnal isn't holding
     /// (or checking in, or still settling a hold it adopted), sleep goes back on.
     private func reassertSleep() {
-        guard !previewOnly, setupReady, !holding, checkInUntil == nil, adoptedHoldUntil == nil, !pendingRelease,
-              Registry.sleepDisabled else { return }
-        if Shell.pmsetRoot(["-a", "disablesleep", "0"]) {
-            StateFiles.remove(StateFiles.hold)
-            if lidClosed { Shell.pmsetRoot(["sleepnow"]) }
+        guard !previewOnly, setupReady, !holding, checkInUntil == nil, adoptedHoldUntil == nil, !pendingRelease else { return }
+        // Sleep was off before Nocturnal (the person's own `pmset disablesleep 1`): leave it, until they switch it back.
+        if SleepSwitch.notOurs {
+            if !Registry.sleepDisabled { StateFiles.remove(SleepSwitch.marker) }
+            return
         }
+        guard Registry.sleepDisabled else { return }
+        if SleepSwitch.release(), lidClosed { Shell.pmsetRoot(["sleepnow"]) }
+    }
+
+    /// Sleep is switched off outside Nocturnal (it was off before Nocturnal needed it), so the Mac never sleeps
+    /// with the lid closed, whatever Nocturnal decides. Shown in the panel with a way to switch it back on.
+    var sleepOffOutside: Bool { SleepSwitch.notOurs && Registry.sleepDisabled && !holding }
+
+    func switchSleepBackOn() {
+        guard SleepSwitch.forceOn() else { warning = "Couldn't switch sleep back on. Run: sudo pmset -a disablesleep 0"; return }
+        evaluate()
     }
 
     /// Catches in-place edits (nano, `echo >`) that the folder watcher can miss.
@@ -357,15 +397,52 @@ final class Engine {
         let extra = config.customAgents.map { AgentKind(id: "custom:" + $0.name, name: $0.name, executables: Set($0.executables),
                                                        scriptHints: [], transcriptDirs: [], idleWatts: $0.idleWatts ?? 0.05) }
         watcher.sample(custom: config.watchedApps, requests: config.countRequests, extraKinds: extra)
-        sessions = watcher.sessions
-        blockers = watcher.blockers
         let now = Date()
+        sessions = applyAgentEvents(watcher.sessions, now: now)
+        blockers = watcher.blockers
         for s in sessions where counts(s) {
             lastSeen = (now, s.kind.name)
             if isWorking(s) { lastWork = (max(s.lastActive, now.addingTimeInterval(-20)), s.kind.name) }
         }
         detectFinished()
     }
+
+    /// What agents report through their own hooks (see AgentEvents), laid over the power-based guess: working
+    /// keeps the Mac awake however quiet the work is, a question waiting for an answer keeps it awake for a while
+    /// (and says so on the phone), and a finished turn starts the quiet countdown even if a helper keeps ticking.
+    private(set) var agentEvents: [AgentEvent] = []
+    private var announcedWaits = Set<String>()
+
+    private func applyAgentEvents(_ list: [AgentSession], now: Date) -> [AgentSession] {
+        agentEvents = previewOnly ? [] : AgentEvents.load(now: now)
+        guard !agentEvents.isEmpty else { return list }
+        var out = list
+        for i in out.indices where !out[i].kind.isRequest {
+            guard let (st, at) = AgentEvents.state(of: out[i].kind.id, in: agentEvents, lastActive: out[i].lastActive, now: now) else { continue }
+            out[i].state = st
+            out[i].stateSince = at
+            switch st {
+            case .working:
+                out[i].lastActive = now
+            case .waiting:
+                if now.timeIntervalSince(at) < AgentEvents.waitLimit { out[i].lastActive = now }
+                let key = out[i].kind.id + "@\(Int(at.timeIntervalSince1970))"
+                if !announcedWaits.contains(key) {
+                    announcedWaits.insert(key)
+                    // Only worth a push while the person is away from the screen.
+                    if lidClosed || holding { onNeedsYou?(out[i].kind.name) }
+                }
+            case .finished, .idle:
+                // A command it left running in the background still counts; otherwise the turn's end is the last work.
+                if !out[i].toolRunning { out[i].lastActive = at }
+            }
+        }
+        if announcedWaits.count > 50 { announcedWaits.removeAll() }
+        return out
+    }
+
+    /// An agent is asking the person something (a permission prompt) while the lid is shut: (agent name).
+    var onNeedsYou: ((String) -> Void)?
 
     private func counts(_ s: AgentSession) -> Bool {
         !s.kind.isRequest && !config.trackOnly.contains(s.kind.id) && !(s.kind == AgentKind.claudeApp && !config.countClaudeApp)
@@ -398,7 +475,7 @@ final class Engine {
     /// Called with (agent name, minutes it was busy, whether its process is gone) once an agent that was busy
     /// for at least a minute has been quiet for 2 minutes. Nocturnal can't tell success from a crash or a question
     /// waiting for an answer, so this is "went idle", never "finished".
-    var onFinished: ((String, Double, Bool) -> Void)?
+    var onFinished: ((String, Double, Bool, AgentState?) -> Void)?
 
     private func detectFinished() {
         let now = Date()
@@ -416,7 +493,7 @@ final class Engine {
             let minutes = p.quietAt.timeIntervalSince(p.since) / 60
             guard minutes >= 1, !previewOnly else { continue }
             let present = sessions.first { $0.kind.id == id }
-            onFinished?(present?.kind.name ?? finishedNames[id] ?? "Agent", minutes, present == nil)
+            onFinished?(present?.kind.name ?? finishedNames[id] ?? "Agent", minutes, present == nil, present?.state)
         }
         for s in sessions { finishedNames[s.kind.id] = s.kind.name }
     }
@@ -501,10 +578,12 @@ final class Engine {
         if let a = activeAgent {
             if a.kind.isRequest { return Self.describe(a) }
             let name = a.instances > 1 ? "\(a.kind.name) ×\(a.instances)" : a.kind.name
+            if a.state == .waiting && isWorking(a) { return "\(name) is waiting for you" }
             if isWorking(a) { return a.toolRunning && a.watts < a.kind.idleWatts ? "\(name) is running a command" : Self.describe(a) }
             if !config.sleepWhenDone { return "\(name) is open" }
             let left = window - Date().timeIntervalSince(a.lastActive)
-            return "\(name) went idle · sleeps in \(PanelFormat.minutes(max(60, left)))"
+            let what = a.state == .finished ? "finished" : (a.state == .waiting ? "is still waiting" : "went idle")
+            return "\(name) \(what) · sleeps in \(PanelFormat.minutes(max(60, left)))"
         }
         guard let last = config.sleepWhenDone ? lastWork : lastSeen else { return nil }
         let left = window - Date().timeIntervalSince(last.at)
@@ -798,6 +877,8 @@ final class Engine {
     private func startHold(reason: String?) {
         if previewOnly { holding = true; return }
         if let last = holdFailedAt, Date().timeIntervalSince(last) < 30 { return }   // don't spawn sudo every 2 s
+        // Already off and not by Nocturnal: note it, so it's left that way when the hold ends.
+        SleepSwitch.noteOwner()
         // Marker first: if Nocturnal dies right after pmset, the watchdog knows to switch sleep back on.
         StateFiles.touch(StateFiles.hold)
         guard StateFiles.exists(StateFiles.hold) else { setupError = "Nocturnal couldn't write to its folder, so it won't switch sleep off"; return }
@@ -825,9 +906,7 @@ final class Engine {
         let wasClosed = lidClosed
         if wasClosed { accumulateSavings() }
         if wasClosed { restoreClosedState() }
-        if Shell.pmsetRoot(["-a", "disablesleep", "0"]) {
-            StateFiles.remove(StateFiles.hold)
-        } else {
+        if !SleepSwitch.release() {
             // Keep the hold file so the watchdog also retries, and retry every tick ourselves.
             pendingRelease = true
             warning = "Couldn't switch sleep back on yet; Nocturnal keeps trying."
@@ -1010,6 +1089,8 @@ final class Engine {
 
     private func restorePowerMode() {
         guard let saved = StateFiles.read(StateFiles.modeRestore) else { return }
+        // Changed by the person (or another app) since Nocturnal turned it on: theirs now, leave it.
+        if let cur = PowerMode.battery(), cur.value != 1 { StateFiles.remove(StateFiles.modeRestore); return }
         let parts = saved.split(separator: " ").map(String.init)
         // Keep the file if pmset fails, so this (and the watchdog) tries again instead of leaving Low Power Mode on.
         if parts.count != 2 || Shell.pmsetRoot(["-b", parts[0], parts[1]]) { StateFiles.remove(StateFiles.modeRestore) }
@@ -1187,6 +1268,7 @@ final class Engine {
         TimeMachine.resume()
         DisplayPower.restoreBuiltIn()
         Brightness.restore()
+        SleepSwitch.noteOwner()   // off with no hold marker: not Nocturnal's doing
         if Registry.sleepDisabled && StateFiles.exists(StateFiles.hold) {
             // Take the previous run's hold over instead of releasing it first (see adoptedHoldUntil).
             adoptedHoldUntil = Date().addingTimeInterval(30)
@@ -1207,7 +1289,7 @@ final class Engine {
         let mustSleep = !setupReady || blockedReason != nil || (config.mode == .off && holds.isEmpty)
         guard mustSleep || Date() > until else { return }
         adoptedHoldUntil = nil
-        if Shell.pmsetRoot(["-a", "disablesleep", "0"]) { StateFiles.remove(StateFiles.hold) } else { pendingRelease = true }
+        if !SleepSwitch.release() { pendingRelease = true }
         if lidClosed { Shell.pmsetRoot(["sleepnow"]) }   // macOS only sleeps on the lid-close edge; it's already shut
     }
 
@@ -1216,7 +1298,7 @@ final class Engine {
         restoreClosedState()
         if holding || pendingRelease || adoptedHoldUntil != nil {
             // If this fails the hold file stays, so the watchdog keeps trying after we're gone.
-            if Shell.pmsetRoot(["-a", "disablesleep", "0"]) { StateFiles.remove(StateFiles.hold) }
+            SleepSwitch.release()
         } else {
             StateFiles.remove(StateFiles.hold)
         }
@@ -1568,6 +1650,7 @@ final class Engine {
         guard config.checkInMinutes > 0 || config.wakeAt != nil, setupReady else { return }
         // Keep it up for a few seconds (the same switch a hold uses; the marker lets the watchdog undo it if
         // Nocturnal dies), reconnect to the relay and read what the phone sent while it slept.
+        SleepSwitch.noteOwner()
         StateFiles.touch(StateFiles.hold)
         guard Shell.pmsetRoot(["-a", "disablesleep", "1"]) else { StateFiles.remove(StateFiles.hold); return }
         let until = Date().addingTimeInterval(WakePlan.checkInSeconds)
@@ -1584,7 +1667,7 @@ final class Engine {
         checkInUntil = nil
         if let a = checkInActivity { ProcessInfo.processInfo.endActivity(a); checkInActivity = nil }
         guard !holding else { return }   // a phone command or an agent took over; the hold owns sleep now
-        if Shell.pmsetRoot(["-a", "disablesleep", "0"]) { StateFiles.remove(StateFiles.hold) } else { pendingRelease = true }
+        if !SleepSwitch.release() { pendingRelease = true }
         // Ask for the next check-in before going down: after a dark wake the will-sleep notification
         // doesn't always arrive, and without this check-ins would stop after the first one.
         scheduleWake()
@@ -1628,7 +1711,9 @@ final class Engine {
             "lidClosed": lidClosed, "mode": config.mode.rawValue, "preset": config.preset.rawValue, "snoozed": snoozed,
             "holds": holds.map(\.reason),
             "agents": sessions.filter { !$0.kind.isRequest }.map { s in
-                ["id": s.kind.id, "name": s.kind.name, "working": isWorking(s), "keeps": !config.trackOnly.contains(s.kind.id), "instances": s.instances] as [String: Any]
+                var a: [String: Any] = ["id": s.kind.id, "name": s.kind.name, "working": isWorking(s), "keeps": !config.trackOnly.contains(s.kind.id), "instances": s.instances]
+                if let st = s.state { a["state"] = st.rawValue }
+                return a
             },
             "watch": watchCandidates.map { ["id": $0.app.id, "name": $0.app.name, "on": $0.on] as [String: Any] },
             "warnings": [warning].compactMap { $0 },

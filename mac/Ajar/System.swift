@@ -168,6 +168,34 @@ enum StateFiles {
     }
 }
 
+/// The system-wide sleep switch (`pmset disablesleep`). If someone else had already switched sleep off before
+/// Nocturnal needed it, Nocturnal uses it as it is and never switches it back on (it isn't Nocturnal's setting).
+enum SleepSwitch {
+    static var marker: URL { StateFiles.dir.appendingPathComponent("sleep-off-before") }
+    static var notOurs: Bool { StateFiles.exists(marker) }
+
+    /// Call before taking sleep over: notes when it's already off and Nocturnal didn't do it.
+    static func noteOwner() {
+        if Registry.sleepDisabled && !StateFiles.exists(StateFiles.hold) && !notOurs { StateFiles.touch(marker) }
+    }
+
+    /// Hands sleep back: switches it on again, unless it was off before Nocturnal. The hold marker goes once done.
+    @discardableResult
+    static func release() -> Bool {
+        if notOurs { StateFiles.remove(StateFiles.hold); return true }
+        guard Shell.pmsetRoot(["-a", "disablesleep", "0"]) else { return false }
+        StateFiles.remove(StateFiles.hold)
+        return true
+    }
+
+    /// The person chose to switch sleep back on (from the panel), whoever switched it off.
+    static func forceOn() -> Bool {
+        guard Shell.pmsetRoot(["-a", "disablesleep", "0"]) else { return false }
+        StateFiles.remove(marker)
+        return true
+    }
+}
+
 struct SetupError: LocalizedError {
     let message: String
     var errorDescription: String? { message }
@@ -191,10 +219,12 @@ enum Setup {
     /// launchd actually has the watchdog loaded (files on disk aren't proof it runs). Spawns launchctl: call off the main thread.
     static var watchdogLoaded: Bool { Shell.run("/bin/launchctl", ["print", "gui/\(getuid())/\(label)"]).code == 0 }
     static var isReady: Bool { watchdogReady && sudoReady }
-    /// The scheduled-wake commands were added after 1.0; an older sudoers entry lacks them until Set Up runs again.
+    /// The sudoers entry has every command this version uses (scheduled wakes and Time Machine came after 1.0, the
+    /// watchdog's clean-up after that); an older entry lacks them until Set Up runs again.
     static var wakeReady: Bool {
         Shell.run("/usr/bin/sudo", ["-n", "-l", "/usr/bin/pmset"] + WakePlan.pmsetArgs(seconds: 900)).code == 0
             && Shell.run("/usr/bin/sudo", ["-n", "-l", "/usr/bin/tmutil", "enable"]).code == 0
+            && Shell.run("/usr/bin/sudo", ["-n", "-l", "/bin/rm", "-f", sudoersPath]).code == 0
     }
 
     static let commands = [
@@ -205,6 +235,8 @@ enum Setup {
     ].map { "/usr/bin/pmset " + $0 }
         + WakePlan.steps.map { "/usr/bin/pmset " + WakePlan.pmsetArgs(seconds: $0).joined(separator: " ") }
         + ["/usr/bin/tmutil disable", "/usr/bin/tmutil enable"]
+        // Only for the watchdog's clean-up after the app has been deleted: removing these grants nothing.
+        + ["/bin/rm -f \(sudoersPath)", "/bin/rm -f \(cliPath)"]
 
     static func sudoersText(user: String) -> String {
         "# Installed by Nocturnal. Lets Nocturnal flip only these power switches without a password.\n"
@@ -266,10 +298,15 @@ enum Setup {
         }
     }
 
-    /// The launchd job runs this tiny script every minute. While the app's heartbeat is fresh, or there is none
-    /// (Nocturnal quit cleanly and put everything back), it exits at once; with a stale heartbeat it hands over to the app binary (`Nocturnal cli watchdog`), which checks the heartbeat's pid and
-    /// start time and undoes everything from the journal in Swift. No journal parsing in shell. If the app has
-    /// been deleted, the script still lets the Mac sleep again.
+    /// The launchd job runs this small script every minute. While the app's heartbeat is fresh it exits at once;
+    /// with a stale heartbeat it hands over to the app binary (`Nocturnal cli watchdog`), which checks the
+    /// heartbeat's pid and start time and undoes everything from the journal in Swift.
+    ///
+    /// If the app binary is gone (dragged to the Trash, `brew uninstall`, moved and not opened since), the script
+    /// itself puts back what a shell can: paused apps resumed, Low Power Mode and Time Machine as they were, sleep
+    /// switched back on, and Approve everything undone if Claude's and Codex's files are still exactly as Nocturnal
+    /// left them. Once the app has been gone for 10 minutes it removes Nocturnal's password rule, its dangling
+    /// command link, and itself, so nothing privileged is left behind.
     static var watchdogScript: String {
         let exe = Bundle.main.executablePath ?? "/Applications/Nocturnal.app/Contents/MacOS/Nocturnal"
         return """
@@ -277,14 +314,83 @@ enum Setup {
         # Nocturnal watchdog (written by Nocturnal; refreshed each launch).
         D="$HOME/Library/Application Support/Nocturnal"
         EXE=\(shellQuote(exe))
-        if [ -f "$D/alive" ]; then
-          now=$(/bin/date +%s); beat=$(/usr/bin/stat -f %m "$D/alive")
-          [ $((now - beat)) -lt 40 ] && exit 0
-          # Stale heartbeat: the app died or hung. The app binary undoes everything from the journal.
-          if [ -x "$EXE" ]; then exec "$EXE" cli watchdog; fi
+        LABEL=\(label)
+        S=/usr/bin/sudo
+        TAB=$(printf '\t')
+
+        release_hold() {
+          [ -f "$D/hold" ] || return 0
+          # Sleep was already off before Nocturnal: not Nocturnal's to switch back on.
+          if [ -f "$D/sleep-off-before" ]; then /bin/rm -f "$D/hold"; return 0; fi
+          $S -n /usr/bin/pmset -a disablesleep 0 >/dev/null 2>&1 && /bin/rm -f "$D/hold"
+        }
+
+        restore_approve() {
+          [ -f "$D/auto-approve.json" ] || return 0
+          R="$D/approve-restore"
+          [ -d "$R" ] || return 0
+          ok=1
+          for f in claude codex; do
+            [ -f "$R/$f.target" ] || continue
+            t=$(/bin/cat "$R/$f.target")
+            [ -f "$t" ] || continue
+            if [ "$(/usr/bin/shasum -a 256 "$t" | /usr/bin/cut -d' ' -f1)" = "$(/bin/cat "$R/$f.sha" 2>/dev/null)" ]; then
+              /bin/cp "$R/$f.restored" "$t.nocturnal-tmp" && /bin/mv -f "$t.nocturnal-tmp" "$t" || ok=0
+            else
+              ok=0   # changed since: only Nocturnal itself can put it back safely
+            fi
+          done
+          [ "$ok" = 1 ] && /bin/rm -rf "$R" "$D/auto-approve.json"
+        }
+
+        restore_all() {
+          if [ -f "$D/resume-pids" ]; then
+            while IFS="$TAB" read -r pid path; do
+              case "$pid" in ''|*[!0-9]*) continue ;; esac
+              cur=$(/bin/ps -o comm= -p "$pid" 2>/dev/null)
+              [ -n "$cur" ] && [ "${cur##*/}" = "${path##*/}" ] && /bin/kill -CONT "$pid" 2>/dev/null
+            done < "$D/resume-pids"
+            /bin/rm -f "$D/resume-pids" "$D/touched.json"
+          fi
+          if [ -f "$D/powermode-restore" ]; then
+            read -r key val < "$D/powermode-restore"
+            case "$key $val" in
+              "powermode "[012]|"lowpowermode "[01]) $S -n /usr/bin/pmset -b "$key" "$val" >/dev/null 2>&1 && /bin/rm -f "$D/powermode-restore" ;;
+              *) /bin/rm -f "$D/powermode-restore" ;;
+            esac
+          fi
+          if [ -f "$D/timemachine-restore" ]; then
+            $S -n /usr/bin/tmutil enable >/dev/null 2>&1 && /bin/rm -f "$D/timemachine-restore"
+          fi
+          release_hold
+          restore_approve
+        }
+
+        if [ -x "$EXE" ]; then
+          /bin/rm -f "$D/gone"
+          if [ -f "$D/alive" ]; then
+            now=$(/bin/date +%s); beat=$(/usr/bin/stat -f %m "$D/alive")
+            [ $((now - beat)) -lt 40 ] && exit 0
+            # Stale heartbeat: the app died or hung. The app binary undoes everything from the journal.
+            exec "$EXE" cli watchdog
+          fi
+          # No heartbeat: Nocturnal quit cleanly. Only a leftover hold can still need undoing.
+          release_hold
+          exit 0
         fi
-        # No heartbeat: Nocturnal quit cleanly (or was deleted). Only a leftover hold can still need undoing.
-        if [ -f "$D/hold" ]; then /usr/bin/sudo -n /usr/bin/pmset -a disablesleep 0 && /bin/rm -f "$D/hold"; fi
+
+        # The app is gone.
+        restore_all
+        now=$(/bin/date +%s)
+        [ -f "$D/gone" ] || echo "$now" > "$D/gone"
+        since=$(/bin/cat "$D/gone" 2>/dev/null)
+        case "$since" in ''|*[!0-9]*) since=$now ;; esac
+        [ $((now - since)) -lt 600 ] && exit 0
+        # Gone for 10 minutes: Nocturnal was removed. Take out its password rule, its command link and this watchdog.
+        $S -n /bin/rm -f \(sudoersPath) >/dev/null 2>&1
+        if [ -L \(cliPath) ] && [ ! -e \(cliPath) ]; then $S -n /bin/rm -f \(cliPath) >/dev/null 2>&1; fi
+        /bin/rm -f "$HOME/Library/LaunchAgents/$LABEL.plist" "$D/gone" "$D/alive" "$0"
+        /bin/launchctl bootout "gui/$(/usr/bin/id -u)/$LABEL" >/dev/null 2>&1
         exit 0
         """
     }

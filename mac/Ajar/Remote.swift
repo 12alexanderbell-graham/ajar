@@ -314,12 +314,12 @@ struct PhoneControlSection: View {
                 Toggle("Phone control", isOn: Binding(get: { remote.enabled }, set: { on in
                     if on { remote.enable() } else { remote.disable(); showPairing = false }
                 }))
-                Button("Unpair All Phones", role: .destructive) { remote.enable(newKey: true); showPairing = true }
-                    .help("Makes a new key; phones paired before stop working")
+                Button("Revoke All Phones", role: .destructive) { remote.enable(newKey: true); showPairing = true }
+                    .help("Makes a new key: every phone paired before (and any copy of its link or QR code) stops working")
             } header: {
                 Text("Your Phone")
             } footer: {
-                Text("End-to-end encrypted. The phone can't loosen the battery limit or the heat guard.")
+                Text("Commands are end-to-end encrypted. The phone can't loosen the battery limit or the heat guard.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         } else {

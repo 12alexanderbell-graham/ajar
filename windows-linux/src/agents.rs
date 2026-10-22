@@ -133,6 +133,25 @@ fn is_claude_desktop(p: &Proc) -> bool {
 
 const INTERPRETERS: &[&str] = &["node", "bun", "deno", "python", "python3", "pythonw"];
 
+/// Which known agent this process is, if any (for finding the agent above a hook).
+pub fn kind_id(p: &Proc) -> Option<String> {
+    if is_claude_desktop(p) {
+        return None;
+    }
+    let kinds = known();
+    if let Some(k) = kinds.iter().find(|k| k.executables.contains(&p.name)) {
+        return Some(k.id.clone());
+    }
+    if INTERPRETERS.contains(&p.name.as_str()) {
+        let args = p.cmd.iter().take(4).cloned().collect::<Vec<_>>().join(" ");
+        return kinds
+            .iter()
+            .find(|k| k.hints.iter().any(|h| args.contains(h.as_str())))
+            .map(|k| k.id.clone());
+    }
+    None
+}
+
 pub fn is_interpreter(name: &str) -> bool {
     INTERPRETERS.contains(&name)
 }
@@ -149,13 +168,21 @@ pub struct Session {
     pub tool_running: bool,
     /// How many separate instances of this agent are running.
     pub instances: usize,
+    /// What the agent itself reported through its hooks (None when it has none); set by the engine and laid over
+    /// the CPU guess.
+    pub state: Option<crate::events::AgentState>,
+    pub state_since: Option<u64>,
 }
 
-/// A command started by an agent counts as work for at most this long (so a dev server left running in the
-/// background doesn't keep the laptop awake forever).
-pub const TOOL_MAX_AGE: u64 = 60 * 60;
-/// Children started this soon after the agent itself are its own helpers (MCP servers, a shell), not commands.
+/// A command started by an agent counts as work for two hours whatever it's doing, and after that only while it
+/// uses the CPU (a dev server left idle in the background mustn't keep the laptop awake forever, but a long build
+/// still does).
+pub const TOOL_MAX_AGE: u64 = 2 * 60 * 60;
+/// Children started this soon after the agent itself are usually its own helpers (MCP servers, a shell): they
+/// count only while busy, so a command started in the first seconds isn't missed either.
 pub const HELPER_WINDOW: u64 = 30;
+/// A child using more than this (% of one core) counts as busy.
+pub const BUSY_CHILD_CPU: f64 = 2.0;
 
 impl Session {
     pub fn working(&self, now: u64) -> bool {
@@ -320,9 +347,17 @@ impl Watcher {
                             .zip(crate::procs::age_secs(p.start, c))
                             .map(|(ra, pa)| ra.saturating_sub(pa));
                         let age = crate::procs::age_secs(p.start, c);
-                        started_after.is_some_and(|d| d > HELPER_WINDOW)
-                            && age.is_some_and(|a| a < TOOL_MAX_AGE)
-                            && kind_of.get(&p.pid) != Some(&kind.id)
+                        if kind_of.get(&p.pid) == Some(&kind.id) {
+                            return false;
+                        }
+                        let busy = cpu.get(&p.pid).is_some_and(|c| *c > BUSY_CHILD_CPU);
+                        let early = started_after.is_none_or(|d| d <= HELPER_WINDOW);
+                        let old = age.is_none_or(|a| a >= TOOL_MAX_AGE);
+                        if early || old {
+                            busy
+                        } else {
+                            true
+                        }
                     }),
                 _ => false,
             };
@@ -343,6 +378,8 @@ impl Watcher {
                     last_active,
                     tool_running,
                     instances: 1,
+                    state: None,
+                    state_since: None,
                 });
             }
         }

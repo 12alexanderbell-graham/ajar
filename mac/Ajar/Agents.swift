@@ -69,6 +69,10 @@ struct AgentSession: Identifiable, Equatable {
     var toolRunning = false
     /// Separate copies of this agent that are running (shown as "×2").
     var instances = 1
+    /// What the agent itself reported through its hooks (nil when it has none): working, waiting for the person,
+    /// finished. Set by the engine; overrides the power-based guess.
+    var state: AgentState?
+    var stateSince: Date?
 }
 
 /// A sleep blocker someone else is holding, for the "also keeping your Mac awake" list.
@@ -100,11 +104,14 @@ final class AgentWatcher {
     /// First time each sleep request was seen, for requests that don't say when they started.
     private var requestFirstSeen: [String: Date] = [:]
 
-    /// A command started by an agent counts as work for at most an hour (a dev server left running in the
-    /// background mustn't keep the Mac awake forever). Children started within 30 s of the agent are its own
-    /// helpers (MCP servers, a shell), not commands.
-    static let toolMaxAge: TimeInterval = 3600
+    /// A command started by an agent counts as work for two hours whatever it's doing, and after that only while it
+    /// uses the CPU (a dev server left idle in the background mustn't keep the Mac awake forever, but a long build
+    /// still does). Children started within 30 s of the agent are usually its own helpers (MCP servers, a shell):
+    /// they count only while busy, so a command started in the first seconds isn't missed either.
+    static let toolMaxAge: TimeInterval = 2 * 3600
     static let helperWindow: TimeInterval = 30
+    /// A child process using more than this counts as busy.
+    static let busyChildWatts = 0.05
 
     func sample(custom: [WatchedApp] = [], requests: Bool = true, extraKinds: [AgentKind] = []) {
         self.extraKinds = extraKinds
@@ -178,11 +185,15 @@ final class AgentWatcher {
             // Per process, so a child that exits doesn't make the whole tree read 0 W: each process counts what it
             // used since the last sample, and one that started since then counts everything it used.
             var used: UInt64 = 0
+            var usedBy: [pid_t: UInt64] = [:]
             for pid in members {
                 guard let e = Procs.usage(pid)?.ri_energy_nj else { continue }
                 newEnergy[pid] = e
-                if let prev = lastTreeEnergy[pid] { if e >= prev { used &+= e - prev } }
-                else if let since = previousSampleUs, let start = Procs.startTime(pid), start >= since { used &+= e }
+                var d: UInt64 = 0
+                if let prev = lastTreeEnergy[pid] { if e >= prev { d = e - prev } }
+                else if let since = previousSampleUs, let start = Procs.startTime(pid), start >= since { d = e }
+                usedBy[pid] = d
+                used &+= d
             }
             let watts = dt > 0 && previousSampleUs != nil ? Double(used) / 1e9 / dt : 0
 
@@ -192,7 +203,10 @@ final class AgentWatcher {
                 let nowUs = UInt64(now.timeIntervalSince1970 * 1_000_000)
                 tool = members.dropFirst().contains { p in
                     guard foundSet[p] != kind.id, let s = Procs.startTime(p), s > rootStart, nowUs > s else { return false }
-                    return Double(s - rootStart) / 1e6 > Self.helperWindow && Double(nowUs - s) / 1e6 < Self.toolMaxAge
+                    let busy = dt > 0 && Double(usedBy[p] ?? 0) / 1e9 / dt > Self.busyChildWatts
+                    let early = Double(s - rootStart) / 1e6 <= Self.helperWindow
+                    let old = Double(nowUs - s) / 1e6 >= Self.toolMaxAge
+                    return early || old ? busy : true
                 }
             }
             let busy = watts > kind.idleWatts || freshTranscripts.contains(kind.id) || tool

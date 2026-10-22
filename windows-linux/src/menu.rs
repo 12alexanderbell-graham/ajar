@@ -66,6 +66,8 @@ pub struct AgentRow {
     pub idle_minutes: Option<u64>,
     pub project: Option<String>,
     pub keeps_awake: bool,
+    /// What the agent reported through its hooks ("waiting", "finished"), if it has them.
+    pub state: Option<crate::events::AgentState>,
 }
 
 /// Everything the menu needs, copied out of the engine on its own thread.
@@ -108,6 +110,8 @@ pub struct UiState {
     pub snoozed: bool,
     /// "Approve everything" is on (agents run without asking).
     pub auto_approve: bool,
+    /// How it ends, or why it couldn't be put back ("Turns off when the work finishes").
+    pub approve_line: Option<String>,
     /// The first click on "Approve everything" asks for a second one (set by the app for 30 s).
     pub approve_confirm: bool,
     pub check_in: u32,
@@ -138,6 +142,7 @@ impl UiState {
                 idle_minutes: (s.last_active > 0).then(|| now.saturating_sub(s.last_active) / 60),
                 project: s.project.clone().filter(|p| !p.is_empty()),
                 keeps_awake: !e.cfg.track_only.contains(&s.kind.id),
+                state: s.state,
             })
             .collect();
         let recent = e
@@ -204,6 +209,7 @@ impl UiState {
             phone_status: e.remote_status.clone(),
             snoozed: e.snoozed,
             auto_approve: false,
+            approve_line: None,
             approve_confirm: false,
             check_in: e.cfg.check_in_minutes,
             wake_at: e.cfg.wake_at,
@@ -307,8 +313,16 @@ fn apps_menu(s: &UiState) -> Vec<Node> {
         m.push(info("noagents", "No agents running"));
     }
     for a in &s.agents {
-        let state = if a.working {
+        use crate::events::AgentState;
+        let state = if a.working && a.state == Some(AgentState::Waiting) {
+            "waiting for you".to_string()
+        } else if a.working {
             "working".to_string()
+        } else if a.state == Some(AgentState::Finished) {
+            match a.idle_minutes {
+                Some(0) | None => "finished".into(),
+                Some(min) => format!("finished {} ago", crate::format::minutes(min as f64)),
+            }
         } else {
             match a.idle_minutes {
                 Some(0) => "idle".into(),
@@ -542,22 +556,25 @@ fn settings_menu(s: &UiState) -> Vec<Node> {
         vec![
             info(
                 "approve:warn",
-                "Agents will run any command and edit or delete any file without asking.",
+                "Claude Code and Codex will run any command and edit or delete any file without asking, in every project.",
             ),
-            text("approve:confirm", "Turn on: approve everything"),
+            text("approve:confirm:work", "Turn on until the work finishes"),
+            text("approve:confirm:time", "Turn on for 8 hours"),
+            text("approve:confirm:manual", "Turn on until I turn it off"),
         ]
     } else {
-        vec![
-            check(
-                "approve:toggle",
-                "Approve everything automatically (risky)",
-                s.auto_approve,
-            ),
-            info(
-                "approve:help",
-                "Claude Code and Codex run without asking; new sessions only",
-            ),
-        ]
+        let mut items = vec![check(
+            "approve:toggle",
+            "Approve everything automatically (risky)",
+            s.auto_approve,
+        )];
+        items.push(info(
+            "approve:help",
+            s.approve_line.clone().unwrap_or_else(|| {
+                "Claude Code and Codex run without asking; new sessions only. Never answers system prompts.".into()
+            }),
+        ));
+        items
     };
     settings.push(sub(
         "approvals",
@@ -653,7 +670,7 @@ pub enum Action {
     OpenFolder,
     Quit,
     ApproveToggle,
-    ApproveConfirm,
+    ApproveConfirm(crate::approve::Ends),
     CheckIn(u32),
     WakeAt(u32),
     WakeOff,
@@ -693,7 +710,9 @@ pub fn action(id: &str) -> Option<Action> {
         ("openfolder", _) => Action::OpenFolder,
         ("quit", _) => Action::Quit,
         ("approve", "toggle") => Action::ApproveToggle,
-        ("approve", "confirm") => Action::ApproveConfirm,
+        ("approve", "confirm:work") => Action::ApproveConfirm(crate::approve::Ends::Work),
+        ("approve", "confirm:time") => Action::ApproveConfirm(crate::approve::Ends::Time),
+        ("approve", "confirm:manual") => Action::ApproveConfirm(crate::approve::Ends::Manual),
         ("checkin", m) => Action::CheckIn(
             m.parse::<u32>()
                 .ok()
@@ -744,6 +763,7 @@ mod tests {
                 idle_minutes: Some(0),
                 project: Some("nocturnal".into()),
                 keeps_awake: true,
+                state: None,
             }],
             holds: vec![],
             mode: Mode::Auto,
@@ -771,6 +791,7 @@ mod tests {
             phone_status: Some("Connected".into()),
             snoozed: false,
             auto_approve: false,
+            approve_line: None,
             approve_confirm: false,
             check_in: 0,
             wake_at: None,

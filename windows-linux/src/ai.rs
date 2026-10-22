@@ -123,8 +123,59 @@ pub fn codex_config() -> PathBuf {
     home().join(".codex").join("config.toml")
 }
 
+/// The `nocturnal` command (never the tray app: run with a hook's arguments, that would start a second tray).
+fn cli_exe() -> Option<String> {
+    let me = std::env::current_exe().ok()?;
+    let name = if cfg!(windows) { "nocturnal.exe" } else { "nocturnal" };
+    let p = if me.file_name().and_then(|n| n.to_str()) == Some(name) { me } else { me.parent()?.join(name) };
+    p.exists().then(|| p.display().to_string())
+}
+
 pub fn connect_claude_code() -> Result<String, String> {
-    connect_claude_code_at(&claude_code_config())
+    let mcp = connect_claude_code_at(&claude_code_config())?;
+    let Some(exe) = cli_exe() else {
+        return Ok(format!("{mcp} (The nocturnal command wasn't found next to the app, so its status hooks weren't added.)"));
+    };
+    Ok(match install_hooks(&claude_settings(), &exe) {
+        Ok(()) => format!("{mcp} It now tells Nocturnal when it's working, waiting for you, or done (new sessions)."),
+        Err(e) => format!("{mcp} Couldn't add its status hooks: {e}"),
+    })
+}
+
+/// Claude Code's user settings, where its hooks live.
+pub fn claude_settings() -> PathBuf {
+    home().join(".claude").join("settings.json")
+}
+
+/// Both halves of the Claude Code connection are in place: the MCP server and the lifecycle hooks.
+pub fn claude_code_hooks_installed() -> bool {
+    crate::approve::read_claude(&crate::approve::Paths {
+        journal: PathBuf::new(),
+        claude: claude_settings(),
+        codex: PathBuf::new(),
+    })
+    .is_ok_and(|(c, _)| cli_exe().is_some_and(|exe| crate::events::hooks_installed(&c, &exe)))
+}
+
+/// Adds Nocturnal's lifecycle hooks to Claude Code's settings (a copy of the file is kept next to it first).
+fn install_hooks(path: &Path, exe: &str) -> Result<(), String> {
+    let p = crate::approve::Paths { journal: PathBuf::new(), claude: path.to_path_buf(), codex: PathBuf::new() };
+    let (c, raw) = crate::approve::read_claude(&p)?;
+    if let Some(r) = &raw {
+        std::fs::write(path.with_extension("json.nocturnal-backup"), r).map_err(|e| e.to_string())?;
+    }
+    let out = crate::events::with_hooks(&c, exe);
+    crate::approve::write(path, &serde_json::to_string_pretty(&Value::Object(out)).unwrap_or_default())
+}
+
+fn remove_hooks(path: &Path) {
+    let p = crate::approve::Paths { journal: PathBuf::new(), claude: path.to_path_buf(), codex: PathBuf::new() };
+    if let Ok((c, Some(_))) = crate::approve::read_claude(&p) {
+        let (out, changed) = crate::events::without_hooks(&c);
+        if changed {
+            let _ = crate::approve::write(path, &serde_json::to_string_pretty(&Value::Object(out)).unwrap_or_default());
+        }
+    }
 }
 
 pub fn connect_codex() -> Result<String, String> {
@@ -200,6 +251,7 @@ fn write_atomic(path: &Path, data: &[u8]) -> Result<(), String> {
 /// Removes Nocturnal's MCP entry from Claude Code and Codex (uninstall), so they don't keep starting a program that's
 /// about to be deleted. Everything else in their configs stays; a file that can't be read is left alone.
 pub fn disconnect_all() {
+    remove_hooks(&claude_settings());
     let cc = claude_code_config();
     if let Some(mut root) = std::fs::read(&cc).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok()) {
         if let Some(servers) = root.get_mut("mcpServers").and_then(Value::as_object_mut) {

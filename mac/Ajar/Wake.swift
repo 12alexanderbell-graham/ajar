@@ -91,6 +91,8 @@ enum TimeMachine {
     @discardableResult
     static func resume() -> Bool {
         guard paused else { return true }
+        // Already back on (the person switched it on): nothing to do.
+        if autoBackupOn { StateFiles.remove(marker); return true }
         guard Shell.run("/usr/bin/sudo", ["-n", "/usr/bin/tmutil", "enable"]).code == 0 else { return false }
         StateFiles.remove(marker)
         return true

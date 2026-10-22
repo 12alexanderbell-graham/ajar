@@ -28,6 +28,12 @@ enum CLI {
         case "off", "auto": return show(send("mode", ["mode": cmd]))
         case "sleep": return show(send("sleep_now", [:]))
         case "watchdog": print(Watchdog.run(force: false)); return 0
+        case "event":
+            // From an agent's lifecycle hook: the hook's JSON on stdin. Quiet and always successful, so it can
+            // never block or clutter the agent.
+            let input = FileHandle.standardInput.readData(ofLength: 1 << 20)
+            AgentEvents.record(agent: rest.first ?? "", input: input)
+            return 0
         case "doctor": return doctor()
         case "rescue": return rescue()
         case "on", "always":

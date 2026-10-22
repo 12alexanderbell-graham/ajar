@@ -78,6 +78,12 @@ private struct NowTab: View {
             if let w = engine.warning {
                 Text(w).font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
             }
+            if !engine.wakeReady {
+                notice("Nocturnal needs your password once more to finish updating its helper.", button: "Set Up") { UIState.shared.whilePinned { engine.runSetup() } }
+            }
+            if engine.sleepOffOutside {
+                notice("Sleep was already switched off outside Nocturnal (pmset disablesleep 1), so this Mac won't sleep with the lid closed.", button: "Turn Sleep On") { engine.switchSleepBackOn() }
+            }
             if !engine.unrestored.isEmpty {
                 notice("Couldn't put back \(engine.unrestored.joined(separator: ", ")) yet. Nocturnal keeps trying.", button: "Try Again") { engine.retryRestore() }
             }
@@ -100,7 +106,7 @@ private struct NowTab: View {
     private func battery(_ b: BatteryReading) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 16) {
             if let closed = engine.closedHours {
-                Figure(value: PanelFormat.hm(closed), caption: "\(b.percent)% · " + (engine.onBattery ? "lid closed" : "unplugged, lid closed"))
+                Figure(value: "≈" + PanelFormat.hm(closed), caption: "\(b.percent)% · " + (engine.onBattery ? "lid closed, estimated" : "unplugged, lid closed"))
                 if engine.onBattery, let open = engine.openHours, closed > open {
                     Figure(value: "+" + PanelFormat.hm(closed - open), caption: "vs. lid open", tint: .accentColor)
                 }
@@ -248,7 +254,9 @@ struct AppsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             keepAwake
-            if let open = openAgentSettings {
+            // Only while it's on (or couldn't be put back): a warning, not one more routine setting. Reading
+            // approveVersion makes the panel redraw when it turns itself off.
+            if let open = openAgentSettings, engine.approveVersion >= 0, AutoApprove.isOn {
                 Divider()
                 approveRow(open)
             }
@@ -294,23 +302,23 @@ struct AppsView: View {
                     RemoveButton { engine.removeWatched(w) }
                 }
             }
-            settingRow("Sleep once idle for") { quietMenu }
+            settingRow("Sleep after idle") { quietMenu }
                 .padding(.top, 4)
         }
     }
 
-    /// Approve everything, where agents are: its state, and the way to the switch (Settings › Agents, which
-    /// shows the warning first). Read from its journal file, so it's always the real state.
+    /// Approve everything while it's on: agents don't ask, and when it ends. Read from its journal file, so it's
+    /// always the real state; the switch is in Settings › Agents.
     private func approveRow(_ open: @escaping () -> Void) -> some View {
-        let on = AutoApprove.isOn
-        return HStack(alignment: .center, spacing: 10) {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: "exclamationmark.shield.fill").foregroundStyle(.orange).frame(width: 22)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Approve everything").font(.subheadline.weight(.semibold))
-                Text(on ? "On: Claude Code and Codex don't ask" : "Off: agents ask before acting")
-                    .font(.caption).foregroundStyle(on ? Color.orange : Color.secondary)
+                Text("Agents don't ask before acting").font(.subheadline.weight(.semibold))
+                Text(AutoApprove.endsLine ?? "Approve everything is on")
+                    .font(.caption).foregroundStyle(AutoApprove.problem == nil ? Color.secondary : Color.orange)
             }
             Spacer()
-            Button { open() } label: { Text(on ? "Change…" : "Turn On…") }
+            Button { open() } label: { Text("Change…") }
                 .buttonStyle(.plain).foregroundStyle(Color.accentColor).font(.subheadline)
         }
     }
@@ -330,9 +338,9 @@ struct AppsView: View {
                 }
             }
             Divider()
-            Button { engine.sleepWhenDone = false } label: { check(!engine.sleepWhenDone, "Never (awake as long as the agent app is open)") }
+            Button { engine.sleepWhenDone = false } label: { check(!engine.sleepWhenDone, "Off (awake while the agent is open)") }
         } label: {
-            Text(engine.sleepWhenDone ? "\(engine.quietMinutes) min" : "Never")
+            Text(engine.sleepWhenDone ? "\(engine.quietMinutes) min" : "Off")
         }
         .menuStyle(.borderlessButton).fixedSize()
         .help("How long an agent can sit idle before Nocturnal lets the Mac sleep")
@@ -359,6 +367,7 @@ struct AppsView: View {
                 .help(engine.preset.detail)
             Text(planLine).font(.caption).foregroundStyle(.secondary).monospacedDigit()
                 .fixedSize(horizontal: false, vertical: true)
+                .help(planNames)
             settingRow("Stop at battery") { floorMenu }
                 .padding(.top, 4)
         }
@@ -373,6 +382,15 @@ struct AppsView: View {
         if p.slowed == 0 && p.paused == 0 { parts.append("nothing slowed") }
         parts.append("≈\(PanelFormat.w(p.watts))")
         return parts.joined(separator: " · ")
+    }
+
+    /// Exactly which apps closing the lid would slow or pause right now.
+    private var planNames: String {
+        let p = engine.closedPlan
+        var parts: [String] = []
+        if !p.pausedNames.isEmpty { parts.append("Pauses: " + p.pausedNames.joined(separator: ", ")) }
+        if !p.slowedNames.isEmpty { parts.append("Slows: " + p.slowedNames.joined(separator: ", ")) }
+        return parts.isEmpty ? "Nothing would be slowed or paused right now" : parts.joined(separator: "\n") + "\nAgents, what they use, music and calls are never touched."
     }
 
     private var floorMenu: some View {

@@ -21,9 +21,15 @@ enum Journal {
         return (try? JSONDecoder().decode([Touched].self, from: d)) ?? []
     }
 
+    /// Paused processes as plain "pid<TAB>path" lines, for the watchdog script: it can resume them even if the app
+    /// itself has been deleted.
+    static var resumeList: URL { StateFiles.dir.appendingPathComponent("resume-pids") }
+
     /// True only once the list is safely on disk (temp file, flushed, renamed). Empty removes the file.
     @discardableResult
     static func save(_ list: [Touched]) -> Bool {
+        let paused = list.filter(\.paused).map { "\($0.pid)\t\($0.path)\n" }.joined()
+        if paused.isEmpty { StateFiles.remove(resumeList) } else { _ = StateFiles.writeDurably(Data(paused.utf8), to: resumeList) }
         if list.isEmpty { StateFiles.remove(url); return !StateFiles.exists(url) }
         guard let data = try? JSONEncoder().encode(list) else { return false }
         return StateFiles.writeDurably(data, to: url)
@@ -62,9 +68,14 @@ enum Heartbeat {
         StateFiles.write(s, to: StateFiles.alive)   // atomic: the watchdog never reads a half-written file
     }
 
-    /// The app that wrote the heartbeat is still running (same process) and checked in within 15 minutes. The
-    /// long window covers a sleep/resume, when the watchdog can run before the app's first tick; a dead app
-    /// is noticed at once, a hung one after 15 minutes. An old-style heartbeat (no pid) gets 90 seconds.
+    /// How long the app can go without a heartbeat before it counts as hung. It beats every 2 seconds, and while
+    /// it holds the Mac awake App Nap is switched off for it, so two minutes of silence means it's stuck.
+    static let hungAfter: TimeInterval = 120
+
+    /// The app that wrote the heartbeat is still running (same process) and checked in within two minutes. Right
+    /// after the Mac wakes the watchdog can run before the app's first tick, so a wake in the last three minutes
+    /// counts as alive. A dead app is noticed at once, a hung one within about three minutes. An old-style
+    /// heartbeat (no pid) gets 90 seconds.
     static func appIsAlive() -> Bool {
         let attrs = try? FileManager.default.attributesOfItem(atPath: StateFiles.alive.path)
         let mtime = (attrs?[.modificationDate] as? Date) ?? .distantPast
@@ -72,9 +83,20 @@ enum Heartbeat {
         if f.count == 3 {
             let age = Date().timeIntervalSince1970 - Double(f[0])
             let pid = pid_t(truncatingIfNeeded: f[1])
-            return f[2] != 0 && Procs.startTime(pid) == f[2] && age < 900
+            guard f[2] != 0, Procs.startTime(pid) == f[2] else { return false }
+            if age < hungAfter { return true }
+            if let woke = lastWake, Date().timeIntervalSince(woke) < 180 { return true }
+            return false
         }
         return Date().timeIntervalSince(mtime) < 90
+    }
+
+    /// When the Mac last woke from sleep.
+    static var lastWake: Date? {
+        var tv = timeval()
+        var size = MemoryLayout<timeval>.size
+        guard sysctlbyname("kern.waketime", &tv, &size, nil, 0) == 0, tv.tv_sec > 0 else { return nil }
+        return Date(timeIntervalSince1970: TimeInterval(tv.tv_sec))
     }
 }
 
@@ -104,11 +126,13 @@ enum Watchdog {
         if StateFiles.exists(Brightness.restoreFile) { ok = false }
         if let saved = StateFiles.read(StateFiles.modeRestore) {
             let parts = saved.split(separator: " ").map(String.init)
-            if parts.count != 2 || Shell.pmsetRoot(["-b", parts[0], parts[1]]) { StateFiles.remove(StateFiles.modeRestore) } else { ok = false }
+            // Changed by the person since: theirs now, leave it.
+            if let cur = PowerMode.battery(), cur.value != 1 { StateFiles.remove(StateFiles.modeRestore) }
+            else if parts.count != 2 || Shell.pmsetRoot(["-b", parts[0], parts[1]]) { StateFiles.remove(StateFiles.modeRestore) } else { ok = false }
         }
         var released = false
         if StateFiles.exists(StateFiles.hold) {
-            if !Registry.sleepDisabled { StateFiles.remove(StateFiles.hold) }
+            if !Registry.sleepDisabled || SleepSwitch.notOurs { StateFiles.remove(StateFiles.hold) }   // off before Nocturnal: left as it was
             else if Shell.pmsetRoot(["-a", "disablesleep", "0"]) { StateFiles.remove(StateFiles.hold); released = true }
             else { ok = false }
         }
@@ -129,7 +153,9 @@ enum Watchdog {
     /// Changes to the Mac itself that must be undone (Approve everything is a setting the person chose, not one).
     static func systemChanges() -> [String] {
         var out = Journal.load().map { "\($0.paused ? "paused" : "slowed") \(($0.path as NSString).lastPathComponent) (pid \($0.pid))" }
-        if StateFiles.exists(StateFiles.hold) || Registry.sleepDisabled { out.append(Registry.sleepDisabled ? "sleep is switched off (pmset disablesleep 1)" : "hold marker present") }
+        if StateFiles.exists(StateFiles.hold) || (Registry.sleepDisabled && !SleepSwitch.notOurs) {
+            out.append(Registry.sleepDisabled ? "sleep is switched off (pmset disablesleep 1)" : "hold marker present")
+        }
         if StateFiles.exists(StateFiles.modeRestore) { out.append("Low Power Mode changed") }
         if TimeMachine.paused { out.append("Time Machine automatic backups paused") }
         if StateFiles.exists(Brightness.restoreFile) { out.append("screen dimmed to zero") }

@@ -204,9 +204,10 @@ private struct ConnectCard: View {
     @State private var working = false
 
     private func reload() {
+        let hooks = ClaudeHooks.currentCommand
         Task {
             state = await Task.detached {
-                [(AIConnect.claudeCodeInstalled, AIConnect.claudeCodeConnected), (AIConnect.codexInstalled, AIConnect.codexConnected),
+                [(AIConnect.claudeCodeInstalled, AIConnect.claudeCodeFullyConnected(hookCommand: hooks)), (AIConnect.codexInstalled, AIConnect.codexConnected),
                  (AIConnect.claudeAppInstalled, AIConnect.claudeAppConnected)]
             }.value
         }
@@ -214,11 +215,12 @@ private struct ConnectCard: View {
 
     var body: some View {
         let server = AIConnect.serverCommand
+        let hooks = ClaudeHooks.currentCommand
         VStack(alignment: .leading, spacing: 10) {
             Text("Connect your AI").font(.system(size: 14, weight: .semibold))
             Text("Lets Claude or Codex keep the Mac awake.")
                 .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            row("Claude Code", state[0]) { AIConnect.connectClaudeCode(server: server) }
+            row("Claude Code", state[0]) { AIConnect.connectClaudeCode(server: server, hookCommand: hooks) }
             row("Codex", state[1]) { AIConnect.connectCodex(server: server) }
             row("Claude app", state[2]) { AIConnect.connectClaudeApp(server: server) }
             Button {

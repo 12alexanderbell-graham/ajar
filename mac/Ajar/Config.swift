@@ -110,8 +110,9 @@ struct Config: Codable, Equatable {
     /// Experimental: with the lid closed, run the agent's build tools (compilers, linkers, cargo, xcodebuild…) on the
     /// efficiency cores. Builds take several times longer; whether that saves energy overall depends on the job.
     var slowBuildsWhileClosed = false
-    /// Pause Time Machine's automatic backups while the lid is closed (an agent's file changes trigger them).
-    var pauseTimeMachine = true
+    /// Pause Time Machine's automatic backups while the lid is closed (an agent's file changes trigger them). Off by
+    /// default: backups matter most exactly while an agent is changing lots of files.
+    var pauseTimeMachine = false
     /// The person says Wi-Fi › "Ask to join hotspots" is on Automatic, so Nocturnal stops reminding them on a hotspot.
     var hotspotAutomatic = false
 

@@ -166,6 +166,16 @@ fn main() -> ExitCode {
             println!("\nAny other MCP client: command \"{exe}\", argument \"mcp\" (stdio).");
             return ExitCode::SUCCESS;
         }
+        "event" => {
+            // From an agent's lifecycle hook: the hook's JSON on stdin. Quiet and always successful, so it can
+            // never block or clutter the agent.
+            use std::io::Read;
+            let mut input = String::new();
+            let _ = std::io::stdin().take(1 << 20).read_to_string(&mut input);
+            let agent = rest.first().map(String::as_str).unwrap_or("");
+            nocturnal::events::record(&root, agent, &input, nocturnal::now(), &nocturnal::procs::snapshot(), std::process::id());
+            return ExitCode::SUCCESS;
+        }
         "run" => return run(&root, rest),
         "doctor" => return doctor(&root),
         "rescue" => return rescue(&root),

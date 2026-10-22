@@ -10,6 +10,7 @@ pub mod ai;
 pub mod approve;
 pub mod config;
 pub mod engine;
+pub mod events;
 pub mod format;
 pub mod icon;
 pub mod ipc;

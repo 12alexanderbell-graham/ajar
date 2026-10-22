@@ -44,22 +44,34 @@ enum AIConnect {
 
     nonisolated static var claudeCodeInstalled: Bool { claudeCodeBinary != nil || FileManager.default.fileExists(atPath: claudeCodeConfig.path) }
 
-    static func connectClaudeCode() -> String { connectClaudeCode(server: serverCommand) }
+    static func connectClaudeCode() -> String { connectClaudeCode(server: serverCommand, hookCommand: ClaudeHooks.currentCommand) }
 
-    /// Adds Nocturnal as a user-scope MCP server for Claude Code (every project). Uses `claude mcp add` when the
+    /// Both halves of the Claude Code connection are in place: the MCP server and the lifecycle hooks.
+    nonisolated static func claudeCodeFullyConnected(hookCommand: String) -> Bool {
+        claudeCodeConnected && ClaudeHooks.installed(command: hookCommand)
+    }
+
+    /// Adds Nocturnal as a user-scope MCP server for Claude Code (every project), and its lifecycle hooks (so
+    /// Nocturnal knows when Claude Code is working, waiting for you, or done). Uses `claude mcp add` when the
     /// command is installed; otherwise writes the same entry into ~/.claude.json (backup kept next to it).
-    nonisolated static func connectClaudeCode(server: (command: String, args: [String])) -> String {
+    nonisolated static func connectClaudeCode(server: (command: String, args: [String]), hookCommand: String) -> String {
         let (cmd, args) = server
-        if let bin = claudeCodeBinary {
+        var mcp: String
+        if let bin = claudeCodeBinary, ({
             _ = Shell.run(bin, ["mcp", "remove", "--scope", "user", "nocturnal"])   // re-adding updates a stale path
-            let r = Shell.run(bin, ["mcp", "add", "--scope", "user", "nocturnal", "--", cmd] + args)
-            if r.code == 0 { return "Added to Claude Code for all projects. New sessions can use Nocturnal." }
+            return Shell.run(bin, ["mcp", "add", "--scope", "user", "nocturnal", "--", cmd] + args).code == 0
+        })() {
+            mcp = "Added to Claude Code for all projects."
+        } else {
+            mcp = editJSON(claudeCodeConfig, done: "Added to Claude Code (~/.claude.json).") { root in
+                var servers = root["mcpServers"] as? [String: Any] ?? [:]
+                servers["nocturnal"] = ["type": "stdio", "command": cmd, "args": args, "env": [String: String]()]
+                root["mcpServers"] = servers
+            }
         }
-        return editJSON(claudeCodeConfig, done: "Added to Claude Code (~/.claude.json). New sessions can use Nocturnal.") { root in
-            var servers = root["mcpServers"] as? [String: Any] ?? [:]
-            servers["nocturnal"] = ["type": "stdio", "command": cmd, "args": args, "env": [String: String]()]
-            root["mcpServers"] = servers
-        }
+        if let err = ClaudeHooks.install(command: hookCommand) { mcp += " Couldn't add its status hooks: \(err)" }
+        else { mcp += " It now tells Nocturnal when it's working, waiting for you, or done (new sessions)." }
+        return mcp
     }
 
     // MARK: Codex
@@ -208,6 +220,7 @@ enum AIConnect {
             if let bin = claudeCodeBinary { _ = Shell.run(bin, ["mcp", "remove", "--scope", "user", "nocturnal"]) }
             if claudeCodeConnected { _ = editJSON(claudeCodeConfig, done: "", dropNocturnal) }
         }
+        ClaudeHooks.remove()
         if claudeAppConnected { _ = editJSON(claudeAppConfig, done: "", dropNocturnal) }
         if let text = try? String(contentsOf: codexConfig, encoding: .utf8) {
             var lines = text.components(separatedBy: "\n")

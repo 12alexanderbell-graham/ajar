@@ -83,8 +83,8 @@ struct SettingsView: View {
     @State private var login = false
     @State private var cliInstalled = Setup.cliInstalled
     @State private var note: String?
-    @State private var approveOn = AutoApprove.isOn
     @State private var approveConfirm = false
+    @State private var approveEnds: AutoApprove.Ends = .work
     @State private var lockGrace: Int?
     @State private var topic = ""
     /// The topic field was edited here: only then is it saved (never overwrite a change made by the phone or an agent).
@@ -101,8 +101,9 @@ struct SettingsView: View {
 
     /// Reading ~/.claude.json can take a moment for heavy Claude Code users, so it's done off the main thread.
     private func reloadConnected() {
+        let hooks = ClaudeHooks.currentCommand
         Task {
-            let r = await Task.detached { [AIConnect.claudeCodeConnected, AIConnect.codexConnected, AIConnect.claudeAppConnected] }.value
+            let r = await Task.detached { [AIConnect.claudeCodeFullyConnected(hookCommand: hooks), AIConnect.codexConnected, AIConnect.claudeAppConnected] }.value
             connected = r
         }
     }
@@ -189,7 +190,7 @@ struct SettingsView: View {
             Text("Saving Power")
         }
         Section {
-            LabeledContent("Using now") {
+            LabeledContent(PowerSensor.isMeasured ? "Using now, measured" : "Using now, estimated") {
                 Text(engine.systemWatts.map { String(format: "%.1f W", $0) } ?? "—").monospacedDigit().foregroundStyle(.secondary)
             }
             if let o = engine.openDraw, let c = engine.closedDraw {
@@ -327,7 +328,7 @@ struct SettingsView: View {
         } header: {
             Text("On Your Phone")
         } footer: {
-            Text("Get the free ntfy app and subscribe to this topic.")
+            Text("Get the free ntfy app and subscribe to this topic. Alerts go through ntfy.sh as plain text, not encrypted like phone control.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -335,19 +336,28 @@ struct SettingsView: View {
     // MARK: AI Agents
 
     @ViewBuilder private var aiPage: some View {
+        let _ = engine.approveVersion   // draw again when it turns itself off
+        let on = AutoApprove.isOn
         Section {
             if approveConfirm {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Approve everything?").font(.headline)
-                    Text("Claude Code and Codex will run any command, edit or delete any file, and use the network without asking you first. If an agent misunderstands a task, nothing stops it, and with the lid closed you won't see it happen. Turn it off here at any time; your old settings come back.")
+                    Text("Claude Code and Codex will run any command, edit or delete any file, and use the network without asking you first, in every project. If an agent misunderstands a task, nothing stops it, and with the lid closed you won't see it happen. macOS's own permission prompts still appear.")
                         .font(.callout).foregroundStyle(.secondary)
+                    Picker("Turns off", selection: $approveEnds) {
+                        Text("When the work finishes").tag(AutoApprove.Ends.work)
+                        Text("In 8 hours").tag(AutoApprove.Ends.time)
+                        Text("When I turn it off").tag(AutoApprove.Ends.manual)
+                    }
                     HStack {
                         Button("Cancel") { approveConfirm = false }
                         Spacer()
                         Button("Turn On") {
-                            do { try AutoApprove.turnOn(); note = "On. New Claude Code and Codex sessions won't ask; running ones keep their mode." }
-                            catch { note = error.localizedDescription }
-                            approveOn = AutoApprove.isOn
+                            do {
+                                try AutoApprove.turnOn(ends: approveEnds, hours: approveEnds == .time ? 8 : nil)
+                                note = "On. New Claude Code and Codex sessions won't ask; running ones keep their mode."
+                            } catch { note = error.localizedDescription }
+                            engine.approveChanged()
                             approveConfirm = false
                         }
                         .tint(.red).buttonStyle(.borderedProminent)
@@ -355,15 +365,27 @@ struct SettingsView: View {
                 }
                 .padding(.vertical, 4)
             } else {
-                Toggle(isOn: Binding(get: { approveOn }, set: { on in
-                    if on { approveConfirm = true; return }
+                Toggle(isOn: Binding(get: { on }, set: { want in
+                    if want { approveEnds = .work; approveConfirm = true; return }
                     do { try AutoApprove.turnOff(); note = "Off. Your previous Claude Code and Codex settings are back." }
                     catch { note = error.localizedDescription }
-                    approveOn = AutoApprove.isOn
+                    engine.approveChanged()
                 })) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Approve everything automatically")
-                        Text("Risky: agents never ask before acting").font(.caption).foregroundStyle(approveOn ? Color.red : Color.secondary)
+                        Text(on ? (AutoApprove.endsLine ?? "On") : "Risky: agents never ask before acting")
+                            .font(.caption).foregroundStyle(on ? Color.red : Color.secondary)
+                    }
+                }
+                if let p = AutoApprove.problem {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(p).font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                        Spacer()
+                        Button("Try Again") {
+                            do { try AutoApprove.turnOff(); note = "Off. Your previous Claude Code and Codex settings are back." }
+                            catch { note = error.localizedDescription }
+                            engine.approveChanged()
+                        }
                     }
                 }
             }
@@ -375,16 +397,17 @@ struct SettingsView: View {
         } header: {
             Text("Approvals")
         } footer: {
-            Text("macOS permission prompts can't be clicked for you. Full Disk Access stops most of them.")
+            Text("Covers Claude Code and Codex in every project. macOS permission prompts can't be clicked for you; Full Disk Access stops most of them.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         Section {
             let server = AIConnect.serverCommand
-            connectRow("Claude Code", connected[0]) { AIConnect.connectClaudeCode(server: server) }
+            let hooks = ClaudeHooks.currentCommand
+            connectRow("Claude Code", connected[0]) { AIConnect.connectClaudeCode(server: server, hookCommand: hooks) }
             connectRow("Codex", connected[1]) { AIConnect.connectCodex(server: server) }
             connectRow("Claude app", connected[2]) { AIConnect.connectClaudeApp(server: server) }
         } footer: {
-            Text("Lets your agent keep the Mac awake and change settings.")
+            Text("Lets your agent keep the Mac awake and change settings. Claude Code also tells Nocturnal when it's working, waiting for you, or done.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         Section {
@@ -466,6 +489,7 @@ struct SettingsView: View {
             LabeledContent("Setup") {
                 if engine.setupReady { Text("Done").foregroundStyle(.secondary) } else { Button("Set Up…") { engine.runSetup() } }
             }
+            .help("Setup adds a rule that lets programs running as you switch sleep, Low Power Mode and Time Machine without a password, and nothing else. It stops accidental changes, not a malicious program on your account.")
             LabeledContent("Shortcuts") { Text("3 actions").foregroundStyle(.secondary) }
                 .help("Keep Mac Awake, Let Mac Sleep, Get Nocturnal Status")
         }

@@ -152,6 +152,9 @@ pub struct Engine<P: Platform> {
     pub open_draw: Option<f64>,
     pub closed_draw: Option<f64>,
     pub outbox: Vec<Announcement>,
+    /// Sessions agents reported through their hooks, from the last sample.
+    pub agent_events: Vec<crate::events::AgentEvent>,
+    announced_waits: std::collections::HashSet<String>,
     ticks: u64,
     config_mtime: Option<std::time::SystemTime>,
 }
@@ -225,6 +228,8 @@ impl<P: Platform> Engine<P> {
             open_draw: None,
             closed_draw: None,
             outbox: vec![],
+            agent_events: vec![],
+            announced_waits: Default::default(),
             ticks: 0,
             config_mtime: None,
         };
@@ -473,6 +478,7 @@ impl<P: Platform> Engine<P> {
         if let Some(p) = procs_now {
             self.procs = p;
             self.watcher.sample(&self.procs, &self.cfg, now);
+            self.apply_agent_events(now);
             let mut seen = None;
             let mut work = None;
             for s in self.watcher.sessions.iter().filter(|s| self.counts(s)) {
@@ -701,6 +707,60 @@ impl<P: Platform> Engine<P> {
         }
     }
 
+    /// What agents report through their own hooks (see events.rs), laid over the CPU guess: working keeps the
+    /// computer awake however quiet the work is, a question waiting for an answer keeps it awake for a while (and
+    /// says so on the phone), and a finished turn starts the quiet countdown even if a helper keeps ticking.
+    fn apply_agent_events(&mut self, now: u64) {
+        self.agent_events = crate::events::load(&self.root, now, &self.procs);
+        if self.agent_events.is_empty() {
+            return;
+        }
+        let mut waits = vec![];
+        for s in self.watcher.sessions.iter_mut() {
+            let Some((st, at)) =
+                crate::events::state_of(&s.kind.id, &self.agent_events, s.last_active, now)
+            else {
+                continue;
+            };
+            s.state = Some(st);
+            s.state_since = Some(at);
+            use crate::events::AgentState::*;
+            match st {
+                Working => s.last_active = now,
+                Waiting => {
+                    if now.saturating_sub(at) < crate::events::WAIT_LIMIT {
+                        s.last_active = now;
+                    }
+                    let key = format!("{}@{at}", s.kind.id);
+                    if self.announced_waits.insert(key) {
+                        waits.push(s.kind.name.clone());
+                    }
+                }
+                // A command it left running in the background still counts; otherwise the turn's end is the last work.
+                Finished | Idle => {
+                    if !s.tool_running {
+                        s.last_active = at;
+                    }
+                }
+            }
+        }
+        if self.announced_waits.len() > 50 {
+            self.announced_waits.clear();
+        }
+        // Only worth a push while the person is away from the screen.
+        if self.lid_closed || self.holding {
+            for name in waits {
+                self.outbox.push(Announcement {
+                    title: format!("{name} is waiting for you"),
+                    body: format!(
+                        "It asked for your approval. It stays awake for up to {} min.",
+                        crate::events::WAIT_LIMIT / 60
+                    ),
+                });
+            }
+        }
+    }
+
     /// Why an agent is keeping it awake right now, with the countdown when it's winding down.
     pub fn work_reason(&self, now: u64) -> Option<String> {
         let window = self.quiet_window();
@@ -711,6 +771,9 @@ impl<P: Platform> Engine<P> {
             } else {
                 a.kind.name.clone()
             };
+            if busy && a.state == Some(crate::events::AgentState::Waiting) {
+                return Some(format!("{name} is waiting for you"));
+            }
             if busy {
                 return Some(if a.tool_running && a.cpu < a.kind.idle_cpu {
                     format!("{name} is running a command")
@@ -722,8 +785,13 @@ impl<P: Platform> Engine<P> {
                 return Some(format!("{name} is open"));
             }
             let left = window.saturating_sub(now.saturating_sub(a.last_active));
+            let what = match a.state {
+                Some(crate::events::AgentState::Finished) => "finished",
+                Some(crate::events::AgentState::Waiting) => "is still waiting",
+                _ => "went idle",
+            };
             return Some(format!(
-                "{name} went idle · sleeps in {}",
+                "{name} {what} · sleeps in {}",
                 crate::format::minutes((left as f64 / 60.0).ceil())
             ));
         }
@@ -1275,8 +1343,12 @@ impl<P: Platform> Engine<P> {
             if minutes < 1.0 || !self.cfg.notify_done {
                 continue;
             }
+            let state = self.watcher.sessions.iter().find(|s| s.kind.id == id).and_then(|s| s.state);
             let title = if present.contains(&id) {
-                format!("{name} went idle")
+                match state {
+                    Some(crate::events::AgentState::Finished) => format!("{name} finished"),
+                    _ => format!("{name} went idle"),
+                }
             } else {
                 format!("{name} closed")
             };
@@ -1481,6 +1553,7 @@ impl<P: Platform> Engine<P> {
             "agents": self.watcher.sessions.iter().map(|s| json!({
                 "id": s.kind.id, "name": s.kind.name, "working": s.working(now),
                 "keeps": !self.cfg.track_only.contains(&s.kind.id), "instances": s.instances,
+                "state": s.state.map(|x| x.as_str()),
             })).collect::<Vec<_>>(),
             "watch": self.watch_candidates().into_iter().map(|(id, name, on)| json!({ "id": id, "name": name, "on": on })).collect::<Vec<_>>(),
             "warnings": warnings,
