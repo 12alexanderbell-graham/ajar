@@ -1,10 +1,7 @@
 {
-  "id": "./",
   "name": "Nocturnal",
   "short_name": "Nocturnal",
   "description": "Check on Nocturnal on your computer, wake it or let it sleep.",
-  "start_url": "./",
-  "scope": "./",
   "display": "standalone",
   "background_color": "#f2f2f7",
   "theme_color": "#f2f2f7",
