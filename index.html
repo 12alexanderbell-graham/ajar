@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Nocturnal: close the lid, your AI keeps working</title>
-<meta name="description" content="Nocturnal keeps your laptop awake with the lid shut while Claude Code, Codex or any AI agent works, saves the battery while it's closed, and lets it sleep when the work is done. Free for Mac, Windows and Linux.">
+<meta name="description" content="Nocturnal keeps your laptop awake with the lid shut while Claude Code, Codex or any AI agent works, saves the battery while it's closed, and lets it sleep when the work is done. Free for Mac, Windows and Linux, with a phone app to check on it.">
 <meta property="og:title" content="Nocturnal: close the lid, your AI keeps working">
 <meta property="og:description" content="Keeps your laptop awake with the lid shut while your AI agents work, then lets it sleep. Free and open source.">
 <meta property="og:image" content="https://nocturnal.tools/panel-now.png">
@@ -104,6 +104,21 @@
   .prompt pre { margin: 0; white-space: pre-wrap; font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--card); color: var(--fg); border-radius: 18px; padding: 52px 20px 20px; max-height: 240px; overflow: auto; }
   .copy { position: absolute; top: 12px; right: 12px; border: 0; border-radius: 980px; padding: 7px 16px; font: 600 13px var(--font); color: #fff; cursor: pointer; background: linear-gradient(45deg, var(--mid), #1e9a60); }
 
+  /* Platforms */
+  .platforms { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 36px; }
+  .plat { background: var(--card); border-radius: 22px; padding: 26px; display: flex; flex-direction: column; align-items: flex-start; }
+  .plat h3 { font-size: 21px; margin: 0 0 6px; letter-spacing: -0.015em; display: flex; align-items: center; gap: 8px; }
+  .plat p { margin: 0; color: var(--fg-2); font-size: 16px; }
+  .plat .btn-sm { margin-top: 18px; font-size: 16px; padding: 10px 22px; }
+  .plat .alt { margin-top: 12px; font-size: 14px; }
+  .plat .alt code { font-size: 12px; overflow-wrap: anywhere; }
+  .beta { font-size: 12px; font-weight: 600; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); padding: 3px 8px; border-radius: 980px; letter-spacing: 0; }
+  .item p { margin: 3px 0 0; color: var(--fg-2); font-size: 15px; }
+  .ticks { margin: 18px 0 0; padding: 0; list-style: none; color: var(--fg-2); font-size: 16px; }
+  .ticks li { margin: 8px 0; padding-left: 22px; position: relative; }
+  .ticks li::before { content: ""; position: absolute; left: 2px; top: .55em; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+  .ticks b { color: var(--fg); font-weight: 600; }
+
   /* FAQ */
   .faq { background: var(--card); border-radius: 22px; padding: 4px 22px; margin-top: 24px; }
   details { border-top: 1px solid var(--line); padding: 18px 0; }
@@ -123,7 +138,7 @@
     .green { border-radius: 26px; }
     .hero { padding: 52px 20px 180px; }
     .shot { margin-top: -150px; max-width: 320px; }
-    .steps, .two { grid-template-columns: minmax(0, 1fr); }
+    .steps, .two, .platforms { grid-template-columns: minmax(0, 1fr); }
     .two img { max-width: 320px; margin: 0 auto; }
     .split { grid-template-columns: minmax(0, 1fr); gap: 32px; }
     .split img { max-width: 240px; margin: 0 auto; }
@@ -141,13 +156,13 @@
       <h1>Close the lid.<br>Your AI keeps working.</h1>
       <p class="lede">Awake while your agents work. Asleep when they're done.</p>
       <a class="btn" id="dl" href="downloads/Nocturnal-1.0.0-mac.zip">Download for Mac</a>
-      <p class="meta">Free · <a href="downloads/Nocturnal-1.0.0-mac.zip">Mac</a> · <a href="downloads/Nocturnal-1.0.0-windows-x86_64.zip">Windows</a> and <a href="downloads/nocturnal-1.0.0-linux-x86_64.tar.gz">Linux</a> in beta</p>
+      <p class="meta">Free and open source · <a href="#get-h">Mac, Windows, Linux</a> · <a href="#phone-h">iPhone</a></p>
     </div>
     <figure class="shot">
       <img src="panel-now.png" alt="Nocturnal's menu: Keeps working, battery and hours left, Off / When Busy / Always, and tiles for Approve all, Phone and Lid shut" width="640" height="766">
     </figure>
     <div class="install">
-      <p class="meta"><code>brew install --cask 12alexanderbell-graham/nocturnal/nocturnal</code></p>
+      <p class="meta" id="brew"><code>brew install --cask 12alexanderbell-graham/nocturnal/nocturnal</code></p>
       <p class="first" id="first" hidden></p>
     </div>
   </header>
@@ -155,9 +170,9 @@
   <section aria-labelledby="how-h">
     <div class="center"><h2 id="how-h">How it works</h2></div>
     <div class="steps">
-      <div class="step"><h3>Install</h3><p>Password once.</p></div>
-      <div class="step"><h3>Start your agent</h3><p>Found on its own.</p></div>
-      <div class="step"><h3>Close the lid</h3><p>It keeps working.</p></div>
+      <div class="step"><h3>Install</h3><p>On your Mac, PC or Linux laptop.</p></div>
+      <div class="step"><h3>Start your agent</h3><p>Claude Code, Codex, Cursor and more are found on their own.</p></div>
+      <div class="step"><h3>Close the lid</h3><p>It keeps working, then sleeps when it's done.</p></div>
     </div>
   </section>
 
@@ -169,15 +184,39 @@
     </div>
   </section>
 
+  <section aria-labelledby="get-h">
+    <div class="center"><h2 id="get-h">On the computer you work on</h2></div>
+    <div class="platforms">
+      <div class="plat">
+        <h3>Mac</h3>
+        <p>macOS 14 or later. Lives in the menu bar.</p>
+        <a class="btn btn-sm" href="downloads/Nocturnal-1.0.0-mac.zip">Download</a>
+        <p class="alt">or <code>brew install --cask 12alexanderbell-graham/nocturnal/nocturnal</code></p>
+      </div>
+      <div class="plat">
+        <h3>Windows <span class="beta">Beta</span></h3>
+        <p>Windows 10 or 11. Lives in the tray.</p>
+        <a class="btn btn-sm" href="downloads/Nocturnal-1.0.0-windows-x86_64.zip">Download</a>
+        <p class="alt">Unzip and open Nocturnal. If Windows warns you: More info › Run anyway.</p>
+      </div>
+      <div class="plat">
+        <h3>Linux <span class="beta">Beta</span></h3>
+        <p>Any distro with systemd. Lives in the tray.</p>
+        <a class="btn btn-sm" href="downloads/nocturnal-1.0.0-linux-x86_64.tar.gz">Download</a>
+        <p class="alt">Unpack it and run <code>./install.sh</code>.</p>
+      </div>
+    </div>
+  </section>
+
   <section aria-labelledby="feat-h">
     <div class="center"><h2 id="feat-h">You're in control</h2></div>
     <div class="two">
       <div class="list">
-        <div class="item"><h3>Knows when Claude Code needs you</h3></div>
-        <div class="item"><h3>Sleeps when it's done</h3></div>
-        <div class="item"><h3>No lock screen</h3></div>
-        <div class="item"><h3>Battery and heat limits</h3></div>
-        <div class="item"><h3>Puts everything back</h3></div>
+        <div class="item"><h3>Knows when Claude Code needs you</h3><p>Working, waiting for your approval, or finished, straight from Claude Code.</p></div>
+        <div class="item"><h3>Approve everything, until it's done</h3><p>One switch lets your agents run without asking. It turns itself off when the work finishes.</p></div>
+        <div class="item"><h3>Saves battery with the lid shut</h3><p>Pauses apps you aren't using and turns on Low Power Mode.</p></div>
+        <div class="item"><h3>Battery and heat limits</h3><p>Sleeps at your battery limit or if it gets too hot.</p></div>
+        <div class="item"><h3>Puts everything back</h3><p>Open the lid and it's all as it was. A watchdog covers crashes.</p></div>
       </div>
       <img src="panel-apps.png" alt="Nocturnal's Apps tab: what keeps it awake and what closing the lid slows or pauses" width="640" height="562">
     </div>
@@ -185,11 +224,15 @@
 
   <section aria-labelledby="phone-h">
     <div class="split">
-      <img src="phone.png" alt="Nocturnal on a phone: Keeps working, battery, the keep-awake slider" width="390" height="844">
+      <img src="phone.jpg" alt="The Nocturnal iPhone app: Keeps working, battery, watts and hours left, this week's savings, and the keep-awake band from Off to Always" width="390" height="848">
       <div>
-        <h2 id="phone-h">Check on it from your phone</h2>
-        <p class="sub">On the laptop: <b>Nocturnal › Settings › Phone</b>, then scan. Add it to your Home Screen and it opens like an app.</p>
-        <p class="small">End-to-end encrypted, a key for each phone. iPhone app coming soon. <a href="remote/">Open the phone page</a></p>
+        <h2 id="phone-h">Control it from your phone</h2>
+        <p class="sub">Everything the menu bar does, from anywhere: how long it stays awake, Sleep and Wake, which apps keep it awake or get paused, and every setting. On your computer, open Nocturnal and choose <b>Pair a Phone</b>, then scan.</p>
+        <ul class="ticks">
+          <li><b>iPhone app</b>: coming to the App Store.</li>
+          <li><b>Any phone, today</b>: <a href="remote/">the phone page</a>. Add it to your Home Screen and it opens like an app.</li>
+          <li>End-to-end encrypted, with a key for each phone you can revoke.</li>
+        </ul>
       </div>
     </div>
   </section>
@@ -212,6 +255,8 @@ Never turn off the heat guard or lower the battery limit; Nocturnal won't let yo
     <div class="faq">
     <details><summary>Safe in a bag?</summary><p>It sleeps if it gets hot or the battery runs low.</p></details>
     <details><summary>What does it change?</summary><p>Sleep, Low Power Mode, brightness and idle apps. Opening the lid puts it all back.</p></details>
+    <details><summary>Windows and Linux?</summary><p>Both work, in beta: the same engine as the Mac, with a tray icon instead of the menu bar panel. Measuring savings is Mac-only for now.</p></details>
+    <details><summary>Why does it ask for a password?</summary><p>Once, on the Mac, to allow only the few commands that switch sleep and Low Power Mode. Delete the app and that permission removes itself.</p></details>
     <details><summary>Lost internet with the lid shut?</summary><p>On an iPhone hotspot, set System Settings › Wi‑Fi › Ask to join hotspots to Automatic.</p></details>
     <details><summary>Free?</summary><p>Yes, and <a href="https://github.com/12alexanderbell-graham/nocturnal">open source</a>.</p></details>
     </div>
@@ -237,10 +282,10 @@ Never turn off the heat guard or lower the battery limit; Nocturnal won't let yo
     function set(label, href) { btns.forEach(function (b) { b.textContent = label; b.href = href; }); }
     if (/Windows/.test(ua)) {
       set("Download for Windows", "downloads/Nocturnal-1.0.0-windows-x86_64.zip");
-      first.textContent = "If Windows warns you: More info › Run anyway."; first.hidden = false;
+      first.textContent = "If Windows warns you: More info › Run anyway."; first.hidden = false; document.getElementById("brew").hidden = true;
     } else if (/Linux/.test(ua) && !/Android/.test(ua)) {
       set("Download for Linux", "downloads/nocturnal-1.0.0-linux-x86_64.tar.gz");
-      first.textContent = "Unpack it and run ./install.sh."; first.hidden = false;
+      first.textContent = "Unpack it and run ./install.sh."; first.hidden = false; document.getElementById("brew").hidden = true;
     } else if (/iPhone|iPad|Android/.test(ua)) {
       first.textContent = "Open this page on your laptop to download it."; first.hidden = false;
     }
