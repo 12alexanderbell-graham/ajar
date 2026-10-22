@@ -548,7 +548,7 @@ fn apply<P: Platform>(
 fn default_panel_url(root: &Path) -> String {
     let _ = root;
     option_env!("AJAR_PANEL_URL")
-        .unwrap_or("https://12alexanderbell-graham.github.io/ajar/remote/")
+        .unwrap_or("https://ajar.tools/remote/")
         .to_string()
 }
 

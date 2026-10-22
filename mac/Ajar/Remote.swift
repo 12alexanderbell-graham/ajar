@@ -19,7 +19,7 @@ struct RemoteSettings: Codable, Equatable {
 
     /// Where the phone page lives once the Ajar site is online. Empty until then: pairing shows the code to
     /// paste into the page instead.
-    static let defaultPanelURL = "https://12alexanderbell-graham.github.io/ajar/remote/"
+    static let defaultPanelURL = "https://ajar.tools/remote/"
 
     static var url: URL { StateFiles.dir.appendingPathComponent("remote.json") }
     static func load() -> RemoteSettings {

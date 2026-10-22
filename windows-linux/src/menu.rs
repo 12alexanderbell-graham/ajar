@@ -247,7 +247,6 @@ pub fn build(s: &UiState) -> Vec<Node> {
         check("mode:auto", Mode::Auto.label(), s.mode == Mode::Auto),
         check("mode:on", Mode::On.label(), s.mode == Mode::On),
         check("mode:off", Mode::Off.label(), s.mode == Mode::Off),
-        info("modeline", &s.mode_line),
         sub(
             "always",
             "Always for…",

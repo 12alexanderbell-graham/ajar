@@ -60,14 +60,11 @@ private struct NowTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 6) {
-                EqualSegments(items: Mode.allCases.map { ($0, $0.label) },
-                              selection: Binding(get: { engine.mode }, set: { m in
-                                  if m == .on { engine.stayAwake(for: nil) } else { engine.mode = m }
-                              }))
-                Text(engine.modeLine).font(.subheadline).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            EqualSegments(items: Mode.allCases.map { ($0, $0.label) },
+                          selection: Binding(get: { engine.mode }, set: { m in
+                              if m == .on { engine.stayAwake(for: nil) } else { engine.mode = m }
+                          }))
+                .help(engine.modeLine)
 
             Divider()
             outcome
@@ -90,57 +87,23 @@ private struct NowTab: View {
                 Divider()
                 battery(b)
             }
-            if let w = engine.weekSummary {
-                Divider()
-                week(w)
-            }
         }
     }
 
+    /// One figure: how long it lasts with the lid closed, and what that gains over leaving it open.
     private func battery(_ b: BatteryReading) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Battery").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-                Spacer()
-                Label(batteryState(b), systemImage: batteryIcon).labelStyle(.titleAndIcon)
+        HStack(alignment: .firstTextBaseline, spacing: 16) {
+            if let closed = engine.closedHours {
+                Figure(value: PanelFormat.hm(closed), caption: "\(b.percent)% · " + (engine.onBattery ? "lid closed" : "unplugged, lid closed"))
+                if engine.onBattery, let open = engine.openHours, closed > open {
+                    Figure(value: "+" + PanelFormat.hm(closed - open), caption: "vs. lid open", tint: .accentColor)
+                }
+            } else {
+                Label(b.charging ? "\(b.percent)% · charging" : "\(b.percent)%", systemImage: batteryIcon)
                     .font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
             }
-            if let closed = engine.closedHours {
-                HStack(alignment: .firstTextBaseline, spacing: 16) {
-                    Figure(value: PanelFormat.hm(closed), caption: engine.onBattery ? "left with the lid closed" : "on battery, lid closed")
-                    if engine.onBattery, let open = engine.openHours, closed > open {
-                        Figure(value: "+" + PanelFormat.hm(closed - open), caption: "vs. \(PanelFormat.hm(open)) lid open", tint: .accentColor)
-                    }
-                }
-                .help("Down to \(engine.batteryFloor == 0 ? "0%" : "your \(engine.batteryFloor)% limit"), estimated from what's running now and measured while the lid is shut.")
-            }
-            Text(drawLine).font(.caption).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
         }
-    }
-
-    private func batteryState(_ b: BatteryReading) -> String {
-        if b.charging { return "\(b.percent)% · charging" }
-        if engine.onBattery, let d = engine.drawNow { return "\(b.percent)% · \(PanelFormat.pct(engine.percentPerHour(d)))/h" }
-        return b.onAC ? "\(b.percent)% · plugged in" : "\(b.percent)%"
-    }
-
-    private var drawLine: String {
-        var s = "Uses ≈\(PanelFormat.w(engine.closedEstimate)) closed"
-        if let o = engine.openWatts { s += " · \(PanelFormat.w(o)) open" }
-        return s
-    }
-
-    private func week(_ w: Engine.WeekSummary) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Last 7 days").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-                Spacer()
-                Text("\(PanelFormat.hm(w.closedHours)) with the lid closed").font(.subheadline.weight(.semibold)).monospacedDigit()
-            }
-            Text("\(w.sessions) session\(w.sessions == 1 ? "" : "s")" + (w.whSaved >= 10 ? " · ≈\(String(format: "%.0f", w.whSaved)) Wh saved" : ""))
-                .font(.caption).foregroundStyle(.secondary).monospacedDigit()
-        }
-        .help("Estimated from the power macOS attributes to apps before and while Ajar slowed them, plus the sleeps after the work stopped.")
+        .help("Down to \(engine.batteryFloor == 0 ? "0%" : "your \(engine.batteryFloor)% limit"), estimated from what's running now and measured while the lid is shut. Uses ≈\(PanelFormat.w(engine.closedEstimate)) closed\(engine.openWatts.map { ", \(PanelFormat.w($0)) open" } ?? "").")
     }
 
     private var batteryIcon: String {
@@ -183,7 +146,7 @@ private struct NowTab: View {
             Image(systemName: "personalhotspot").font(.system(size: 13)).foregroundStyle(.orange).frame(width: 18, height: 18)
             VStack(alignment: .leading, spacing: 4) {
                 Text("You're on your iPhone's hotspot").font(.subheadline.weight(.semibold))
-                Text("If the iPhone turns it off, macOS only reconnects with the lid shut when Wi-Fi › Ask to join hotspots is set to Automatic.")
+                Text("Set Wi‑Fi › Ask to join hotspots to Automatic, or it won't reconnect with the lid shut.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 14) {
                     Button("Open Wi-Fi Settings") { NSWorkspace.shared.open(NetWatch.wifiSettingsURL) }

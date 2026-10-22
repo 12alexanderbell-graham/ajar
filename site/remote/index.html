@@ -7,7 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Ajar">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex">
@@ -26,7 +26,8 @@ main{max-width:500px;margin:0 auto;padding:max(12px,env(safe-area-inset-top)) ma
 button{font:inherit;color:inherit;touch-action:manipulation;cursor:pointer}
 .top{display:flex;align-items:flex-start;gap:12px;padding:8px 2px 14px}
 .who{flex:1;min-width:0}
-.name{font-size:26px;font-weight:700;letter-spacing:-.4px;line-height:1.15;overflow-wrap:anywhere}
+.hicon{flex:none;width:40px;height:40px;border-radius:9px;margin-top:2px}
+.name{font-size:22px;font-weight:700;letter-spacing:-.3px;line-height:1.2;overflow-wrap:anywhere}
 .iconbtn{margin-left:auto;margin-top:-2px;border:0;background:none;padding:6px;color:var(--sub);display:flex;flex:none}
 .hostline{display:flex;align-items:center;gap:6px;color:var(--sub);font-size:13px;margin:5px 0 0}
 #settings .hostline{margin:-2px 2px 4px}
@@ -79,11 +80,26 @@ button{font:inherit;color:inherit;touch-action:manipulation;cursor:pointer}
 /* Laptop messages (a refused change, for example): under the host line, so they show on every page */
 .toast{background:var(--card);color:var(--orange);font-size:14px;border-radius:12px;padding:10px 14px;margin:0 0 12px}
 .fine{color:var(--sub);font-size:13px;text-align:center;margin:4px 8px 14px}
-/* Pairing */
-h1{font-size:28px;font-weight:700;letter-spacing:-.4px;margin:8px 2px 12px}
-ol{margin:0;padding-left:20px;color:var(--sub);font-size:15px}
-ol li{margin:4px 0}
-#cam{display:block;width:100%;aspect-ratio:1;object-fit:cover;border-radius:14px;background:#000;margin:0 0 12px}
+/* Pairing: the brand surface, same as the app icon and the website */
+#pair{position:fixed;inset:0;overflow:auto;color:#fff;isolation:isolate;display:flex;align-items:center;justify-content:center;
+  padding:max(24px,env(safe-area-inset-top)) 24px max(24px,env(safe-area-inset-bottom));
+  background:radial-gradient(70% 55% at 90% 8%,rgba(63,214,156,.95),rgba(63,214,156,0) 72%),radial-gradient(60% 45% at 5% 100%,rgba(34,184,102,.55),rgba(34,184,102,0) 72%),linear-gradient(45deg,#08341a,#146c40)}
+#pair::after{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.22;mix-blend-mode:overlay;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 1.6 -.3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+.pairbox{width:100%;max-width:360px;text-align:center}
+.appicon{display:block;width:84px;height:84px;border-radius:19px;margin:0 auto 18px;box-shadow:0 12px 30px rgba(0,0,0,.3),0 0 0 1px rgba(255,255,255,.12)}
+#pair h1{font-size:34px;font-weight:700;letter-spacing:-.6px;margin:0}
+#pair .lead{color:rgba(255,255,255,.8);font-size:17px;margin:6px 0 30px}
+.btn.white{background:#fff;color:#0b3d22;font-weight:600;border-radius:999px;margin:0 0 12px}
+.btn.ghost{background:rgba(255,255,255,.16);color:#fff;border-radius:999px}
+.hint{color:rgba(255,255,255,.72);font-size:14px;margin:0 0 26px}
+#pairform{display:flex;gap:8px}
+#pairform input{flex:1;min-width:0;border:0;border-radius:999px;padding:12px 16px;background:rgba(255,255,255,.16);color:#fff;font:15px -apple-system,system-ui,sans-serif}
+#pairform input::placeholder{color:rgba(255,255,255,.65)}
+#pairform button{border:0;border-radius:999px;padding:0 18px;background:rgba(255,255,255,.24);color:#fff;font-weight:600;font-size:15px}
+#pair .err{color:#ffd2cc;text-align:center}
+#cam{display:block;width:100%;aspect-ratio:1;object-fit:cover;border-radius:22px;background:#000;margin:0 0 12px}
+/* The mode sentence stays for screen readers; the segment labels and the line below say it on screen. */
+.explain.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 input[type=text]{width:100%;font:15px ui-monospace,SFMono-Regular,Menlo,monospace;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--text);-webkit-user-select:text;user-select:text}
 .err{color:var(--red);font-size:14px;margin:8px 0 0;min-height:1em}
 .tip{position:relative}
@@ -109,29 +125,27 @@ select.pick{-webkit-appearance:none;appearance:none;border:0;background:none;col
 <main>
   <!-- Shown until this phone has a pairing key. -->
   <section id="pair" hidden>
-    <h1>Control Ajar from your phone</h1>
-    <p class="lead">See if your laptop is still working and change it from anywhere.</p>
-    <div class="group">
-      <ol>
-        <li>On the laptop: Ajar menu › Settings › Phone, turn it on.</li>
-        <li>Tap Scan QR Code and point at the code on the laptop.</li>
-      </ol>
-    </div>
-    <button class="btn primary" type="button" id="scanbtn">Scan QR Code</button>
-    <div id="scanner" hidden>
-      <video id="cam" playsinline muted autoplay></video>
-      <button class="btn" type="button" id="scanstop">Cancel</button>
-    </div>
-    <div class="sec">Or paste the pairing code</div>
-    <form id="pairform" class="group" autocomplete="off">
-      <input type="text" id="code" placeholder="Pairing code or link" aria-label="Pairing code or link" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <div class="pairbox">
+      <img class="appicon" src="apple-touch-icon.png" alt="" width="84" height="84">
+      <h1>Ajar</h1>
+      <p class="lead">Your laptop, from your phone.</p>
+      <button class="btn white" type="button" id="scanbtn">Scan QR Code</button>
+      <div id="scanner" hidden>
+        <video id="cam" playsinline muted autoplay></video>
+        <button class="btn ghost" type="button" id="scanstop">Cancel</button>
+      </div>
+      <p class="hint">On your laptop: Ajar › Settings › Phone</p>
+      <form id="pairform" autocomplete="off">
+        <input type="text" id="code" placeholder="Or paste the code" aria-label="Pairing code or link" autocapitalize="off" autocorrect="off" spellcheck="false">
+        <button type="submit" aria-label="Pair">Pair</button>
+      </form>
       <p class="err" id="pairerr" role="alert"></p>
-      <button class="btn" type="submit" style="margin:4px 0 0;padding:8px">Pair</button>
-    </form>
+    </div>
   </section>
 
   <div id="app" hidden>
     <header class="top">
+      <img class="hicon" src="apple-touch-icon.png" alt="" width="40" height="40">
       <div class="who">
         <div class="name" id="host">Laptop</div>
         <div class="hostline"><span class="live" id="live"></span><span class="conn" id="conn">Connecting…</span></div>
@@ -157,7 +171,7 @@ select.pick{-webkit-appearance:none;appearance:none;border:0;background:none;col
           <button data-mode="auto" role="radio">When Busy</button>
           <button data-mode="on" role="radio">Always</button>
         </div>
-        <p class="explain" id="modetext"></p>
+        <p class="explain sr" id="modetext"></p>
         <div class="pills" id="timers" hidden>
           <button data-for="60">For 1 h</button>
           <button data-for="240">For 4 h</button>

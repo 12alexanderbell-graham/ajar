@@ -208,9 +208,6 @@ struct SettingsView: View {
             if engine.config.lockOnClose {
                 LabeledContent("Your Mac locks") { Text(LockSetting.describe(lockGrace)).foregroundStyle(.secondary) }
             }
-        } footer: {
-            Text("Dark means no password when you open the lid.")
-                .font(.caption).foregroundStyle(.secondary)
         }
         Section {
             Toggle("Remind me on an iPhone hotspot", isOn: Binding(get: { !engine.config.hotspotAutomatic }, set: { v in engine.update { $0.hotspotAutomatic = !v } }))
@@ -218,7 +215,7 @@ struct SettingsView: View {
         } header: {
             Text("Internet")
         } footer: {
-            Text("An iPhone can turn its hotspot off by itself. With the lid shut, macOS only reconnects if Wi-Fi › Ask to join hotspots is set to Automatic.")
+            Text("On an iPhone hotspot, set Wi‑Fi › Ask to join hotspots to Automatic.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         Section {
@@ -245,9 +242,6 @@ struct SettingsView: View {
                 .help("Experimental: the agent's compilers and build tools use less power but take several times longer")
         } header: {
             Text("Saving Power")
-        } footer: {
-            Text("Music, calls and your agents keep running.")
-                .font(.caption).foregroundStyle(.secondary)
         }
         Section {
             LabeledContent("Using now") {
@@ -296,9 +290,6 @@ struct SettingsView: View {
             Toggle("Heat guard", isOn: $engine.heatGuard)
         } header: {
             Text("Safety")
-        } footer: {
-            Text("Heat guard puts the Mac to sleep if it gets too hot with the lid shut.")
-                .font(.caption).foregroundStyle(.secondary)
         }
     }
 
@@ -335,7 +326,7 @@ struct SettingsView: View {
         } header: {
             Text("Waking Up")
         } footer: {
-            Text("While it's asleep with the lid shut, it wakes for about 25 seconds at each check, picks up a wake you sent from the phone, and sleeps again. Each check uses a little battery. A Mac that's shut down can't be woken.")
+            Text("Wakes briefly at each check to pick up a wake from your phone.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -430,7 +421,7 @@ struct SettingsView: View {
         } header: {
             Text("Approvals")
         } footer: {
-            Text("macOS's own permission dialogs can't be clicked for you. Give Terminal (and Claude, Codex or your editor) Full Disk Access once, and they stop appearing.")
+            Text("macOS permission prompts can't be clicked for you. Full Disk Access stops most of them.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         Section {
@@ -521,10 +512,8 @@ struct SettingsView: View {
             LabeledContent("Setup") {
                 if engine.setupReady { Text("Done").foregroundStyle(.secondary) } else { Button("Set Up…") { engine.runSetup() } }
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Shortcuts")
-                Text("Keep Mac Awake, Let Mac Sleep, Get Ajar Status").font(.caption).foregroundStyle(.secondary)
-            }
+            LabeledContent("Shortcuts") { Text("3 actions").foregroundStyle(.secondary) }
+                .help("Keep Mac Awake, Let Mac Sleep, Get Ajar Status")
         }
         if !engine.stats.sessions.isEmpty {
             Section("Recent Lid-Closed Sessions") {
