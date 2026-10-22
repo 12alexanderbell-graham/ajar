@@ -18,7 +18,7 @@
     --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
     --round: ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
-    --spring: cubic-bezier(.2, .9, .25, 1.06);
+    --ease: cubic-bezier(.25, .1, .25, 1);
     color-scheme: light;
   }
   * { box-sizing: border-box; }
@@ -32,18 +32,17 @@
   .sub { font-size: clamp(18px, 2vw, 21px); line-height: 1.42; color: var(--ink-2); margin: 16px 0 0; max-width: 32em; text-wrap: pretty; }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
 
-  /* ---------- The ground: deep green opening to a mint glow, drifting slowly, with grain (as in the app) ---------- */
+  /* ---------- The ground: deep green opening to a mint glow, with grain (as in the app) ---------- */
   .ground { position: relative; isolation: isolate; overflow: hidden; color: #fff; background: var(--deep); }
   .ground::before { content: ""; position: absolute; inset: -20%; z-index: -2;
     background:
       radial-gradient(42% 46% at 84% 12%, rgba(64,214,156,.95), rgba(64,214,156,0) 70%),
       radial-gradient(38% 44% at 10% 92%, rgba(34,184,102,.55), rgba(34,184,102,0) 70%),
       radial-gradient(60% 60% at 50% 50%, rgba(16,102,59,.9), rgba(16,102,59,0) 75%),
-      linear-gradient(40deg, var(--deep), var(--green));
-    animation: drift 26s ease-in-out infinite alternate; }
+      linear-gradient(40deg, var(--deep), var(--green)); }
   .ground::after { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; opacity: .2; mix-blend-mode: overlay;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 1.6 -.3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
-  @keyframes drift { from { transform: translate3d(-3%, -2%, 0) scale(1); } to { transform: translate3d(3%, 3%, 0) scale(1.06); } }
+
   .ground a { color: #fff; }
 
   /* ---------- Hero ---------- */
@@ -63,12 +62,12 @@
   .tabs { display: inline-flex; padding: 4px; border-radius: 980px; background: rgba(0,0,0,.22); position: relative; }
   .tabs button { position: relative; z-index: 1; border: 0; background: none; color: #fff; font: 600 15px var(--font); padding: 9px 20px; border-radius: 980px; cursor: pointer; transition: color .25s; }
   .tabs button[aria-selected="true"] { color: var(--deep); }
-  .tabs .lens { position: absolute; z-index: 0; top: 4px; bottom: 4px; left: 0; width: 0; border-radius: 980px; background: #fff; transition: transform .45s var(--spring), width .45s var(--spring); }
+  .tabs .lens { position: absolute; z-index: 0; top: 4px; bottom: 4px; left: 0; width: 0; border-radius: 980px; background: #fff; transition: transform .25s var(--ease), width .25s var(--ease); }
   .panes { margin-top: 18px; display: grid; }
   /* Switching tabs: the old pane leaves quickly, then the new one comes in, so the two never sit on top of each other. */
-  .pane { grid-area: 1 / 1; transition: opacity .16s ease-in, transform .16s ease-in, visibility 0s .16s; }
-  .pane[hidden] { display: block; visibility: hidden; opacity: 0; transform: translateY(6px); }
-  .pane:not([hidden]) { transition: opacity .3s ease-out .14s, transform .4s var(--spring) .14s, visibility 0s; }
+  .pane { grid-area: 1 / 1; transition: opacity .12s linear, visibility 0s .12s; }
+  .pane[hidden] { display: block; visibility: hidden; opacity: 0; }
+  .pane:not([hidden]) { transition: opacity .2s linear .12s, visibility 0s; }
   .cmd { display: flex; align-items: center; gap: 10px; background: rgba(4,18,11,.55); border: 1px solid rgba(255,255,255,.16); border-radius: 18px; padding: 10px 10px 10px 20px; text-align: left; }
   .cmd code { flex: 1; min-width: 0; font: 500 clamp(13px, 1.6vw, 16px)/1.4 var(--mono); color: #fff; overflow-wrap: anywhere; }
   .cmd code::before { content: "$ "; color: var(--mint); }
@@ -87,12 +86,10 @@
   .stage .mac { left: 50%; width: min(380px, 62vw); transform: translateX(calc(-100% + 30px)); z-index: 1; border-radius: 18px 18px 0 0; overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,.35); }
   .stage .phone { left: 50%; width: min(270px, 44vw); transform: translateX(10px); z-index: 2; border-radius: 40px 40px 0 0; overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,.4); outline: 1px solid rgba(255,255,255,.18); }
   .stage .mac img, .stage .phone img { width: 100%; }
-  .rise-in { animation: rise-big .8s cubic-bezier(.2, .8, .2, 1) both; }
-  .stage .mac.rise-in { animation-delay: .25s; } .stage .phone.rise-in { animation-delay: .35s; }
-  @keyframes rise-big { from { translate: 0 48px; opacity: 0; } to { translate: 0 0; opacity: 1; } }
-  .hero-copy > * { animation: rise .6s cubic-bezier(.2, .8, .2, 1) both; }
-  .hero-copy > :nth-child(2) { animation-delay: .07s; } .hero-copy > :nth-child(3) { animation-delay: .14s; }
-  @keyframes rise { from { translate: 0 14px; opacity: 0; } to { translate: 0 0; opacity: 1; } }
+  .rise-in, .hero-copy > * { animation: appear .5s ease-out both; }
+  .hero-copy > :nth-child(2) { animation-delay: .05s; } .hero-copy > :nth-child(3) { animation-delay: .1s; }
+  .stage .mac.rise-in { animation-delay: .15s; } .stage .phone.rise-in { animation-delay: .2s; }
+  @keyframes appear { from { opacity: 0; } to { opacity: 1; } }
 
   /* ---------- The lid: scroll and the page lives through one night of work ---------- */
   .lid { position: relative; height: 330vh; }
@@ -103,13 +100,10 @@
   .lid-grid { position: relative; width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 40px; align-items: center; }
   .chapters { position: relative; height: 13em; }
   /* One chapter at a time: the old one moves off in the direction of travel and is gone before the next arrives. */
-  .chapter { position: absolute; inset: 0; visibility: hidden; opacity: 0; transform: translateY(20px);
-    transition: opacity .2s ease-in, transform .2s ease-in, visibility 0s .2s; }
-  .chapter.past { transform: translateY(-20px); }
-  .chapter.on { visibility: visible; opacity: 1; transform: none;
-    transition: opacity .35s ease-out .18s, transform .55s cubic-bezier(.2, .8, .2, 1) .18s, visibility 0s; }
-  .state span { display: inline-block; transition: opacity .16s, transform .16s; }
-  .state span.swap { opacity: 0; transform: translateY(4px); }
+  .chapter { position: absolute; inset: 0; visibility: hidden; opacity: 0; transition: opacity .15s linear, visibility 0s .15s; }
+  .chapter.on { visibility: visible; opacity: 1; transition: opacity .3s linear .15s, visibility 0s; }
+  .state span { display: inline-block; transition: opacity .15s linear; }
+  .state span.swap { opacity: 0; }
   .chapter .sub { color: inherit; opacity: 1; }
   .meter { text-align: center; }
   .watts { font: 700 clamp(84px, 15vw, 190px)/0.9 var(--round); letter-spacing: -0.05em; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -118,7 +112,7 @@
   .state i { width: 9px; height: 9px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 0 4px rgba(64,214,156,.25); }
   .lid-stick.is-night .state i { background: #8b9bd6; box-shadow: none; }
   .band { position: relative; height: 10px; border-radius: 10px; margin: 34px auto 0; max-width: 360px; background: linear-gradient(90deg, #3b4c9a, #21706f, #1a7654, #1d8a5c, #249e6b, #2eb880, #40d69c); }
-  .band b { position: absolute; top: 50%; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%; background: rgba(255,255,255,.35); backdrop-filter: blur(2px) saturate(1.3); border: 1.5px solid rgba(255,255,255,.85); box-shadow: 0 4px 14px rgba(0,0,0,.25); transition: left .6s var(--spring); }
+  .band b { position: absolute; top: 50%; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%; background: rgba(255,255,255,.35); backdrop-filter: blur(2px) saturate(1.3); border: 1.5px solid rgba(255,255,255,.85); box-shadow: 0 4px 14px rgba(0,0,0,.25); transition: left .35s var(--ease); }
   .lid .fine-print { position: absolute; left: 0; right: 0; bottom: max(22px, env(safe-area-inset-bottom)); text-align: center; font-size: 13px; opacity: .75; }
 
   /* ---------- What it does ---------- */
@@ -145,12 +139,11 @@
   .faq details:last-child { border-bottom: 1px solid var(--line); }
   .faq summary { cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 20px 0; font-size: 19px; font-weight: 600; letter-spacing: -0.02em; }
   .faq summary::-webkit-details-marker { display: none; }
-  .faq summary::after { content: ""; flex: none; width: 12px; height: 12px; border-right: 2px solid var(--ink-2); border-bottom: 2px solid var(--ink-2); transform: rotate(45deg) translateY(-3px); transition: transform .35s var(--spring); }
+  .faq summary::after { content: ""; flex: none; width: 12px; height: 12px; border-right: 2px solid var(--ink-2); border-bottom: 2px solid var(--ink-2); transform: rotate(45deg) translateY(-3px); transition: transform .2s var(--ease); }
   .faq details[open] summary::after { transform: rotate(-135deg) translateY(-3px); }
   .faq .a { padding: 0 0 22px; color: var(--ink-2); font-size: 17px; max-width: 38em; }
   .faq .a p { margin: 0; }
-  .faq details[open] .a { animation: open .45s var(--spring); }
-  @keyframes open { from { transform: translateY(-8px); filter: blur(4px); } to { transform: none; filter: none; } }
+  .faq details[open] .a { animation: appear .2s linear; }
   .prompt { position: relative; margin-top: 14px; }
   .prompt pre { margin: 0; white-space: pre-wrap; font: 13px/1.55 var(--mono); background: var(--card); color: var(--ink); border-radius: 16px; padding: 18px 18px 18px; max-height: 220px; overflow: auto; border: 1px solid var(--line); }
   .btn { display: inline-block; border: 0; cursor: pointer; font: 600 16px var(--font); padding: 11px 22px; border-radius: 980px; color: #fff; background: var(--accent); margin-top: 14px; }
@@ -179,7 +172,6 @@
     .does, .phone-sec, .faq-sec { padding-top: 88px; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .ground::before { animation: none; }
     .rise-in, .hero-copy > * { animation: none; }
     .chapter, .chapter.on, .pane, .pane:not([hidden]), .tabs .lens, .band b, .state span { transition: none; }
   }
@@ -392,7 +384,7 @@ Never turn off the heat guard or lower the battery limit; Nocturnal won't let yo
   function clamp(x) { return Math.max(0, Math.min(1, x)); }
   function smooth(x) { x = clamp(x); return x * x * (3 - 2 * x); }
   function roll() {
-    shown += (target - shown) * (reduce ? 1 : 0.14);
+    shown += (target - shown) * (reduce ? 1 : 0.2);
     if (Math.abs(target - shown) < 0.05) shown = target;
     wattsEl.textContent = shown < 0.05 ? "0" : shown.toFixed(1);
     raf = shown === target ? 0 : requestAnimationFrame(roll);
@@ -409,7 +401,7 @@ Never turn off the heat guard or lower the battery limit; Nocturnal won't let yo
     var ch = p < 0.3 ? 0 : p < 0.7 ? 1 : 2;
     if (ch !== current) {
       current = ch;
-      chapters.forEach(function (c, i) { c.classList.toggle("on", i === ch); c.classList.toggle("past", i < ch); });
+      chapters.forEach(function (c, i) { c.classList.toggle("on", i === ch); });
       lens.style.left = lensAt[ch];
       // The pill and the number change as the new words arrive, not before the old ones have gone.
       clearTimeout(swapTimer);
@@ -421,7 +413,7 @@ Never turn off the heat guard or lower the battery limit; Nocturnal won't let yo
           stateEl.classList.remove("swap");
           target = [18.3, 3.1, 0][ch];
           if (!raf) raf = requestAnimationFrame(roll);
-        }, 180);
+        }, 150);
       }
       first = false;
     }
