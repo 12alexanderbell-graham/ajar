@@ -29,7 +29,7 @@ button{font:inherit;color:inherit;touch-action:manipulation;cursor:pointer}
 .name{font-size:26px;font-weight:700;letter-spacing:-.4px;line-height:1.15;overflow-wrap:anywhere}
 .iconbtn{margin-left:auto;margin-top:-2px;border:0;background:none;padding:6px;color:var(--sub);display:flex;flex:none}
 .hostline{display:flex;align-items:center;gap:6px;color:var(--sub);font-size:13px;margin:5px 0 0}
-#settings .hostline{margin:-2px 2px 4px}
+#settings .hostline,#apps .hostline{margin:-2px 2px 4px}
 .live{width:7px;height:7px;border-radius:50%;background:var(--ter);flex:none}
 .live.ok{background:var(--green)}
 .live.wait{background:var(--accent);animation:pulse 1s ease-in-out infinite alternate}
@@ -110,6 +110,14 @@ select.pick{-webkit-appearance:none;appearance:none;border:0;background:none;col
 .list button.item:last-child{padding-bottom:0}
 .list button.item.danger{color:var(--red)}
 .list button.item.confirm{font-weight:600}
+/* Tab bar */
+#app{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
+#tabbar{position:fixed;left:0;right:0;bottom:0;z-index:10;display:flex;padding:6px max(10px,env(safe-area-inset-right)) max(6px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left));
+  background:color-mix(in srgb,var(--bg) 80%,transparent);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);border-top:.5px solid var(--line)}
+#tabbar button{flex:1;border:0;background:none;color:var(--ter);display:flex;flex-direction:column;align-items:center;gap:3px;padding:3px 0;font-size:10.5px;font-weight:500;letter-spacing:.1px}
+#tabbar button svg{height:24px}
+#tabbar button.sel{color:var(--accent)}
+
 [hidden]{display:none!important}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
@@ -144,9 +152,6 @@ select.pick{-webkit-appearance:none;appearance:none;border:0;background:none;col
         <div class="name" id="host">Laptop</div>
         <div class="hostline"><span class="live" id="live"></span><span class="conn" id="conn">Connecting…</span></div>
       </div>
-      <button class="iconbtn" id="more" aria-label="Settings">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
-      </button>
     </header>
     <div id="toast" class="toast" role="alert" hidden></div>
 
@@ -193,9 +198,9 @@ select.pick{-webkit-appearance:none;appearance:none;border:0;background:none;col
       </div>
     </section>
 
-    <section id="settings" hidden>
-      <button class="back" id="settingsback"><svg width="12" height="20" viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2 2 10l8 8"/></svg>Back</button>
-      <div class="title">Settings</div>
+    <!-- Apps tab: the same as the Mac panel's Apps tab. -->
+    <section id="apps" hidden>
+      <div class="title">Apps</div>
       <div class="hostline"><span class="live"></span><span class="conn">Connecting…</span></div>
 
       <div class="sec">Keeps it awake</div>
@@ -212,6 +217,11 @@ select.pick{-webkit-appearance:none;appearance:none;border:0;background:none;col
         </div>
         <div class="cap" id="presetdetail"></div>
       </div>
+    </section>
+
+    <section id="settings" hidden>
+      <div class="title">Settings</div>
+      <div class="hostline"><span class="live"></span><span class="conn">Connecting…</span></div>
 
       <div id="savingsbox" hidden>
         <div class="sec">Measure the savings</div>
@@ -228,6 +238,16 @@ select.pick{-webkit-appearance:none;appearance:none;border:0;background:none;col
       </div>
       <p class="foot"><span id="updated">Not updated yet</span>. End-to-end encrypted.</p>
     </section>
+
+    <!-- iOS-style tab bar: Now and Apps match the Mac panel's tabs. -->
+    <nav id="tabbar" role="tablist" aria-label="Sections">
+      <button data-nav="now" role="tab" aria-selected="true" class="sel" id="tab-now">
+        <svg width="26" height="22" viewBox="0 0 26 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="18" height="12" rx="1.8"/><path d="M1.5 18.5h23"/></svg><span>Now</span></button>
+      <button data-nav="apps" role="tab" aria-selected="false" id="tab-apps">
+        <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2.5" y="2.5" width="7" height="7" rx="2"/><rect x="12.5" y="2.5" width="7" height="7" rx="2"/><rect x="2.5" y="12.5" width="7" height="7" rx="2"/><rect x="12.5" y="12.5" width="7" height="7" rx="2"/></svg><span>Apps</span></button>
+      <button data-nav="settings" role="tab" aria-selected="false" id="tab-settings">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span>Settings</span></button>
+    </nav>
   </div>
 </main>
 <script>
@@ -618,12 +638,16 @@ function renderSettings(list) {
   }
 }
 
-function openSettings(on) {
-  $("home").hidden = on;
-  document.querySelector("header.top").hidden = on; $("tip").hidden = on || standalone || !!store.get("ajar.tipHidden");
-  $("settings").hidden = !on;
+// Three tabs, like an iOS app: Now (the main screen), Apps, Settings.
+function showTab(t) {
+  $("home").hidden = t !== "now";
+  document.querySelector("header.top").hidden = t !== "now";
+  $("tip").hidden = t !== "now" || standalone || !!store.get("ajar.tipHidden");
+  $("apps").hidden = t !== "apps";
+  $("settings").hidden = t !== "settings";
+  document.querySelectorAll("#tabbar button").forEach(b => { const on = b.dataset.nav === t; b.classList.toggle("sel", on); b.setAttribute("aria-selected", String(on)); });
   window.scrollTo(0, 0);
-  if (on) send("schema");
+  if (t === "settings") send("schema");
 }
 
 const PRESET_DETAIL = { longest: "Pauses other apps until you open the lid", balanced: "Slows other apps", speed: "Leaves apps alone" };
@@ -813,8 +837,7 @@ async function start() {
     if (b.dataset.mode === "off") confirmTap(b, "Tap again", () => { showMode("off"); tap("mode", { mode: "off" }); });
     else b.addEventListener("click", () => { showMode(b.dataset.mode); tap("mode", { mode: b.dataset.mode }); });
   });
-  $("more").addEventListener("click", () => openSettings(true));
-  $("settingsback").addEventListener("click", () => openSettings(false));
+  document.querySelectorAll("#tabbar button").forEach(b => b.addEventListener("click", () => showTab(b.dataset.nav)));
   // Keep it fresh while it's on screen without spending the relay's daily allowance: every tap's answer already
   // brings the status, so ask by itself only when nothing has been sent for 2 minutes.
   setInterval(() => { if (key && !document.hidden && !pending && Date.now() - lastSent > REFRESH_MS) refresh(); }, 5000);
