@@ -34,46 +34,111 @@ enum Stop: Int, CaseIterable, Identifiable {
     }
 }
 
-/// The keep-awake control: Apple's own stepped slider, so the thumb is the system's Liquid Glass (it turns to glass
-/// while it's held and settles back when let go), with a tick and a short mark at every stop. The choice is sent
-/// when the finger lifts; while dragging, the words above say where it would land.
+extension Stop {
+    /// The colour of the band under this stop: night at Off, the app's greens towards Always.
+    var color: Color {
+        switch self {
+        case .off: Theme.nightGlow
+        case .busy: Color(red: 0.13, green: 0.42, blue: 0.47)
+        case .h1: Color(red: 0.10, green: 0.46, blue: 0.33)
+        case .h2: Color(red: 0.11, green: 0.54, blue: 0.36)
+        case .h4: Color(red: 0.14, green: 0.62, blue: 0.42)
+        case .h8: Color(red: 0.18, green: 0.72, blue: 0.50)
+        case .always: Theme.mint
+        }
+    }
+}
+
+/// The keep-awake band: one capsule that is a strip of its stops' colours (night at Off to mint at Always), with
+/// a clear Liquid Glass lens on the chosen stop. Drag the lens (it lifts and ticks at every stop) or tap a stop.
+/// The mark under the lens is drawn on top of the glass, so it stays sharp instead of being bent by it. The choice
+/// is sent when the finger lifts; the words above the band say where it would land.
 struct KeepAwakeBand: View {
     let stop: Stop
-    /// The stop under the thumb while dragging (nil when not touching), for the words above.
+    /// The stop under the finger while dragging (nil when not touching), for the words above the band.
     @Binding var hovering: Stop?
     let choose: (Stop) -> Void
 
-    @State private var value: Double = 1
-    @State private var dragging = false
+    @State private var fingerX: CGFloat?
 
     var body: some View {
-        Slider(value: $value, in: 0...Double(Stop.allCases.count - 1), step: 1) {
-            Text("Keep awake")
-        } minimumValueLabel: {
-            Image(systemName: "moon.fill").font(.system(size: 15, weight: .semibold)).accessibilityLabel("Off")
-        } maximumValueLabel: {
-            Image(systemName: "infinity").font(.system(size: 15, weight: .bold)).accessibilityLabel("Always")
-        } tick: { v in
-            SliderTick(v)
-        } onEditingChanged: { editing in
-            dragging = editing
-            if editing {
-                hovering = Stop(rawValue: Int(value.rounded()))
-            } else {
-                let s = Stop(rawValue: Int(value.rounded())) ?? .busy
-                hovering = nil
-                if s != stop { choose(s) }
+        GeometryReader { geo in
+            let w = geo.size.width
+            let slot = w / CGFloat(Stop.allCases.count)
+            let x = fingerX.map { min(max($0, slot / 2), w - slot / 2) } ?? center(of: stop, slot)
+            let under = nearest(x, slot)
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(LinearGradient(stops: Stop.allCases.map { .init(color: $0.color, location: (CGFloat($0.rawValue) + 0.5) / CGFloat(Stop.allCases.count)) },
+                                         startPoint: .leading, endPoint: .trailing))
+                HStack(spacing: 0) {
+                    ForEach(Stop.allCases) { s in
+                        mark(s)
+                            .frame(width: slot, height: Theme.band)
+                            .opacity(s == under ? 0 : 1)   // the lens carries this one
+                    }
+                }
+                // The mark is the glass's own content (as a button's label is), so it sits on the glass, sharp.
+                mark(under)
+                    .frame(width: Theme.band, height: Theme.band)
+                    .glassEffect(.clear.interactive(), in: .circle)
+                .scaleEffect(fingerX == nil ? 1 : 1.18)
+                .offset(x: x - Theme.band / 2)
+                .allowsHitTesting(false)
             }
+            .foregroundStyle(.white)
+            .contentShape(.capsule)
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { g in
+                        if fingerX == nil {
+                            withAnimation(Theme.quick) { fingerX = g.location.x }
+                        } else {
+                            fingerX = g.location.x
+                        }
+                        let s = nearest(g.location.x, slot)
+                        if hovering != s { hovering = s }
+                    }
+                    .onEnded { g in
+                        let s = nearest(g.location.x, slot)
+                        withAnimation(Theme.chrome) {
+                            fingerX = nil
+                            hovering = nil
+                        }
+                        if s != stop { choose(s) }
+                    }
+            )
+            .animation(Theme.chrome, value: stop)
         }
-        .tint(Theme.mint)
-        .onChange(of: value) { _, v in if dragging { hovering = Stop(rawValue: Int(v.rounded())) } }
-        .onChange(of: stop, initial: true) { _, s in
-            // The computer's answer (or an Undo) moves the thumb, but never while a finger is on it.
-            if !dragging { withAnimation(Theme.chrome) { value = Double(s.rawValue) } }
-        }
-        .sensoryFeedback(.selection, trigger: Int(value.rounded()))
+        .frame(height: Theme.band)
+        .sensoryFeedback(.selection, trigger: hovering) { _, new in new != nil }
+        .accessibilityElement()
+        .accessibilityLabel("Keep awake")
         .accessibilityValue(stop.word)
         .accessibilityIdentifier("band")
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: if let s = Stop(rawValue: stop.rawValue + 1) { choose(s) }
+            case .decrement: if let s = Stop(rawValue: stop.rawValue - 1) { choose(s) }
+            @unknown default: break
+            }
+        }
+    }
+
+    private func center(of s: Stop, _ slot: CGFloat) -> CGFloat { slot * (CGFloat(s.rawValue) + 0.5) }
+
+    private func nearest(_ x: CGFloat, _ slot: CGFloat) -> Stop {
+        Stop(rawValue: min(Stop.allCases.count - 1, max(0, Int(x / max(slot, 1))))) ?? .busy
+    }
+
+    /// Each stop's mark: a symbol at the ends and for When busy, the hours as numbers in between.
+    @ViewBuilder private func mark(_ s: Stop) -> some View {
+        switch s {
+        case .off: Image(systemName: "moon.fill").font(.system(size: 15, weight: .semibold))
+        case .busy: Image(systemName: "sparkle").font(.system(size: 15, weight: .bold))
+        case .always: Image(systemName: "infinity").font(.system(size: 15, weight: .bold))
+        default: Text("\(s.minutes! / 60)").font(.system(.headline, design: .rounded))
+        }
     }
 }
 

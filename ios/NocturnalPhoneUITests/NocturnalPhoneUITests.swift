@@ -19,14 +19,16 @@ final class NocturnalPhoneUITests: XCTestCase {
         shot(app, "01-home")
 
         // The band: tap the 2 hour stop.
-        let band = app.sliders["band"]
+        let band = app.descendants(matching: .any)["band"].firstMatch
         XCTAssertTrue(band.exists, app.debugDescription)
         tapStop(band, 3)
         XCTAssertTrue(wait(app.staticTexts["readout"], contains: "Until"), app.staticTexts["readout"].label)
         shot(app, "02-two-hours")
 
-        // Drag the thumb to Always.
-        tapStop(band, 6)
+        // Drag the lens to Always.
+        let from = band.coordinate(withNormalizedOffset: CGVector(dx: 3.5 / 7, dy: 0.5))
+        let to = band.coordinate(withNormalizedOffset: CGVector(dx: 6.5 / 7, dy: 0.5))
+        from.press(forDuration: 0.1, thenDragTo: to)
         XCTAssertTrue(wait(app.staticTexts["readout"], contains: "Always"), app.staticTexts["readout"].label)
         shot(app, "03-always")
 
@@ -122,7 +124,7 @@ final class NocturnalPhoneUITests: XCTestCase {
     // MARK: Helpers
 
     @MainActor private func tapStop(_ band: XCUIElement, _ i: Int) {
-        band.adjust(toNormalizedSliderPosition: CGFloat(i) / 6)
+        band.coordinate(withNormalizedOffset: CGVector(dx: (Double(i) + 0.5) / 7, dy: 0.5)).tap()
     }
 
     @MainActor private func wait(_ e: XCUIElement, contains text: String, timeout: TimeInterval = 3) -> Bool {
