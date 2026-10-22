@@ -27,6 +27,9 @@ final class Computer {
     private var ackClear: Task<Void, Never>?
     private var messageClear: Task<Void, Never>?
     private var lastSent = Date.distantPast
+    /// Commands go out one at a time, in the order they were tapped: the computer runs them in arrival order, so
+    /// two quick taps (Always, then Off) must not overtake each other on the way.
+    private var queue: Task<Void, Never>?
 
     static let liveFor: TimeInterval = 150
     static let refreshEvery: TimeInterval = 120
@@ -73,6 +76,10 @@ final class Computer {
         panel = nil
         panelAt = nil
         settings = nil
+        noAnswer = false
+        ack = nil
+        message = nil
+        wakeSentAt = nil
         PairingStore.delete()
         UserDefaults.standard.removeObject(forKey: Self.savedPanel)
     }
@@ -89,13 +96,17 @@ final class Computer {
 
     // MARK: On screen
 
+    private(set) var listening = false
+
     func appeared() {
         relay?.listen()
+        listening = true
         Task { await refresh() }
     }
 
     func disappeared() {
         relay?.stopListening()
+        listening = false
     }
 
     /// Asks by itself only after two quiet minutes: every tap's answer already brings the status.
@@ -115,7 +126,19 @@ final class Computer {
     func send(_ cmd: String, _ args: [String: Any] = [:], background: Bool = false) async -> Relay.Reply? {
         if !background { show(.sending) }
         pending += 1
-        defer { pending -= 1; lastSent = Date() }
+        let previous = queue
+        let job = Task { () -> Relay.Reply? in
+            await previous?.value
+            return await perform(cmd, args, background: background)
+        }
+        queue = Task { _ = await job.value }
+        let reply = await job.value
+        pending -= 1
+        lastSent = Date()
+        return reply
+    }
+
+    private func perform(_ cmd: String, _ args: [String: Any], background: Bool) async -> Relay.Reply? {
         do {
             let reply: Relay.Reply
             if let demo {
@@ -140,7 +163,7 @@ final class Computer {
             return reply
         } catch Relay.Failure.noAnswer {
             noAnswer = true
-            if !background { show(cmd == "wake" ? .wakeQueued : .noAnswer, for: 6) }
+            if !background { show(cmd == "wake" && (panel?.checkIn ?? 0) > 0 ? .wakeQueued : .noAnswer, for: 6) }
             return nil
         } catch {
             let why = if case Relay.Failure.relay(let w) = error { w } else { "Can't reach the relay" }
@@ -162,9 +185,12 @@ final class Computer {
 
     /// Same for a setting: shown at once, then read back from the computer (which also shows rows that depend on it).
     func changeSetting(_ key: String, _ value: Setting.Value) async {
-        if let i = settings?.firstIndex(where: { $0.key == key }) { settings?[i].value = value }
+        let i = settings?.firstIndex(where: { $0.key == key })
+        let before = i.flatMap { settings?[$0].value }
+        if let i { settings?[i].value = value }
         let wire: Any = switch value { case .bool(let b): b ? "on" : "off"; case .int(let n): n; case .text(let s): s }
-        await send("set", ["key": key, "value": wire])
+        let reply = await send("set", ["key": key, "value": wire])
+        if reply == nil || reply?.ok == false, let i, let before, settings?[i].value == value { settings?[i].value = before }
         await send("schema", background: true)
     }
 
@@ -235,7 +261,7 @@ final class Computer {
     var line: String {
         if noAnswer {
             let every = panel?.checkIn ?? 0
-            if wakeSentAt != nil { return "Wake sent. It wakes at its next check-in" + (every > 0 ? ", within \(every) min." : ".") }
+            if wakeSentAt != nil, every > 0 { return "Wake sent. It wakes at its next check-in, within \(every) min." }
             return every > 0 ? "It checks for a wake every \(every) min." : "To wake it from here, turn on check-ins in Nocturnal's settings."
         }
         return panel?.agentLine ?? ""

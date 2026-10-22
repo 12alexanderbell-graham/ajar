@@ -165,7 +165,7 @@ async function sendNow(cmd, args, bg) {
     const reply = live ? await Promise.race([replied, sleep(REPLY_WAIT_MS).then(() => null)]) : await waitFor(n, since);
     if (!reply) {
       noAnswer = true;
-      if (!bg) ack(cmd === "wake" ? "Sent. It wakes at its next check-in" : "No answer", "bad", 6000);
+      if (!bg) ack(cmd === "wake" && state && state.checkIn ? "Sent. It wakes at its next check-in" : "No answer", "bad", 6000);
       render(state, stateAt);
       return null;
     }
@@ -208,7 +208,8 @@ function drawFresh() {
   else if (!stateAt) { text = "Connecting…"; kind = "busy"; }
   else if (Date.now() - stateAt < LIVE_MS && !noAnswer) { text = "Live"; kind = "live"; }
   else { text = ago(Date.now() - stateAt); kind = ""; }
-  $("freshtext").textContent = text;
+  // Written only when it changes, so screen readers don't hear "Live" again every 15 seconds.
+  if ($("freshtext").textContent !== text) $("freshtext").textContent = text;
   $("dot").className = "dot " + kind;
   $("fresh").className = "fresh " + kind;
 }
@@ -269,7 +270,7 @@ function headline(p) {
 
 function wakeHint() {
   const every = state && state.checkIn;
-  if (wakeSentAt) return "Wake sent. It wakes at its next check-in" + (every ? `, within ${every} min` : "") + ".";
+  if (wakeSentAt && every) return `Wake sent. It wakes at its next check-in, within ${every} min.`;
   return every ? `It checks for a wake every ${every} min.` : "To wake it from here, turn on check-ins in Nocturnal's settings.";
 }
 
@@ -284,7 +285,8 @@ function render(p, at) {
   $("forget").textContent = armed.forget ? "Tap again to forget" : `Forget ${p.host || "this computer"}`;
   const keeps = !!p.keeps && !noAnswer;
   $("card").classList.toggle("keeps", keeps);
-  $("headline").textContent = headline(p);
+  const h = headline(p);
+  if ($("headline").textContent !== h) { $("headline").textContent = h; $("announce").textContent = h; }
   $("line").textContent = noAnswer ? wakeHint() : agentLine(p);
   const w = $("warnings"); w.textContent = "";
   (p.warnings || []).forEach(t => { const e = document.createElement("p"); e.textContent = t; w.appendChild(e); });
@@ -597,7 +599,7 @@ function renderSavings(p) {
 // its agents use); only the words live here.
 const SETTING_GROUPS = [
   ["Screen and power", ["screen", "low_power", "pause_simulators", "shut_down_simulators", "pause_background_audio"], "Dark means no password when you open the lid."],
-  ["Sleep and safety", ["sleep_when_done", "quiet_minutes", "battery_floor", "only_on_power", "heat_guard"], "The battery limit and heat guard can only be loosened on the computer."],
+  ["Sleep and safety", ["sleep_when_done", "quiet_minutes", "battery_floor", "only_on_power", "heat_guard"], "The battery limit, heat guard and plugged-in rule can only be loosened on the computer."],
   ["Keep awake for", ["claude_app", "downloads"], "Agents are found on their own."],
   ["Notifications", ["notify_done", "done_chime"], ""],
 ];
@@ -661,7 +663,7 @@ function renderSettings(list) {
       const s = by[k]; if (!s) continue;
       const name = SETTING_LABELS[k] || k.replace(/_/g, " ");
       if (s.type === "bool") {
-        const locked = k === "heat_guard" && s.value;   // only switched on from here
+        const locked = (k === "heat_guard" || k === "only_on_power") && s.value;   // only switched on from here
         rows.push(row(label(name), toggle(name, !!s.value, on => setSetting(k, on ? "on" : "off"), locked)));
       } else if (s.type === "enum") {
         rows.push(row(label(name), picker(name, (s.allowed || []).map(v => [v, CHOICE_LABELS[v] || v]), s.value, v => setSetting(k, v))));

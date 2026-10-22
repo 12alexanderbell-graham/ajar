@@ -60,6 +60,9 @@ private struct CameraView: UIViewRepresentable {
 
     final class Scanner: NSObject, AVCaptureMetadataOutputObjectsDelegate {
         let session = AVCaptureSession()
+        /// Starting and stopping block while the camera spins up; one serial queue keeps them in order, so a
+        /// quick Cancel can't land before the start and leave the camera on.
+        private let cameraQueue = DispatchQueue(label: "nocturnal.camera")
         private let found: (String) -> Void
         private var done = false
 
@@ -75,12 +78,12 @@ private struct CameraView: UIViewRepresentable {
             output.setMetadataObjectsDelegate(self, queue: .main)
             output.metadataObjectTypes = [.qr]
             let s = session
-            Task.detached { s.startRunning() }   // blocks while the camera starts
+            cameraQueue.async { s.startRunning() }
         }
 
         func stop() {
             let s = session
-            Task.detached { s.stopRunning() }
+            cameraQueue.async { s.stopRunning() }
         }
 
         nonisolated func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput objects: [AVMetadataObject], from connection: AVCaptureConnection) {

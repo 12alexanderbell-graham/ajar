@@ -58,8 +58,9 @@
     </header>
     <div id="toast" role="alert" hidden></div>
 
-    <section class="card" id="card" aria-live="polite">
+    <section class="card" id="card">
       <div id="headline">…</div>
+      <div class="sr" id="announce" aria-live="polite"></div>
       <div id="line"></div>
       <div id="warnings"></div>
       <div class="numbers" id="numbers" hidden>
@@ -131,7 +132,7 @@
           <button type="button" class="action" id="refresh">Refresh</button>
           <button type="button" class="action danger" id="forget">Forget this Mac</button>
         </div>
-        <p class="foot"><span id="updated">Not updated yet</span>. End-to-end encrypted. To add another phone, pair it on your computer.</p>
+        <p class="foot"><span id="updated">Not updated yet</span>. End-to-end encrypted. To add another phone, pair it on your computer; to stop one working, revoke it there.</p>
       </div>
     </section>
   </div>

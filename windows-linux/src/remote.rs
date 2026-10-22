@@ -502,6 +502,32 @@ pub fn phone_reply(cmd: &str, result: &Value, panel: Value) -> Value {
             o.remove("holds");
         }
     }
+    // Still too big (many watched apps, long warnings): cut until it fits, least important first. Same order as
+    // the Mac; the phone rebuilds these lines from `numbers` and its own words.
+    for cut in ["battery", "modeLine", "batteryLine"] {
+        if size(&r) > MAX_REPLY {
+            if let Some(o) = r["panel"].as_object_mut() {
+                o.remove(cut);
+            }
+        }
+    }
+    while size(&r) > MAX_REPLY {
+        match r["panel"]["watch"].as_array_mut() {
+            Some(w) if !w.is_empty() => {
+                w.pop();
+            }
+            _ => break,
+        }
+    }
+    if size(&r) > MAX_REPLY {
+        if let Some(w) = r["panel"]["warnings"].as_array_mut() {
+            for x in w.iter_mut() {
+                if let Some(t) = x.as_str() {
+                    *x = Value::String(t.chars().take(120).collect());
+                }
+            }
+        }
+    }
     r
 }
 
@@ -929,6 +955,24 @@ mod tests {
         msg["re"] = json!("0123456789abcdef");
         msg["t"] = json!(1_800_000_000u64);
         assert!(seal(&key, &rep, &msg.to_string()).len() < 4096);
+    }
+
+    #[test]
+    fn a_huge_status_is_cut_until_it_fits() {
+        let key = parse_key(&new_key()).unwrap();
+        let (_, rep) = topics(&key);
+        let long = "x".repeat(900);
+        let watch: Vec<Value> = (0..60).map(|i| json!({ "id": format!("/Applications/App {i} {long}.app"), "name": format!("App {i}"), "on": true })).collect();
+        let panel = json!({ "headline": "Keeps working", "watch": watch, "warnings": [long.clone(), long.clone()],
+                            "battery": long.clone(), "modeLine": long.clone(), "numbers": { "pct": 80 } });
+        let mut msg = phone_reply("panel", &json!({ "ok": true }), panel);
+        msg["re"] = json!("0123456789abcdef");
+        msg["t"] = json!(1_800_000_000u64);
+        assert!(
+            seal(&key, &rep, &msg.to_string()).len() < 4096,
+            "still one ntfy message, not an attachment"
+        );
+        assert_eq!(msg["panel"]["numbers"]["pct"], 80, "the numbers survive");
     }
 
     #[test]

@@ -13,7 +13,7 @@ struct SettingsSheet: View {
     private static let groups: [(String, [String], String)] = [
         ("Screen and power", ["low_power", "pause_simulators", "shut_down_simulators", "pause_background_audio"], ""),
         ("Sleep and safety", ["sleep_when_done", "quiet_minutes", "battery_floor", "only_on_power", "heat_guard"],
-         "The battery limit and heat guard can only be loosened on the computer."),
+         "The battery limit, heat guard and plugged-in rule can only be loosened on the computer."),
         ("Keep awake for", ["claude_app", "downloads"], "Agents are found on their own."),
         ("Notifications", ["notify_done", "done_chime"], ""),
     ]
@@ -78,7 +78,7 @@ struct SettingsSheet: View {
                 Button(computer.isDemo ? "Leave the demo" : "Forget \(p.host)", role: .destructive) { confirmForget = true }
             } header: { Text("This phone") } footer: {
                 Text((computer.panelAt.map { "Updated \($0.formatted(date: .omitted, time: .shortened)). " } ?? "")
-                     + "End-to-end encrypted. To add another phone, pair it on your computer.").font(.subheadline)
+                     + "End-to-end encrypted. To add another phone, pair it on your computer; to stop one working, revoke it there.").font(.subheadline)
             }
         }
         .headerProminence(.increased)
@@ -131,7 +131,7 @@ struct SettingsSheet: View {
         switch s.type {
         case "bool":
             Toggle(label, isOn: Binding(get: { s.bool }, set: { v in Task { await computer.changeSetting(s.key, .bool(v)) } }))
-                .disabled(s.key == "heat_guard" && s.bool)   // only switched on from here
+                .disabled((s.key == "heat_guard" || s.key == "only_on_power") && s.bool)   // only switched on from here
         case "int":
             let isFloor = s.key == "battery_floor"
             let steps = Array(Set((isFloor ? [0, 5, 10, 15, 20, 25, 30, 40, 50] : [1, 2, 5, 10, 20, 30, 60]) + [s.int])).sorted()

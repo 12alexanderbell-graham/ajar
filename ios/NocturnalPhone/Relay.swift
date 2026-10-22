@@ -39,12 +39,18 @@ final class Relay {
 
     /// Opens the reply stream (if it isn't open) and keeps it open, reconnecting after errors. Reopening asks for
     /// everything since the last message seen, so answers that came in meanwhile still reach a waiting request.
+    /// Waits longer after each failed attempt (5 s up to 2 min), like the computer, so a bad network can't use up
+    /// the relay's allowance.
     func listen() {
         guard listener == nil else { return }
         listener = Task { [weak self] in
+            var wait = 5.0
             while !Task.isCancelled {
-                await self?.readStream()
-                try? await Task.sleep(for: .seconds(2))
+                guard let relay = self else { return }
+                let lasted = await relay.readStream()
+                if lasted { wait = 5 }
+                try? await Task.sleep(for: .seconds(lasted ? 1 : wait))
+                if !lasted { wait = min(wait * 2, 120) }
             }
         }
     }
@@ -54,33 +60,42 @@ final class Relay {
         listener = nil
     }
 
-    private func readStream() async {
+    /// True if the stream proved itself (a keepalive or a message came through) before it ended.
+    private func readStream() async -> Bool {
         let since = lastID ?? "2m"
-        guard let url = URL(string: "\(pairing.server)/\(pairing.replyTopic)/json?since=\(since)") else { return }
+        guard let url = URL(string: "\(pairing.server)/\(pairing.replyTopic)/json?since=\(since)") else { return false }
+        var lasted = false
         do {
             let (bytes, response) = try await session.bytes(from: url)
-            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return }
+            // A captive portal or proxy answers 200 with a web page: that's not the relay.
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+                  (http.value(forHTTPHeaderField: "Content-Type") ?? "").contains("json") else { return false }
             for try await line in bytes.lines {
-                await handle(line: line)
+                if await handle(line: line) { lasted = true }
             }
         } catch {}
+        return lasted
     }
 
-    private func handle(line: String) async {
+    /// Returns true for a keepalive or a message: signs the stream really works.
+    @discardableResult
+    private func handle(line: String) async -> Bool {
         guard let data = line.data(using: .utf8),
-              let ev = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              ev["event"] as? String == "message" else { return }
+              let ev = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
+        if ev["event"] as? String == "keepalive" { return true }
+        guard ev["event"] as? String == "message" else { return false }
         if let id = ev["id"] as? String { lastID = id }
         guard let text = await messageText(ev),
               let plain = pairing.open(text, topic: pairing.replyTopic),
               let reply = try? JSONSerialization.jsonObject(with: plain) as? [String: Any],
-              let re = reply["re"] as? String else { return }
+              let re = reply["re"] as? String else { return true }
         if let waiter = waiters.removeValue(forKey: re) {
             waiter.resume(returning: Self.decode(reply))
         } else {
             if early.count > 8 { early.removeAll() }
             early[re] = Self.decode(reply)
         }
+        return true
     }
 
     /// ntfy turns messages over 4 KB into attachments; those are fetched (still sealed) from the same relay only.

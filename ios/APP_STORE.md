@@ -4,6 +4,9 @@
 shut, what its AI agents are doing, and its battery, and lets you switch Off / When Busy / Always, wake it or let it
 sleep. It pairs with one computer by scanning the QR code Nocturnal shows there.
 
+**Companion app.** It works with Nocturnal for Mac, Windows and Linux, which is free and open source:
+https://nocturnal.tools. Without a computer to pair, the demo shows every screen.
+
 **For App Review.** No account and no login. Tap **Try the demo** on the first screen: a pretend computer inside the
 app answers every control, with nothing sent anywhere. Leave it from Settings › Leave the demo.
 

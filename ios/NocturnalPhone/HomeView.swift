@@ -51,8 +51,10 @@ struct HomeView: View {
                 .presentationDetents([.fraction(0.25), .medium], selection: $detent)
                 .presentationContentInteraction(.scrolls)
         }
-        .onChange(of: phase, initial: true) { _, now in
-            if now == .active { computer.appeared() } else { computer.disappeared() }
+        // Only a real trip to the background closes the stream: a glance at Notification Center (inactive) doesn't.
+        .onChange(of: phase, initial: true) { old, now in
+            if now == .active, old != .inactive || !computer.listening { computer.appeared() }
+            if now == .background { computer.disappeared() }
         }
     }
 
