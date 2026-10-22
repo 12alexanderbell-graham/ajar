@@ -4,292 +4,413 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Nocturnal: close the lid, your AI keeps working</title>
-<meta name="description" content="Nocturnal keeps your laptop awake with the lid shut while Claude Code, Codex or any AI agent works, saves the battery while it's closed, and lets it sleep when the work is done. Free for Mac, Windows and Linux, with a phone app to check on it.">
+<meta name="description" content="Nocturnal keeps your laptop awake with the lid shut while Claude Code, Codex or any AI agent works, saves the battery while it's closed, and lets it sleep when the work is done. Free for Mac, Windows and Linux, with an iPhone app to control it.">
 <meta property="og:title" content="Nocturnal: close the lid, your AI keeps working">
 <meta property="og:description" content="Keeps your laptop awake with the lid shut while your AI agents work, then lets it sleep. Free and open source.">
 <meta property="og:image" content="https://nocturnal.tools/panel-now.png">
+<meta name="theme-color" content="#05281a">
 <link rel="icon" href="favicon.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <style>
   :root {
-    --bg: #f5f5f7; --card: #ffffff; --fg: #1d1d1f; --fg-2: #6e6e73; --line: #e5e5ea;
-    --accent: #15784a; --deep: #08341a; --mid: #146c40; --mint: #3fd69c;
+    --paper: #f5f5f7; --card: #ffffff; --ink: #1d1d1f; --ink-2: #515154; --line: #d9d9de;
+    --night: #070c19; --night-2: #16203f; --deep: #05281a; --green: #10663b; --mint: #40d69c; --accent: #12723f;
     --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    --round: ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    --spring: cubic-bezier(.2, .9, .25, 1.06);
     color-scheme: light;
   }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) { --bg: #000000; --card: #1c1c1e; --fg: #f5f5f7; --fg-2: #a1a1a6; --line: #2c2c2e; --accent: #30bb81; color-scheme: dark; }
-  }
-  :root[data-theme="dark"] { --bg: #000000; --card: #1c1c1e; --fg: #f5f5f7; --fg-2: #a1a1a6; --line: #2c2c2e; --accent: #30bb81; color-scheme: dark; }
   * { box-sizing: border-box; }
   html { -webkit-text-size-adjust: 100%; }
-  body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font); font-size: 17px; line-height: 1.47; letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--font); font-size: 17px; line-height: 1.47; letter-spacing: -0.012em; -webkit-font-smoothing: antialiased; }
   a { color: var(--accent); }
-  .wrap { max-width: 980px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
-  .narrow { max-width: 720px; margin-left: auto; margin-right: auto; }
-  section { margin-top: 104px; }
+  img { display: block; max-width: 100%; height: auto; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding-inline: max(20px, env(safe-area-inset-left, 0px)); }
+  h1, h2, h3 { text-wrap: balance; margin: 0; }
+  h2 { font-size: clamp(32px, 4.6vw, 52px); line-height: 1.05; letter-spacing: -0.035em; font-weight: 700; }
+  .sub { font-size: clamp(18px, 2vw, 21px); line-height: 1.42; color: var(--ink-2); margin: 16px 0 0; max-width: 32em; text-wrap: pretty; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
 
-  /* The brand surface: deep green opening to a mint glow, with film grain (same as the app icon). */
-  .green { position: relative; isolation: isolate; overflow: hidden; color: #fff; border-radius: 32px;
+  /* ---------- The ground: deep green opening to a mint glow, drifting slowly, with grain (as in the app) ---------- */
+  .ground { position: relative; isolation: isolate; overflow: hidden; color: #fff; background: var(--deep); }
+  .ground::before { content: ""; position: absolute; inset: -20%; z-index: -2;
     background:
-      radial-gradient(60% 75% at 88% 10%, rgba(63,214,156,.95), rgba(63,214,156,0) 72%),
-      radial-gradient(45% 55% at 8% 100%, rgba(34,184,102,.55), rgba(34,184,102,0) 72%),
-      linear-gradient(45deg, var(--deep), var(--mid)); }
-  .green::after { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; opacity: .22; mix-blend-mode: overlay;
+      radial-gradient(42% 46% at 84% 12%, rgba(64,214,156,.95), rgba(64,214,156,0) 70%),
+      radial-gradient(38% 44% at 10% 92%, rgba(34,184,102,.55), rgba(34,184,102,0) 70%),
+      radial-gradient(60% 60% at 50% 50%, rgba(16,102,59,.9), rgba(16,102,59,0) 75%),
+      linear-gradient(40deg, var(--deep), var(--green));
+    animation: drift 26s ease-in-out infinite alternate; }
+  .ground::after { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; opacity: .2; mix-blend-mode: overlay;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 1.6 -.3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
-  .green a { color: #fff; }
+  @keyframes drift { from { transform: translate3d(-3%, -2%, 0) scale(1); } to { transform: translate3d(3%, 3%, 0) scale(1.06); } }
+  .ground a { color: #fff; }
 
-  /* Hero */
-  header { padding-top: 16px; }
-  .hero { text-align: center; padding: 72px 24px 210px; }
-  .icon { width: 96px; height: 96px; display: block; margin: 0 auto 26px; filter: drop-shadow(0 10px 24px rgba(0,0,0,.28)); }
-  h1 { font-size: clamp(40px, 7.4vw, 72px); line-height: 1.03; letter-spacing: -0.04em; font-weight: 700; margin: 0; text-wrap: balance; }
-  .lede { font-size: clamp(19px, 2.4vw, 23px); line-height: 1.4; color: rgba(255,255,255,.82); max-width: 30em; margin: 18px auto 0; text-wrap: balance; }
-  .btn { display: inline-block; margin-top: 32px; border: 0; cursor: pointer; font-family: var(--font); text-decoration: none; font-size: 18px; font-weight: 600; padding: 14px 30px; border-radius: 980px; color: #fff;
-    background: linear-gradient(45deg, var(--mid), #1e9a60); }
-  .green .btn { background: #fff; color: var(--deep); }
-  .btn:hover { filter: brightness(1.06); }
-  .btn:focus-visible, a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-  .green .btn:focus-visible, .green a:focus-visible { outline-color: #fff; }
-  .meta { font-size: 14px; color: var(--fg-2); margin: 14px 0 0; }
-  .green .meta { color: rgba(255,255,255,.75); }
-  .meta a { color: inherit; }
-  .shot { margin: -180px auto 0; max-width: 360px; position: relative; padding: 0 8px; }
-  .shot img { display: block; width: 100%; height: auto; border-radius: 16px; box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 24px 60px rgba(0,0,0,.22); }
-  .install { text-align: center; margin-top: 28px; }
-  code { font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--card); padding: 3px 8px; border-radius: 7px; color: var(--fg); }
-  .first { font-size: 13px; color: var(--fg-2); margin: 8px auto 0; max-width: 36em; }
+  /* ---------- Hero ---------- */
+  .hero { padding: max(28px, env(safe-area-inset-top)) 0 0; }
+  .top { display: flex; justify-content: space-between; align-items: center; height: 44px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px; color: #fff; text-decoration: none; }
+  .brand img { width: 30px; height: 30px; border-radius: 7px; }
+  .top nav { display: flex; gap: 6px; }
+  .top nav a { color: #fff; text-decoration: none; font-size: 15px; font-weight: 500; padding: 8px 14px; border-radius: 980px; }
+  .top nav a:hover { background: rgba(255,255,255,.12); }
+  .hero-copy { text-align: center; padding-top: clamp(48px, 8vw, 96px); }
+  h1 { font-size: clamp(44px, 8.4vw, 92px); line-height: .98; letter-spacing: -0.045em; font-weight: 700; }
+  .lede { font-size: clamp(19px, 2.3vw, 23px); line-height: 1.4; color: rgba(255,255,255,.9); max-width: 31em; margin: 22px auto 0; text-wrap: balance; }
 
-  h2 { font-size: clamp(30px, 4.4vw, 44px); line-height: 1.1; letter-spacing: -0.03em; font-weight: 700; margin: 0 0 14px; text-wrap: balance; }
-  .sub { font-size: 19px; color: var(--fg-2); margin: 0; max-width: 34em; text-wrap: pretty; }
-  .center { text-align: center; }
-  .center .sub { margin: 0 auto; }
+  /* Get it: one box, three systems. The system you're on is picked for you. */
+  .get { max-width: 780px; margin: 36px auto 0; }
+  .tabs { display: inline-flex; padding: 4px; border-radius: 980px; background: rgba(0,0,0,.22); position: relative; }
+  .tabs button { position: relative; z-index: 1; border: 0; background: none; color: #fff; font: 600 15px var(--font); padding: 9px 20px; border-radius: 980px; cursor: pointer; transition: color .25s; }
+  .tabs button[aria-selected="true"] { color: var(--deep); }
+  .tabs .lens { position: absolute; z-index: 0; top: 4px; bottom: 4px; left: 0; width: 0; border-radius: 980px; background: #fff; transition: transform .45s var(--spring), width .45s var(--spring); }
+  .panes { margin-top: 18px; display: grid; }
+  .pane { grid-area: 1 / 1; transition: transform .45s var(--spring), filter .45s, visibility 0s .45s; }
+  .pane[hidden] { display: block; visibility: hidden; transform: translateY(14px) scale(.98); filter: blur(8px); }
+  .pane:not([hidden]) { transition-delay: 0s; }
+  .cmd { display: flex; align-items: center; gap: 10px; background: rgba(4,18,11,.55); border: 1px solid rgba(255,255,255,.16); border-radius: 18px; padding: 10px 10px 10px 20px; text-align: left; }
+  .cmd code { flex: 1; min-width: 0; font: 500 clamp(13px, 1.6vw, 16px)/1.4 var(--mono); color: #fff; overflow-wrap: anywhere; }
+  .cmd code::before { content: "$ "; color: var(--mint); }
+  .copy { flex: none; border: 0; cursor: pointer; font: 600 15px var(--font); color: var(--deep); background: #fff; padding: 11px 18px; border-radius: 12px; min-width: 82px; }
+  .copy:active { transform: scale(.96); }
+  .dl { display: inline-flex; align-items: center; gap: 8px; margin-top: 4px; border: 0; cursor: pointer; text-decoration: none; font: 600 18px var(--font); padding: 15px 32px; border-radius: 980px; background: #fff; color: var(--deep) !important; transition: transform .2s; }
+  .dl:hover { transform: scale(1.02); }
+  .dl:active { transform: scale(.97); }
+  .pane .note { font-size: 15px; color: rgba(255,255,255,.82); margin: 14px 0 0; }
+  .pane .note code { font: 14px var(--mono); }
+  .fine { font-size: 14px; color: rgba(255,255,255,.75); margin: 22px 0 0; }
 
-  /* Steps */
-  .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 36px; counter-reset: s; }
-  .step { background: var(--card); border-radius: 22px; padding: 26px; }
-  .step::before { counter-increment: s; content: counter(s); display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; color: #fff; font-weight: 700; font-size: 16px; margin-bottom: 14px;
-    background: linear-gradient(45deg, var(--mid), #1e9a60); }
-  .step h3 { font-size: 19px; margin: 0 0 6px; letter-spacing: -0.015em; }
-  .step p { margin: 0; color: var(--fg-2); font-size: 16px; }
+  /* The product, rising into place once on load: the Mac panel and the phone, side by side. */
+  .stage { position: relative; height: clamp(420px, 56vw, 600px); margin-top: 56px; }
+  .stage .mac, .stage .phone { position: absolute; bottom: -2px; }
+  .stage .mac { left: 50%; width: min(380px, 62vw); transform: translateX(calc(-100% + 30px)); z-index: 1; border-radius: 18px 18px 0 0; overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,.35); }
+  .stage .phone { left: 50%; width: min(270px, 44vw); transform: translateX(10px); z-index: 2; border-radius: 40px 40px 0 0; overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,.4); outline: 1px solid rgba(255,255,255,.18); }
+  .stage .mac img, .stage .phone img { width: 100%; }
+  .rise-in { animation: rise 1.1s var(--spring) both; }
+  .stage .mac.rise-in { animation-delay: .15s; } .stage .phone.rise-in { animation-delay: .32s; }
+  @keyframes rise { from { translate: 0 90px; filter: blur(10px); } to { translate: 0 0; filter: blur(0); } }
+  .hero-copy > * { animation: rise .9s var(--spring) both; }
+  .hero-copy > :nth-child(2) { animation-delay: .06s; } .hero-copy > :nth-child(3) { animation-delay: .12s; }
 
-  /* Proof */
-  .proof { text-align: center; background: var(--card); border-radius: 28px; padding: 64px 24px; }
-  .big { white-space: nowrap; font-size: clamp(34px, 10.5vw, 112px); font-weight: 700; letter-spacing: -0.05em; line-height: 1; margin: 6px 0 14px; font-variant-numeric: tabular-nums; }
-  .big .arrow { color: var(--fg-2); font-weight: 500; }
-  .big .low { color: var(--accent); }
-  .proof .sub { margin: 0 auto; font-size: 17px; }
-  .proof .fine { font-size: 13px; color: var(--fg-2); margin: 18px auto 0; max-width: 40em; }
+  /* ---------- The lid: scroll and the page lives through one night of work ---------- */
+  .lid { position: relative; height: 330vh; }
+  .lid-stick { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; display: grid; align-items: center; background: var(--paper); color: var(--ink); }
+  .lid-bg { position: absolute; inset: 0; opacity: 0; }
+  .lid-bg.green { background: radial-gradient(50% 55% at 82% 15%, rgba(64,214,156,.9), rgba(64,214,156,0) 72%), linear-gradient(40deg, var(--deep), var(--green)); }
+  .lid-bg.night { background: radial-gradient(45% 50% at 80% 10%, rgba(59,76,154,.75), rgba(59,76,154,0) 72%), linear-gradient(40deg, var(--night), var(--night-2)); }
+  .lid-grid { position: relative; width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 40px; align-items: center; }
+  .chapters { position: relative; height: 13em; }
+  .chapter { position: absolute; inset: 0; transition: transform .6s var(--spring), filter .6s, visibility 0s .6s; visibility: hidden; transform: translateY(26px); filter: blur(10px); }
+  .chapter.on { visibility: visible; transform: none; filter: none; transition-delay: 0s; }
+  .chapter .sub { color: inherit; opacity: 1; }
+  .meter { text-align: center; }
+  .watts { font: 700 clamp(84px, 15vw, 190px)/0.9 var(--round); letter-spacing: -0.05em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .watts small { font-size: .32em; letter-spacing: -0.02em; font-weight: 600; margin-left: .08em; }
+  .state { display: inline-flex; align-items: center; gap: 10px; margin-top: 18px; font-weight: 600; font-size: 18px; padding: 10px 18px; border-radius: 980px; background: rgba(127,127,127,.14); }
+  .state i { width: 9px; height: 9px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 0 4px rgba(64,214,156,.25); }
+  .lid-stick.is-night .state i { background: #8b9bd6; box-shadow: none; }
+  .band { position: relative; height: 10px; border-radius: 10px; margin: 34px auto 0; max-width: 360px; background: linear-gradient(90deg, #3b4c9a, #21706f, #1a7654, #1d8a5c, #249e6b, #2eb880, #40d69c); }
+  .band b { position: absolute; top: 50%; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%; background: rgba(255,255,255,.35); backdrop-filter: blur(2px) saturate(1.3); border: 1.5px solid rgba(255,255,255,.85); box-shadow: 0 4px 14px rgba(0,0,0,.25); transition: left .6s var(--spring); }
+  .lid .fine-print { position: absolute; left: 0; right: 0; bottom: max(22px, env(safe-area-inset-bottom)); text-align: center; font-size: 13px; opacity: .75; }
 
-  /* Features: an iOS grouped list */
-  .list { background: var(--card); border-radius: 22px; margin-top: 36px; overflow: hidden; }
-  .item { padding: 18px 22px; border-top: 1px solid var(--line); }
-  .item:first-child { border-top: 0; }
-  .item h3 { font-size: 17px; margin: 0; letter-spacing: -0.015em; }
-  .item p { margin: 2px 0 0; color: var(--fg-2); font-size: 15px; }
-  #ai-h + .sub { margin: 0 auto; }
-  #prompt { text-align: left; white-space: pre-wrap; font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--card); border-radius: 18px; padding: 20px; margin-top: 20px; user-select: all; }
-  .two { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 40px; align-items: center; margin-top: 36px; }
-  .two .list { margin-top: 0; }
-  .two img { display: block; width: 100%; height: auto; border-radius: 16px; box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 18px 48px rgba(0,0,0,.14); }
+  /* ---------- What it does ---------- */
+  .does { padding: 120px 0 0; }
+  .feats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 40px; margin-top: 44px; }
+  .feat { border-top: 1px solid var(--line); padding: 22px 0 30px; }
+  .feat h3 { font-size: 20px; letter-spacing: -0.02em; }
+  .feat p { margin: 8px 0 0; color: var(--ink-2); font-size: 16px; }
 
-  /* Phone + AI */
-  .split { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 48px; align-items: center; }
-  .split img { display: block; width: 100%; height: auto; border-radius: 34px; box-shadow: 0 0 0 1px rgba(0,0,0,.08), 0 18px 48px rgba(0,0,0,.16); }
-  .split ol { margin: 18px 0 0; padding-left: 22px; color: var(--fg-2); font-size: 16px; }
-  .split li { margin: 6px 0; }
-  .split li b { color: var(--fg); font-weight: 600; }
-  .small { font-size: 14px; color: var(--fg-2); margin: 16px 0 0; }
-  .prompt { position: relative; margin-top: 22px; }
-  .prompt pre { margin: 0; white-space: pre-wrap; font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--card); color: var(--fg); border-radius: 18px; padding: 52px 20px 20px; max-height: 240px; overflow: auto; }
-  .copy { position: absolute; top: 12px; right: 12px; border: 0; border-radius: 980px; padding: 7px 16px; font: 600 13px var(--font); color: #fff; cursor: pointer; background: linear-gradient(45deg, var(--mid), #1e9a60); }
+  /* ---------- Phone ---------- */
+  .phone-sec { padding: 120px 0 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 56px; align-items: center; }
+  .phones { position: relative; height: 560px; }
+  .phones img { position: absolute; width: 250px; border-radius: 40px; box-shadow: 0 0 0 1px rgba(0,0,0,.08), 0 26px 60px rgba(0,0,0,.2); }
+  .phones img:first-child { left: 0; top: 0; }
+  .phones img:last-child { left: 190px; top: 60px; }
+  .ticks { margin: 22px 0 0; padding: 0; list-style: none; color: var(--ink-2); font-size: 17px; }
+  .ticks li { margin: 10px 0; padding-left: 24px; position: relative; }
+  .ticks li::before { content: ""; position: absolute; left: 2px; top: .5em; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); }
+  .ticks b { color: var(--ink); font-weight: 600; }
 
-  /* Platforms */
-  .platforms { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 36px; }
-  .plat { background: var(--card); border-radius: 22px; padding: 26px; display: flex; flex-direction: column; align-items: flex-start; }
-  .plat h3 { font-size: 21px; margin: 0 0 6px; letter-spacing: -0.015em; display: flex; align-items: center; gap: 8px; }
-  .plat p { margin: 0; color: var(--fg-2); font-size: 16px; }
-  .plat .btn-sm { margin-top: 18px; font-size: 16px; padding: 10px 22px; }
-  .plat .alt { margin-top: 12px; font-size: 14px; }
-  .plat .alt code { font-size: 12px; overflow-wrap: anywhere; }
-  .beta { font-size: 12px; font-weight: 600; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); padding: 3px 8px; border-radius: 980px; letter-spacing: 0; }
-  .item p { margin: 3px 0 0; color: var(--fg-2); font-size: 15px; }
-  .ticks { margin: 18px 0 0; padding: 0; list-style: none; color: var(--fg-2); font-size: 16px; }
-  .ticks li { margin: 8px 0; padding-left: 22px; position: relative; }
-  .ticks li::before { content: ""; position: absolute; left: 2px; top: .55em; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
-  .ticks b { color: var(--fg); font-weight: 600; }
+  /* ---------- Questions ---------- */
+  .faq-sec { padding: 120px 0 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 56px; }
+  .faq details { border-top: 1px solid var(--line); }
+  .faq details:last-child { border-bottom: 1px solid var(--line); }
+  .faq summary { cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 20px 0; font-size: 19px; font-weight: 600; letter-spacing: -0.02em; }
+  .faq summary::-webkit-details-marker { display: none; }
+  .faq summary::after { content: ""; flex: none; width: 12px; height: 12px; border-right: 2px solid var(--ink-2); border-bottom: 2px solid var(--ink-2); transform: rotate(45deg) translateY(-3px); transition: transform .35s var(--spring); }
+  .faq details[open] summary::after { transform: rotate(-135deg) translateY(-3px); }
+  .faq .a { padding: 0 0 22px; color: var(--ink-2); font-size: 17px; max-width: 38em; }
+  .faq .a p { margin: 0; }
+  .faq details[open] .a { animation: open .45s var(--spring); }
+  @keyframes open { from { transform: translateY(-8px); filter: blur(4px); } to { transform: none; filter: none; } }
+  .prompt { position: relative; margin-top: 14px; }
+  .prompt pre { margin: 0; white-space: pre-wrap; font: 13px/1.55 var(--mono); background: var(--card); color: var(--ink); border-radius: 16px; padding: 18px 18px 18px; max-height: 220px; overflow: auto; border: 1px solid var(--line); }
+  .btn { display: inline-block; border: 0; cursor: pointer; font: 600 16px var(--font); padding: 11px 22px; border-radius: 980px; color: #fff; background: var(--accent); margin-top: 14px; }
 
-  /* FAQ */
-  .faq { background: var(--card); border-radius: 22px; padding: 4px 22px; margin-top: 24px; }
-  details { border-top: 1px solid var(--line); padding: 18px 0; }
-  details:first-child { border-top: 0; }
-  summary { cursor: pointer; font-size: 17px; font-weight: 600; letter-spacing: -0.015em; list-style: none; display: flex; justify-content: space-between; gap: 16px; }
-  summary::-webkit-details-marker { display: none; }
-  summary::after { content: "+"; color: var(--fg-2); font-weight: 400; font-size: 22px; line-height: 1; }
-  details[open] summary::after { content: "–"; }
-  details p { margin: 10px 0 0; color: var(--fg-2); font-size: 16px; }
-
-  .final { text-align: center; padding: 72px 24px; }
-  footer { margin-top: 64px; padding-block: 24px 40px; font-size: 12px; color: var(--fg-2); text-align: center; }
+  /* ---------- End ---------- */
+  .end { margin-top: 120px; text-align: center; padding: 96px 0 0; }
+  .end .get { margin-top: 30px; }
+  .end .stage-mini { height: 80px; }
+  footer { padding: 26px 0 max(30px, env(safe-area-inset-bottom)); font-size: 13px; color: rgba(255,255,255,.78); text-align: center; }
   footer a { color: inherit; }
 
-  @media (max-width: 760px) {
-    section { margin-top: 76px; }
-    .green { border-radius: 26px; }
-    .hero { padding: 52px 20px 180px; }
-    .shot { margin-top: -150px; max-width: 320px; }
-    .steps, .two, .platforms { grid-template-columns: minmax(0, 1fr); }
-    .two img { max-width: 320px; margin: 0 auto; }
-    .split { grid-template-columns: minmax(0, 1fr); gap: 32px; }
-    .split img { max-width: 240px; margin: 0 auto; }
-    .proof { padding: 48px 20px; border-radius: 22px; }
-    .step { padding: 22px; }
-    .final { padding: 52px 20px; }
+  @media (max-width: 820px) {
+    .top nav a:not(:last-child) { display: none; }
+    .stage { height: clamp(360px, 108vw, 520px); }
+    .stage .mac { width: 54vw; transform: translateX(calc(-100% + 34px)); }
+    .stage .phone { width: 40vw; transform: translateX(-14px); }
+    .cmd code { font-size: 13px; }
+    .lid-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; text-align: center; }
+    .chapters { height: 11em; order: 2; margin-top: 34px; }
+    .chapter .sub { margin-inline: auto; }
+    .feats { grid-template-columns: minmax(0, 1fr); }
+    .phone-sec, .faq-sec { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+    .phones { height: 470px; max-width: 380px; margin: 0 auto; width: 100%; }
+    .phones img { width: 205px; }
+    .phones img:last-child { left: auto; right: 0; top: 50px; }
+    .does, .phone-sec, .faq-sec { padding-top: 88px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ground::before { animation: none; }
+    .rise-in, .hero-copy > * { animation: none; }
+    .chapter, .pane, .tabs .lens, .band b { transition: none; }
   }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <div class="green hero">
-      <img class="icon" src="icon.png" alt="Nocturnal app icon" width="96" height="96">
+
+<header class="ground hero">
+  <div class="wrap">
+    <div class="top">
+      <a class="brand" href="#"><img src="icon.png" alt="" width="30" height="30">Nocturnal</a>
+      <nav aria-label="Sections">
+        <a href="#does-h">What it does</a>
+        <a href="#phone-h">iPhone</a>
+        <a href="#faq-h">Questions</a>
+        <a href="https://github.com/12alexanderbell-graham/nocturnal">GitHub</a>
+      </nav>
+    </div>
+
+    <div class="hero-copy">
       <h1>Close the lid.<br>Your AI keeps working.</h1>
-      <p class="lede">Awake while your agents work. Asleep when they're done.</p>
-      <a class="btn" id="dl" href="downloads/Nocturnal-1.0.0-mac.zip">Download for Mac</a>
-      <p class="meta">Free and open source · <a href="#get-h">Mac, Windows, Linux</a> · <a href="#phone-h">iPhone</a></p>
+      <p class="lede">Nocturnal keeps your laptop awake while Claude Code, Codex and other agents work, saves the battery while it's shut, and lets it sleep when they're done.</p>
+      <div class="get" data-get>
+        <div class="tabs" role="tablist" aria-label="Your computer">
+          <span class="lens" aria-hidden="true"></span>
+          <button role="tab" data-os="mac" aria-selected="true">Mac</button>
+          <button role="tab" data-os="win" aria-selected="false">Windows</button>
+          <button role="tab" data-os="linux" aria-selected="false">Linux</button>
+        </div>
+        <div class="panes">
+          <div class="pane" data-pane="mac">
+            <div class="cmd"><code>brew install --cask 12alexanderbell-graham/nocturnal/nocturnal</code><button class="copy" type="button">Copy</button></div>
+            <p class="note">Or <a href="downloads/Nocturnal-1.0.0-mac.zip">download the app</a>. macOS 14 or later.</p>
+          </div>
+          <div class="pane" data-pane="win" hidden>
+            <a class="dl" href="downloads/Nocturnal-1.0.0-windows-x86_64.zip">Download for Windows</a>
+            <p class="note">Beta. Windows 10 or 11. Unzip, open Nocturnal; if Windows warns you, choose More info › Run anyway.</p>
+          </div>
+          <div class="pane" data-pane="linux" hidden>
+            <a class="dl" href="downloads/nocturnal-1.0.0-linux-x86_64.tar.gz">Download for Linux</a>
+            <p class="note">Beta. Any distro with systemd. Unpack it and run <code>./install.sh</code>.</p>
+          </div>
+        </div>
+        <p class="fine">Free and <a href="https://github.com/12alexanderbell-graham/nocturnal">open source</a>.</p>
+      </div>
     </div>
-    <figure class="shot">
-      <img src="panel-now.png" alt="Nocturnal's menu: Keeps working, battery and hours left, Off / When Busy / Always, and tiles for Approve all, Phone and Lid shut" width="640" height="766">
-    </figure>
-    <div class="install">
-      <p class="meta" id="brew"><code>brew install --cask 12alexanderbell-graham/nocturnal/nocturnal</code></p>
-      <p class="first" id="first" hidden></p>
-    </div>
-  </header>
 
-  <section aria-labelledby="how-h">
-    <div class="center"><h2 id="how-h">How it works</h2></div>
-    <div class="steps">
-      <div class="step"><h3>Install</h3><p>On your Mac, PC or Linux laptop.</p></div>
-      <div class="step"><h3>Start your agent</h3><p>Claude Code, Codex, Cursor and more are found on their own.</p></div>
-      <div class="step"><h3>Close the lid</h3><p>It keeps working, then sleeps when it's done.</p></div>
+    <div class="stage" aria-hidden="false">
+      <figure class="mac rise-in" style="margin:0"><img src="panel-now.png" alt="Nocturnal's menu on the Mac: Keeps working, battery and hours left, Off / When Busy / Always, Approve all, Phone and Lid shut" width="640" height="766"></figure>
+      <figure class="phone rise-in" style="margin:0"><img src="phone.jpg" alt="The Nocturnal iPhone app: Keeps working, battery, watts and hours left, this week's savings, and the keep-awake band" width="780" height="1696"></figure>
+    </div>
+  </div>
+</header>
+
+<section class="lid" aria-labelledby="lid-h" data-lid>
+  <div class="lid-stick">
+    <div class="lid-bg green" aria-hidden="true"></div>
+    <div class="lid-bg night" aria-hidden="true"></div>
+    <div class="wrap lid-grid">
+      <div class="chapters">
+        <div class="chapter on" data-ch="0">
+          <h2 id="lid-h">Your agent is working.</h2>
+          <p class="sub">Claude Code is halfway through a refactor. You need to leave, and closing the lid would put the laptop to sleep.</p>
+        </div>
+        <div class="chapter" data-ch="1">
+          <h2>Close the lid anyway.</h2>
+          <p class="sub">Nocturnal keeps it working with the screen off, pauses the apps you aren't using and turns on Low Power Mode.</p>
+        </div>
+        <div class="chapter" data-ch="2">
+          <h2>When it's done, it sleeps.</h2>
+          <p class="sub">The agent finishes, the laptop sleeps, and opening the lid puts every app and setting back the way it was.</p>
+        </div>
+      </div>
+      <div class="meter" aria-live="polite">
+        <div class="watts"><span data-watts>18.3</span><small>W</small></div>
+        <div class="state"><i aria-hidden="true"></i><span data-state>Lid open · agent working</span></div>
+        <div class="band" aria-hidden="true"><b data-lens style="left:21.4%"></b></div>
+      </div>
+    </div>
+    <p class="fine-print">Measured on an M5 Max MacBook Pro with iOS simulators open. Yours will differ; Nocturnal measures your own.</p>
+  </div>
+</section>
+
+<div class="wrap">
+  <section class="does" aria-labelledby="does-h">
+    <h2 id="does-h">What it does</h2>
+    <div class="feats">
+      <div class="feat"><h3>Knows when Claude Code needs you</h3><p>Working, waiting for your approval, or finished, straight from Claude Code.</p></div>
+      <div class="feat"><h3>Sleeps when the work is done</h3><p>Awake only while an agent or an app you picked is busy. Or always, or for a set time.</p></div>
+      <div class="feat"><h3>Saves battery with the lid shut</h3><p>Pauses apps you aren't using, freezes simulators and turns on Low Power Mode.</p></div>
+      <div class="feat"><h3>Approve everything, until it's done</h3><p>One switch lets your agents run without asking. It turns itself off when the work finishes.</p></div>
+      <div class="feat"><h3>Battery and heat limits</h3><p>Sleeps at your battery limit, or if it gets too hot in a bag.</p></div>
+      <div class="feat"><h3>Puts everything back</h3><p>Open the lid and it's all as it was. A watchdog covers crashes.</p></div>
     </div>
   </section>
 
-  <section aria-labelledby="proof-h">
-    <div class="proof">
-      <h2 id="proof-h">Less battery, lid shut</h2>
-      <div class="big" aria-label="18.3 watts down to 3.1 watts">18.3 W <span class="arrow">→</span> <span class="low">3.1 W</span></div>
-      <p class="fine">One test on an M5 Max MacBook Pro with iOS simulators open. Yours will differ, and Nocturnal measures your own.</p>
+  <section class="phone-sec" aria-labelledby="phone-h">
+    <div class="phones">
+      <img src="phone.jpg" alt="The iPhone app's main screen" width="780" height="1696" loading="lazy">
+      <img src="phone-settings.jpg" alt="The iPhone app's settings: what keeps it awake, agents, apps and every setting" width="780" height="1696" loading="lazy">
+    </div>
+    <div>
+      <h2 id="phone-h">Control it from your phone</h2>
+      <p class="sub">Everything the menu bar does, from anywhere: how long it stays awake, Sleep and Wake, which apps keep it awake or get paused, and every setting.</p>
+      <ul class="ticks">
+        <li><b>iPhone app</b>: coming to the App Store.</li>
+        <li><b>Any phone, today</b>: <a href="remote/">the phone page</a>. Add it to your Home Screen and it opens like an app.</li>
+        <li>On your computer, open Nocturnal and choose <b>Pair a Phone</b>. End-to-end encrypted, with a key for each phone you can revoke.</li>
+      </ul>
     </div>
   </section>
 
-  <section aria-labelledby="get-h">
-    <div class="center"><h2 id="get-h">On the computer you work on</h2></div>
-    <div class="platforms">
-      <div class="plat">
-        <h3>Mac</h3>
-        <p>macOS 14 or later. Lives in the menu bar.</p>
-        <a class="btn btn-sm" href="downloads/Nocturnal-1.0.0-mac.zip">Download</a>
-        <p class="alt">or <code>brew install --cask 12alexanderbell-graham/nocturnal/nocturnal</code></p>
-      </div>
-      <div class="plat">
-        <h3>Windows <span class="beta">Beta</span></h3>
-        <p>Windows 10 or 11. Lives in the tray.</p>
-        <a class="btn btn-sm" href="downloads/Nocturnal-1.0.0-windows-x86_64.zip">Download</a>
-        <p class="alt">Unzip and open Nocturnal. If Windows warns you: More info › Run anyway.</p>
-      </div>
-      <div class="plat">
-        <h3>Linux <span class="beta">Beta</span></h3>
-        <p>Any distro with systemd. Lives in the tray.</p>
-        <a class="btn btn-sm" href="downloads/nocturnal-1.0.0-linux-x86_64.tar.gz">Download</a>
-        <p class="alt">Unpack it and run <code>./install.sh</code>.</p>
-      </div>
-    </div>
-  </section>
-
-  <section aria-labelledby="feat-h">
-    <div class="center"><h2 id="feat-h">You're in control</h2></div>
-    <div class="two">
-      <div class="list">
-        <div class="item"><h3>Knows when Claude Code needs you</h3><p>Working, waiting for your approval, or finished, straight from Claude Code.</p></div>
-        <div class="item"><h3>Approve everything, until it's done</h3><p>One switch lets your agents run without asking. It turns itself off when the work finishes.</p></div>
-        <div class="item"><h3>Saves battery with the lid shut</h3><p>Pauses apps you aren't using and turns on Low Power Mode.</p></div>
-        <div class="item"><h3>Battery and heat limits</h3><p>Sleeps at your battery limit or if it gets too hot.</p></div>
-        <div class="item"><h3>Puts everything back</h3><p>Open the lid and it's all as it was. A watchdog covers crashes.</p></div>
-      </div>
-      <img src="panel-apps.png" alt="Nocturnal's Apps tab: what keeps it awake and what closing the lid slows or pauses" width="640" height="562">
-    </div>
-  </section>
-
-  <section aria-labelledby="phone-h">
-    <div class="split">
-      <img src="phone.jpg" alt="The Nocturnal iPhone app: Keeps working, battery, watts and hours left, this week's savings, and the keep-awake band from Off to Always" width="390" height="848">
-      <div>
-        <h2 id="phone-h">Control it from your phone</h2>
-        <p class="sub">Everything the menu bar does, from anywhere: how long it stays awake, Sleep and Wake, which apps keep it awake or get paused, and every setting. On your computer, open Nocturnal and choose <b>Pair a Phone</b>, then scan.</p>
-        <ul class="ticks">
-          <li><b>iPhone app</b>: coming to the App Store.</li>
-          <li><b>Any phone, today</b>: <a href="remote/">the phone page</a>. Add it to your Home Screen and it opens like an app.</li>
-          <li>End-to-end encrypted, with a key for each phone you can revoke.</li>
-        </ul>
-      </div>
-    </div>
-  </section>
-
-  <section class="narrow center" aria-labelledby="ai-h">
-    <h2 id="ai-h">Your AI can use it too</h2>
-    <p class="sub">Connect it in Settings › Agents, then give your agent this prompt.</p>
-    <button class="btn" id="copy" type="button">Copy the prompt</button>
-    <pre id="prompt" hidden>Nocturnal is installed on this laptop. It keeps the machine awake with the lid closed while you work, and cuts power use while the lid is shut. You can control all of it through the nocturnal MCP tools (or the nocturnal command). Set it up for me:
+  <section class="faq-sec" aria-labelledby="faq-h">
+    <h2 id="faq-h">Questions</h2>
+    <div class="faq">
+      <details><summary>Is it safe in a bag?</summary><div class="a"><p>It sleeps if it gets hot or the battery reaches your limit. The heat guard and battery limit can't be loosened by an agent or the phone.</p></div></details>
+      <details><summary>What does it change?</summary><div class="a"><p>Sleep, Low Power Mode, screen brightness and idle apps, only while the lid is shut. Opening the lid puts it all back.</p></div></details>
+      <details><summary>Can my AI agent control it?</summary><div class="a">
+        <p>Yes. Connect it in Settings › Agents, then give your agent this prompt.</p>
+        <div class="prompt"><pre id="prompt">Nocturnal is installed on this laptop. It keeps the machine awake with the lid closed while you work, and cuts power use while the lid is shut. You can control all of it through the nocturnal MCP tools (or the nocturnal command). Set it up for me:
 1. Read Nocturnal's settings and power report to see every setting and what is using power right now.
 2. Ask me, in one short message: which apps must keep running at full speed with the lid shut (music, calls, a local model, Docker...), and whether it should stay awake only while agents work or always.
 3. Apply the strongest savings that don't touch what I named: preset max_battery, pausing simulators and background audio, low power, and per-app rules.
 4. If my lid is closed, run Nocturnal's power test and tell me what the savings are worth in watts.
 5. From now on, keep the laptop awake through Nocturnal before long work and release it when done.
-Never turn off the heat guard or lower the battery limit; Nocturnal won't let you, and that's on purpose.</pre>
-  </section>
-
-  <section class="narrow" aria-labelledby="faq-h">
-    <h2 id="faq-h">Questions</h2>
-    <div class="faq">
-    <details><summary>Safe in a bag?</summary><p>It sleeps if it gets hot or the battery runs low.</p></details>
-    <details><summary>What does it change?</summary><p>Sleep, Low Power Mode, brightness and idle apps. Opening the lid puts it all back.</p></details>
-    <details><summary>Windows and Linux?</summary><p>Both work, in beta: the same engine as the Mac, with a tray icon instead of the menu bar panel. Measuring savings is Mac-only for now.</p></details>
-    <details><summary>Why does it ask for a password?</summary><p>Once, on the Mac, to allow only the few commands that switch sleep and Low Power Mode. Delete the app and that permission removes itself.</p></details>
-    <details><summary>Lost internet with the lid shut?</summary><p>On an iPhone hotspot, set System Settings › Wi‑Fi › Ask to join hotspots to Automatic.</p></details>
-    <details><summary>Free?</summary><p>Yes, and <a href="https://github.com/12alexanderbell-graham/nocturnal">open source</a>.</p></details>
+Never turn off the heat guard or lower the battery limit; Nocturnal won't let you, and that's on purpose.</pre></div>
+        <button class="btn" id="copy-prompt" type="button">Copy the prompt</button>
+      </div></details>
+      <details><summary>Windows and Linux?</summary><div class="a"><p>Both work, in beta: the same engine as the Mac, with a tray icon instead of the menu bar panel. Measuring savings is Mac-only for now.</p></div></details>
+      <details><summary>Why does it ask for a password?</summary><div class="a"><p>Once, on the Mac, to allow only the few commands that switch sleep and Low Power Mode. Delete the app and that permission removes itself.</p></div></details>
+      <details><summary>Lost internet with the lid shut?</summary><div class="a"><p>On an iPhone hotspot, set System Settings › Wi‑Fi › Ask to join hotspots to Automatic.</p></div></details>
+      <details><summary>Is it free?</summary><div class="a"><p>Yes, and <a href="https://github.com/12alexanderbell-graham/nocturnal">open source</a> under the MIT licence.</p></div></details>
     </div>
   </section>
-
-  <section class="green final" aria-labelledby="final-h">
-    <h2 id="final-h">Close the lid. Your AI keeps working.</h2>
-    <a class="btn" id="dl2" href="downloads/Nocturnal-1.0.0-mac.zip">Download for Mac</a>
-  </section>
-
-  <footer>© 2026 Nocturnal · MIT · <a href="https://github.com/12alexanderbell-graham/nocturnal">GitHub</a> · <a href="privacy.html">Privacy</a> · <a href="llms.txt">llms.txt</a></footer>
 </div>
+
+<footer class="ground end">
+  <div class="wrap">
+    <h2>Close the lid. Your AI keeps working.</h2>
+    <div class="get" data-get>
+      <div class="tabs" role="tablist" aria-label="Your computer">
+        <span class="lens" aria-hidden="true"></span>
+        <button role="tab" data-os="mac" aria-selected="true">Mac</button>
+        <button role="tab" data-os="win" aria-selected="false">Windows</button>
+        <button role="tab" data-os="linux" aria-selected="false">Linux</button>
+      </div>
+      <div class="panes">
+        <div class="pane" data-pane="mac">
+          <div class="cmd"><code>brew install --cask 12alexanderbell-graham/nocturnal/nocturnal</code><button class="copy" type="button">Copy</button></div>
+          <p class="note">Or <a href="downloads/Nocturnal-1.0.0-mac.zip">download the app</a>.</p>
+        </div>
+        <div class="pane" data-pane="win" hidden><a class="dl" href="downloads/Nocturnal-1.0.0-windows-x86_64.zip">Download for Windows</a></div>
+        <div class="pane" data-pane="linux" hidden><a class="dl" href="downloads/nocturnal-1.0.0-linux-x86_64.tar.gz">Download for Linux</a></div>
+      </div>
+    </div>
+    <div class="stage-mini"></div>
+    <p>© 2026 Nocturnal · MIT · <a href="https://github.com/12alexanderbell-graham/nocturnal">GitHub</a> · <a href="privacy.html">Privacy</a> · <a href="llms.txt">llms.txt</a></p>
+  </div>
+</footer>
+
 <script>
-  document.getElementById("copy").addEventListener("click", function () {
-    var b = this, text = document.getElementById("prompt").textContent;
-    (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(function () { b.textContent = "Copied"; },
-      function () { var p = document.getElementById("prompt"); p.hidden = false; b.textContent = "Select and copy it below"; });
-    setTimeout(function () { b.textContent = "Copy the prompt"; }, 2500);
-  });
-  // Point the download buttons at this visitor's system. The links under the first one stay for everyone.
-  (function () {
-    var ua = navigator.userAgent, first = document.getElementById("first"), btns = [document.getElementById("dl"), document.getElementById("dl2")];
-    function set(label, href) { btns.forEach(function (b) { b.textContent = label; b.href = href; }); }
-    if (/Windows/.test(ua)) {
-      set("Download for Windows", "downloads/Nocturnal-1.0.0-windows-x86_64.zip");
-      first.textContent = "If Windows warns you: More info › Run anyway."; first.hidden = false; document.getElementById("brew").hidden = true;
-    } else if (/Linux/.test(ua) && !/Android/.test(ua)) {
-      set("Download for Linux", "downloads/nocturnal-1.0.0-linux-x86_64.tar.gz");
-      first.textContent = "Unpack it and run ./install.sh."; first.hidden = false; document.getElementById("brew").hidden = true;
-    } else if (/iPhone|iPad|Android/.test(ua)) {
-      first.textContent = "Open this page on your laptop to download it."; first.hidden = false;
+(function () {
+  var reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // ---- Get it: tabs with a sliding lens; the visitor's system is picked first ----
+  var ua = navigator.userAgent;
+  var guess = /Windows/.test(ua) ? "win" : (/Linux/.test(ua) && !/Android/.test(ua)) ? "linux" : "mac";
+  document.querySelectorAll("[data-get]").forEach(function (box) {
+    var tabs = box.querySelectorAll("[role=tab]"), lens = box.querySelector(".lens");
+    function pick(os, instant) {
+      tabs.forEach(function (t) {
+        var on = t.dataset.os === os;
+        t.setAttribute("aria-selected", on);
+        if (on) {
+          if (instant) lens.style.transition = "none";
+          lens.style.width = t.offsetWidth + "px";
+          lens.style.transform = "translateX(" + t.offsetLeft + "px)";
+          if (instant) { lens.offsetWidth; lens.style.transition = ""; }
+        }
+      });
+      box.querySelectorAll("[data-pane]").forEach(function (p) { p.hidden = p.dataset.pane !== os; });
     }
-  })();
+    tabs.forEach(function (t) { t.addEventListener("click", function () { pick(t.dataset.os); }); });
+    pick(guess, true);
+    addEventListener("resize", function () { pick(box.querySelector("[aria-selected=true]").dataset.os, true); });
+  });
+
+  // ---- Copy buttons ----
+  function copy(btn, text, done) {
+    var label = btn.textContent;
+    (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(function () {
+      btn.textContent = done || "Copied";
+      setTimeout(function () { btn.textContent = label; }, 1800);
+    }, function () {
+      var r = document.createRange(); r.selectNodeContents(btn.previousElementSibling || document.getElementById("prompt"));
+      var s = getSelection(); s.removeAllRanges(); s.addRange(r); btn.textContent = "Press ⌘C";
+    });
+  }
+  document.querySelectorAll(".cmd .copy").forEach(function (b) { b.addEventListener("click", function () { copy(b, b.previousElementSibling.textContent); }); });
+  document.getElementById("copy-prompt").addEventListener("click", function () { copy(this, document.getElementById("prompt").textContent); });
+
+  // ---- The lid: one night of work, driven by scrolling ----
+  var lid = document.querySelector("[data-lid]");
+  var stick = lid.querySelector(".lid-stick"), green = lid.querySelector(".lid-bg.green"), night = lid.querySelector(".lid-bg.night");
+  var chapters = lid.querySelectorAll(".chapter"), wattsEl = lid.querySelector("[data-watts]"), stateEl = lid.querySelector("[data-state]"), lens = lid.querySelector("[data-lens]");
+  var states = ["Lid open · agent working", "Lid shut · agent working", "Lid shut · asleep"];
+  var lensAt = ["21.4%", "21.4%", "7.1%"];
+  var current = -1, shown = 18.3, target = 18.3, raf = 0;
+  function clamp(x) { return Math.max(0, Math.min(1, x)); }
+  function smooth(x) { x = clamp(x); return x * x * (3 - 2 * x); }
+  function roll() {
+    shown += (target - shown) * (reduce ? 1 : 0.14);
+    if (Math.abs(target - shown) < 0.05) shown = target;
+    wattsEl.textContent = shown < 0.05 ? "0" : shown.toFixed(1);
+    raf = shown === target ? 0 : requestAnimationFrame(roll);
+  }
+  function update() {
+    var r = lid.getBoundingClientRect(), span = lid.offsetHeight - innerHeight;
+    var p = clamp(-r.top / span);
+    var g = smooth((p - 0.22) / 0.16), n = smooth((p - 0.62) / 0.16);
+    green.style.opacity = g * (1 - n);
+    night.style.opacity = n;
+    var dark = g > 0.5 || n > 0.5;
+    stick.style.color = dark ? "#fff" : "";
+    stick.classList.toggle("is-night", n > 0.5);
+    var ch = p < 0.3 ? 0 : p < 0.7 ? 1 : 2;
+    if (ch !== current) {
+      current = ch;
+      chapters.forEach(function (c, i) { c.classList.toggle("on", i === ch); });
+      stateEl.textContent = states[ch];
+      lens.style.left = lensAt[ch];
+      target = [18.3, 3.1, 0][ch];
+      if (!raf) raf = requestAnimationFrame(roll);
+    }
+  }
+  addEventListener("scroll", update, { passive: true });
+  addEventListener("resize", update);
+  update();
+})();
 </script>
 </body>
 </html>
