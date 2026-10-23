@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Nocturnal: close the lid, your AI keeps working</title>
-<meta name="description" content="Nocturnal keeps your laptop awake with the lid shut while Claude Code, Codex or any AI agent works, saves the battery while it's closed, and lets it sleep when the work is done. Free for Mac, Windows and Linux, with an iPhone app to control it.">
+<meta name="description" content="Nocturnal keeps your laptop awake with the lid shut while Claude Code, Codex or any AI agent works, saves the battery while it's closed, and lets it sleep when the work is done. Free for Mac, Windows and Linux, and you can control it from your phone.">
 <meta property="og:title" content="Nocturnal: close the lid, your AI keeps working">
 <meta property="og:description" content="Keeps your laptop awake with the lid shut while your AI agents work, then lets it sleep. Free and open source.">
 <meta property="og:image" content="https://nocturnal.tools/og.jpg">
@@ -191,7 +191,7 @@
       <a class="brand" href="#"><img src="icon.png" alt="" width="30" height="30">Nocturnal</a>
       <nav aria-label="Sections">
         <a href="#does-h">What it does</a>
-        <a href="#phone-h">iPhone</a>
+        <a href="#phone-h">Phone</a>
         <a href="#faq-h">Questions</a>
         <a class="keep" href="https://github.com/12alexanderbell-graham/nocturnal">GitHub</a>
         <a href="https://x.com/12alexanderbell">X</a>
@@ -211,15 +211,16 @@
         <div class="panes">
           <div class="pane" data-pane="mac">
             <div class="cmd"><code>brew install --cask 12alexanderbell-graham/nocturnal/nocturnal</code><button class="copy" type="button">Copy</button></div>
-            <p class="note">Or <a href="downloads/Nocturnal-1.0.0-mac.zip">download the app</a>. macOS 14 or later.</p>
+            <p class="note">Or <a href="downloads/Nocturnal-1.0.0-mac.zip">download the app</a>. macOS 14 or later, Apple silicon or Intel.</p>
+            <p class="note">Not notarized by Apple yet, so the first time macOS stops it: open System Settings › Privacy &amp; Security and click <b>Open Anyway</b>.</p>
           </div>
           <div class="pane" data-pane="win" hidden>
             <a class="dl" href="downloads/Nocturnal-1.0.0-windows-x86_64.zip">Download for Windows</a>
-            <p class="note">Beta. Windows 10 or 11. Unzip, open Nocturnal; if Windows warns you, choose More info › Run anyway.</p>
+            <p class="note">Beta. Windows 10 or 11. Unzip it into a folder you'll keep and run <code>nocturnal-app.exe</code>; if Windows warns you, choose More info › Run anyway.</p>
           </div>
           <div class="pane" data-pane="linux" hidden>
             <a class="dl" href="downloads/nocturnal-1.0.0-linux-x86_64.tar.gz">Download for Linux</a>
-            <p class="note">Beta. Any distro with systemd. Unpack it and run <code>./install.sh</code>.</p>
+            <p class="note">Beta. Any distro with systemd. Unpack it and run <code>install.sh</code> from the folder; no root needed.</p>
           </div>
         </div>
         <p class="fine">Free and <a href="https://github.com/12alexanderbell-graham/nocturnal">open source</a>.</p>
@@ -228,7 +229,7 @@
 
     <div class="stage" aria-hidden="false">
       <figure class="mac rise-in" style="margin:0"><img src="panel-now.png" alt="Nocturnal's menu on the Mac: Keeps working, battery and hours left, Off / When Busy / Always, Approve all, Phone and Lid shut" width="640" height="766"></figure>
-      <figure class="phone rise-in" style="margin:0"><img src="phone.jpg" alt="The Nocturnal iPhone app: Keeps working, battery, watts and hours left, this week's savings, and the keep-awake band" width="780" height="1696"></figure>
+      <figure class="phone rise-in" style="margin:0"><img src="phone-web.jpg" alt="Nocturnal's phone page: Keeps working, battery, watts and hours left, and Off / When Busy / Always" width="780" height="1688"></figure>
     </div>
   </div>
 </header>
@@ -277,16 +278,16 @@
 
   <section class="phone-sec" aria-labelledby="phone-h">
     <div class="phones">
-      <img src="phone.jpg" alt="The iPhone app's main screen" width="780" height="1696" loading="lazy">
-      <img src="phone-settings.jpg" alt="The iPhone app's settings: what keeps it awake, agents, apps and every setting" width="780" height="1696" loading="lazy">
+      <img src="phone-web.jpg" alt="The phone page's main screen" width="780" height="1688" loading="lazy">
+      <img src="phone-web-settings.jpg" alt="The phone page's settings: agents, apps that keep it awake, and what happens with the lid shut" width="780" height="1688" loading="lazy">
     </div>
     <div>
       <h2 id="phone-h">Control it from your phone</h2>
-      <p class="sub">Everything the menu bar does, from anywhere: how long it stays awake, Sleep, which apps keep it awake or get paused, and every setting. Turn on check-ins and a sleeping laptop picks up a wake from your phone at the next one, every 15, 30 or 60 minutes.</p>
+      <p class="sub">From anywhere: how long it stays awake, Sleep, which agents and apps keep it awake, and what happens with the lid shut. Turn on check-ins and a sleeping laptop picks up a wake from your phone at the next one, every 15, 30 or 60 minutes.</p>
       <ul class="ticks">
-        <li><b>iPhone app</b>: coming to the App Store.</li>
-        <li><b>Any phone, today</b>: <a href="remote/">the phone page</a>. Add it to your Home Screen and it opens like an app.</li>
-        <li>On your computer, open Nocturnal and choose <b>Pair a Phone</b>. End-to-end encrypted, with a key for each phone you can revoke.</li>
+        <li><b>Any phone</b>: open <a href="remote/">nocturnal.tools/remote</a> and add it to your Home Screen. It opens like an app.</li>
+        <li>On your computer, open Nocturnal and choose <b>Pair a Phone</b>, then scan the code. End-to-end encrypted, with a key for each phone you can revoke.</li>
+        <li><b>iPhone app</b>: coming later.</li>
       </ul>
     </div>
   </section>
@@ -296,7 +297,7 @@
     <div class="faq">
       <details><summary>Is it safe in a bag?</summary><div class="a"><p>It sleeps if it gets hot or the battery reaches your limit. The heat guard and battery limit can't be loosened by an agent or the phone.</p></div></details>
       <details><summary>What does it change?</summary><div class="a"><p>Sleep, Low Power Mode, screen brightness and idle apps, only while the lid is shut. Opening the lid puts it all back.</p></div></details>
-      <details><summary>Can my AI agent control it?</summary><div class="a">
+      <details id="ai-h"><summary>Can my AI agent control it?</summary><div class="a">
         <p>Yes. Connect it in Settings › Agents, then give your agent this prompt.</p>
         <div class="prompt"><pre id="prompt">Nocturnal is installed on this laptop. It keeps the machine awake with the lid closed while you work, and cuts power use while the lid is shut. You can control all of it through the nocturnal MCP tools (or the nocturnal command). Set it up for me:
 1. Read Nocturnal's settings and power report to see every setting and what is using power right now.
@@ -308,6 +309,7 @@ Never turn off the heat guard or lower the battery limit; Nocturnal won't let yo
         <button class="btn" id="copy-prompt" type="button">Copy the prompt</button>
       </div></details>
       <details><summary>Windows and Linux?</summary><div class="a"><p>Both work, in beta: the same engine as the Mac, with a tray icon instead of the menu bar panel. Measuring savings is Mac-only for now.</p></div></details>
+      <details><summary>Why does macOS say it can't verify Nocturnal?</summary><div class="a"><p>Nocturnal isn't notarized by Apple yet. The first time you open it, macOS blocks it: open System Settings › Privacy &amp; Security, scroll down, click Open Anyway next to Nocturnal and confirm. You only do this once.</p></div></details>
       <details><summary>Why does it ask for a password?</summary><div class="a"><p>Once, on the Mac, to allow only the few commands that switch sleep and Low Power Mode. Delete the app and that permission removes itself.</p></div></details>
       <details><summary>Lost internet with the lid shut?</summary><div class="a"><p>On an iPhone hotspot, set System Settings › Wi‑Fi › Ask to join hotspots to Automatic.</p></div></details>
       <details><summary>Is it free?</summary><div class="a"><p>Yes, and <a href="https://github.com/12alexanderbell-graham/nocturnal">open source</a> under the MIT licence.</p></div></details>
@@ -328,7 +330,7 @@ Never turn off the heat guard or lower the battery limit; Nocturnal won't let yo
       <div class="panes">
         <div class="pane" data-pane="mac">
           <div class="cmd"><code>brew install --cask 12alexanderbell-graham/nocturnal/nocturnal</code><button class="copy" type="button">Copy</button></div>
-          <p class="note">Or <a href="downloads/Nocturnal-1.0.0-mac.zip">download the app</a>.</p>
+          <p class="note">Or <a href="downloads/Nocturnal-1.0.0-mac.zip">download the app</a>. The first time, macOS asks you to allow it in System Settings › Privacy &amp; Security.</p>
         </div>
         <div class="pane" data-pane="win" hidden><a class="dl" href="downloads/Nocturnal-1.0.0-windows-x86_64.zip">Download for Windows</a></div>
         <div class="pane" data-pane="linux" hidden><a class="dl" href="downloads/nocturnal-1.0.0-linux-x86_64.tar.gz">Download for Linux</a></div>

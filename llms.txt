@@ -65,7 +65,7 @@ The settings file (config.json) can also be edited directly and reloads instantl
 
 ## Phone
 
-Settings › Phone › Pair a Phone shows a QR code; each phone gets its own 256-bit key and can be revoked on its own. Phone and computer talk through ntfy.sh (or the person's own relay): topics are derived from the key, every message is AES-256-GCM sealed with the topic name as associated data, and the relay can't read them. The phone page is https://nocturnal.tools/remote/ (add it to the Home Screen); a native iPhone app uses the same protocol and controls everything the menu bar does: the keep-awake mode and timers, Sleep, Wake (a sleeping computer picks it up at its next check-in; the phone shows it as asleep and waits), the daily wake, holds (it can end them), agents and watched apps, per-app lid-shut rules, and every setting. A phone can't loosen the battery limit or the heat guard, and can't turn on Approve everything.
+Settings › Phone › Pair a Phone shows a QR code; each phone gets its own 256-bit key and can be revoked on its own. Phone and computer talk through ntfy.sh (or the person's own relay): topics are derived from the key, every message is AES-256-GCM sealed with the topic name as associated data, and the relay can't read them. The phone page is https://nocturnal.tools/remote/ (add it to the Home Screen; a native iPhone app using the same protocol is coming later). It controls the keep-awake mode and timers, Sleep, Wake (a sleeping computer picks it up at its next check-in; the phone shows it as asleep and waits), agents and watched apps, the lid-shut preset and the main settings. A phone can't loosen the battery limit or the heat guard, and can't turn on Approve everything.
 
 ## Rules agents should follow
 
