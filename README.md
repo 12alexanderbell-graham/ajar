@@ -13,6 +13,7 @@ With the lid shut it pauses apps you aren't using and turns on Low Power Mode. I
 ## Install
 
 - **Mac:** `brew install --cask 12alexanderbell-graham/nocturnal/nocturnal`, or download from https://nocturnal.tools
+  It isn't notarized yet, so the first time macOS blocks it: open System Settings › Privacy & Security and click **Open Anyway**.
 - **Windows / Linux:** download from the same page (Linux: unpack, run `./install.sh`).
 - **Connect your agent:** `nocturnal connect`, then paste the output of `nocturnal prompt` into Claude Code or Codex.
 
