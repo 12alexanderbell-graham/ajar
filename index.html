@@ -131,6 +131,7 @@
   /* ---------- Phone ---------- */
   .phone-sec { padding: 120px 0 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 56px; align-items: center; }
   .phones { position: relative; height: 560px; }
+  .app-sec .sub { max-width: 30em; }
   .phones img { position: absolute; width: 250px; border-radius: 40px; box-shadow: 0 0 0 1px rgba(0,0,0,.08), 0 26px 60px rgba(0,0,0,.2); }
   .phones img:first-child { left: 0; top: 0; }
   .phones img:last-child { left: 190px; top: 60px; }
@@ -287,8 +288,18 @@
       <ul class="ticks">
         <li><b>Any phone</b>: open <a href="remote/">nocturnal.tools/remote</a> and add it to your Home Screen. It opens like an app.</li>
         <li>On your computer, open Nocturnal and choose <b>Pair a Phone</b>, then scan the code. End-to-end encrypted, with a key for each phone you can revoke.</li>
-        <li><b>iPhone app</b>: coming later.</li>
       </ul>
+    </div>
+  </section>
+
+  <section class="phone-sec app-sec" aria-labelledby="app-h">
+    <div>
+      <h2 id="app-h">iPhone app, coming soon</h2>
+      <p class="sub">A native app for iPhone. It pairs the same way, with the same end-to-end encryption as the phone page.</p>
+    </div>
+    <div class="phones">
+      <img src="phone.jpg" alt="The Nocturnal iPhone app: Keeps working, battery, watts and hours left, this week's savings, and the keep-awake band" width="780" height="1696" loading="lazy">
+      <img src="phone-settings.jpg" alt="The iPhone app's settings: what keeps it awake, agents, apps and every setting" width="780" height="1696" loading="lazy">
     </div>
   </section>
 
